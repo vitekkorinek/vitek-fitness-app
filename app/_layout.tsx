@@ -1,20 +1,23 @@
-import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
+import { DefaultTheme, ThemeProvider } from '@react-navigation/native';
 import { useFonts } from 'expo-font';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { useEffect } from 'react';
 import 'react-native-reanimated';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
-import { useColorScheme } from '@/components/useColorScheme';
 import { AuthProvider, useAuth } from '@/context/AuthContext';
 
 export { ErrorBoundary } from 'expo-router';
 
 export const unstable_settings = {
-  initialRouteName: '(tabs)',
+  initialRouteName: '(auth)',
 };
 
-SplashScreen.preventAutoHideAsync();
+// `.catch` swallows the "No native splash screen registered for given view
+// controller" rejection that Expo Go / Fast Refresh throws when the native
+// splash isn't registered for the current view controller. Harmless in dev.
+SplashScreen.preventAutoHideAsync().catch(() => {});
 
 export default function RootLayout() {
   const [loaded, error] = useFonts({
@@ -25,43 +28,76 @@ export default function RootLayout() {
     if (error) throw error;
   }, [error]);
 
-  useEffect(() => {
-    if (loaded) SplashScreen.hideAsync();
-  }, [loaded]);
-
   if (!loaded) return null;
 
   return (
-    <AuthProvider>
-      <RootLayoutNav />
-    </AuthProvider>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <AuthProvider>
+        <RootLayoutNav />
+      </AuthProvider>
+    </GestureHandlerRootView>
   );
 }
 
 function RootLayoutNav() {
-  const colorScheme = useColorScheme();
-  const { session, loading } = useAuth();
+  const { session, profile, loading, passwordRecovery } = useAuth();
   const segments = useSegments();
   const router = useRouter();
 
   useEffect(() => {
     if (loading) return;
 
-    const inAuthGroup = segments[0] === '(auth)';
+    // Keep the splash screen up until we know where to route, then dismiss it.
+    SplashScreen.hideAsync().catch(() => {});
 
-    if (!session && !inAuthGroup) {
-      router.replace('/(auth)/login');
-    } else if (session && inAuthGroup) {
-      router.replace('/(tabs)');
+    const inAuthGroup        = segments[0] === '(auth)';
+    const inTrainerGroup     = segments[0] === '(trainer)';
+    const inClientGroup      = segments[0] === '(client)';
+    const inChangePassword   = segments[0] === 'change-password';
+
+    // Password recovery deep link — force the reset-password screen even though
+    // a (recovery) session now exists. Takes priority over all normal routing.
+    if (passwordRecovery) {
+      const onResetScreen = inAuthGroup && segments[1] === 'reset-password';
+      if (!onResetScreen) router.replace('/(auth)/reset-password');
+      return;
     }
-  }, [session, loading, segments]);
+
+    if (!session) {
+      if (!inAuthGroup) router.replace('/(auth)/login');
+      return;
+    }
+
+    if (!profile) return;
+
+    if (profile.role === 'trainer') {
+      if (!inTrainerGroup) router.replace('/(trainer)/(tabs)/clients');
+    } else {
+      if (profile.must_change_password) {
+        if (!inChangePassword) router.replace('/change-password');
+      } else {
+        // Allow clients to access specific (tabs) screens (workouts/routines libraries + detail screens)
+        const inClientTabsAllowed =
+          segments[0] === '(tabs)' &&
+          ['all-workouts', 'all-routines', 'workout', 'routine'].includes(segments[1] as string);
+        if (!inClientGroup && !inClientTabsAllowed) router.replace('/(client)');
+      }
+    }
+  }, [session, profile, loading, passwordRecovery, segments]);
+
+  // Don't render the navigation tree until auth state is known — prevents
+  // the boilerplate (tabs)/index from flashing before the redirect fires.
+  if (loading) return null;
 
   return (
-    <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
+    <ThemeProvider value={DefaultTheme}>
       <Stack>
-        <Stack.Screen name="(auth)" options={{ headerShown: false }} />
-        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-        <Stack.Screen name="modal" options={{ presentation: 'modal' }} />
+        <Stack.Screen name="(auth)"           options={{ headerShown: false }} />
+        <Stack.Screen name="(client)"         options={{ headerShown: false }} />
+        <Stack.Screen name="(tabs)"           options={{ headerShown: false }} />
+        <Stack.Screen name="(trainer)"        options={{ headerShown: false }} />
+        <Stack.Screen name="change-password"  options={{ headerShown: false, gestureEnabled: false }} />
+        <Stack.Screen name="modal"            options={{ presentation: 'modal' }} />
       </Stack>
     </ThemeProvider>
   );

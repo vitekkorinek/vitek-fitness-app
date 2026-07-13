@@ -1,3 +1,7 @@
+// Logo vertical position — swap these two lines to toggle
+// const LOGO_PADDING_TOP = 112; // shifted down 40px
+const LOGO_PADDING_TOP = 72; // original position
+
 import { useState } from 'react';
 import {
   View,
@@ -8,125 +12,206 @@ import {
   KeyboardAvoidingView,
   Platform,
   ActivityIndicator,
+  ScrollView,
   Alert,
 } from 'react-native';
-import { Link } from 'expo-router';
+import { useRouter } from 'expo-router';
+import { SymbolView } from 'expo-symbols';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { supabase } from '@/lib/supabase';
+import { VFLogo } from '@/components/VFLogo';
+import t from '@/i18n/en';
 
 export default function LoginScreen() {
-  const [email, setEmail] = useState('');
+  const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
+  const router = useRouter();
 
   const handleLogin = async () => {
-    if (!email || !password) {
-      Alert.alert('Error', 'Please fill in all fields.');
+    const id = identifier.trim();
+    const pwd = password.trim();
+
+    if (!id || !pwd) {
+      Alert.alert(t.common.error, t.login.errorEmptyFields);
       return;
     }
+
     setLoading(true);
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
+
+    let emailToUse = id;
+
+    if (!id.includes('@')) {
+      const { data: email, error: lookupError } = await supabase
+        .rpc('lookup_user_email', { identifier: id });
+
+      if (lookupError || !email) {
+        setLoading(false);
+        Alert.alert(t.login.errorLoginFailed, t.login.errorUserNotFound);
+        return;
+      }
+      emailToUse = email as string;
+    }
+
+    const { error } = await supabase.auth.signInWithPassword({
+      email: emailToUse,
+      password: pwd,
+    });
+
     setLoading(false);
-    if (error) Alert.alert('Login failed', error.message);
+    if (error) Alert.alert(t.login.errorLoginFailed, error.message);
   };
 
   return (
-    <KeyboardAvoidingView
-      style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-    >
-      <View style={styles.inner}>
-        <Text style={styles.title}>Vitek Fitness</Text>
-        <Text style={styles.subtitle}>Welcome back</Text>
+    <SafeAreaView style={styles.safe}>
+      <KeyboardAvoidingView
+        style={styles.flex}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
+        <ScrollView
+          contentContainerStyle={styles.scrollContent}
+          keyboardShouldPersistTaps="handled"
+          bounces={false}
+          showsVerticalScrollIndicator={false}
+        >
+          <View style={styles.logoContainer}>
+            <VFLogo width={220} />
+          </View>
 
-        <TextInput
-          style={styles.input}
-          placeholder="Email"
-          placeholderTextColor="#888"
-          autoCapitalize="none"
-          keyboardType="email-address"
-          value={email}
-          onChangeText={setEmail}
-        />
-        <TextInput
-          style={styles.input}
-          placeholder="Password"
-          placeholderTextColor="#888"
-          secureTextEntry
-          value={password}
-          onChangeText={setPassword}
-        />
+          <View style={styles.form}>
+            <TextInput
+              style={styles.input}
+              placeholder={t.login.namePlaceholder}
+              placeholderTextColor="#aaa"
+              autoCapitalize="none"
+              autoCorrect={false}
+              value={identifier}
+              onChangeText={setIdentifier}
+              returnKeyType="next"
+            />
+            <View style={styles.passwordWrap}>
+              <TextInput
+                style={[styles.input, styles.passwordInput]}
+                placeholder={t.login.passwordPlaceholder}
+                placeholderTextColor="#aaa"
+                secureTextEntry={!showPassword}
+                autoCapitalize="none"
+                autoCorrect={false}
+                value={password}
+                onChangeText={setPassword}
+                returnKeyType="done"
+                onSubmitEditing={handleLogin}
+              />
+              <TouchableOpacity
+                style={styles.eyeButton}
+                onPress={() => setShowPassword((v) => !v)}
+                activeOpacity={0.6}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              >
+                <SymbolView
+                  name={showPassword ? 'eye.slash' : 'eye'}
+                  size={20}
+                  tintColor="#999"
+                />
+              </TouchableOpacity>
+            </View>
 
-        <TouchableOpacity style={styles.button} onPress={handleLogin} disabled={loading}>
-          {loading ? (
-            <ActivityIndicator color="#fff" />
-          ) : (
-            <Text style={styles.buttonText}>Log In</Text>
-          )}
-        </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.button, loading && styles.buttonDisabled]}
+              onPress={handleLogin}
+              disabled={loading}
+              activeOpacity={0.85}
+            >
+              {loading ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <Text style={styles.buttonText}>{t.login.loginButton}</Text>
+              )}
+            </TouchableOpacity>
 
-        <Link href="/(auth)/signup" asChild>
-          <TouchableOpacity style={styles.linkButton}>
-            <Text style={styles.linkText}>Don't have an account? <Text style={styles.linkBold}>Sign up</Text></Text>
-          </TouchableOpacity>
-        </Link>
-      </View>
-    </KeyboardAvoidingView>
+            <TouchableOpacity
+              style={styles.forgotButton}
+              onPress={() => router.push('/(auth)/forgot-password' as any)}
+              activeOpacity={0.6}
+            >
+              <Text style={styles.forgotText}>{t.login.forgotPassword}</Text>
+            </TouchableOpacity>
+          </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  safe: {
     flex: 1,
-    backgroundColor: '#0f0f0f',
+    backgroundColor: '#ffffff',
   },
-  inner: {
+  flex: {
     flex: 1,
-    justifyContent: 'center',
+  },
+  scrollContent: {
+    flexGrow: 1,
+    paddingBottom: 48,
+  },
+  logoContainer: {
+    alignItems: 'center',
+    paddingTop: LOGO_PADDING_TOP,
+    paddingBottom: 52,
+  },
+  form: {
     paddingHorizontal: 28,
   },
-  title: {
-    fontSize: 36,
-    fontWeight: '800',
-    color: '#fff',
-    marginBottom: 6,
-  },
-  subtitle: {
-    fontSize: 16,
-    color: '#888',
-    marginBottom: 36,
-  },
   input: {
-    backgroundColor: '#1e1e1e',
+    backgroundColor: '#f5f5f5',
     borderRadius: 12,
-    padding: 16,
-    fontSize: 15,
-    color: '#fff',
+    paddingHorizontal: 16,
+    paddingVertical: 15,
+    fontSize: 16,
+    color: '#111',
     marginBottom: 14,
     borderWidth: 1,
-    borderColor: '#2a2a2a',
+    borderColor: '#ebebeb',
+  },
+  passwordWrap: {
+    position: 'relative',
+    justifyContent: 'center',
+  },
+  passwordInput: {
+    paddingRight: 48,
+  },
+  eyeButton: {
+    position: 'absolute',
+    right: 14,
+    top: 0,
+    bottom: 14,
+    justifyContent: 'center',
   },
   button: {
-    backgroundColor: '#e63946',
-    borderRadius: 12,
-    padding: 16,
+    backgroundColor: '#24ac88',
+    borderRadius: 100,
+    paddingVertical: 16,
     alignItems: 'center',
-    marginTop: 6,
-    marginBottom: 20,
+    marginTop: 8,
+  },
+  buttonDisabled: {
+    opacity: 0.7,
   },
   buttonText: {
-    color: '#fff',
+    color: '#ffffff',
     fontWeight: '700',
     fontSize: 16,
+    letterSpacing: 0.3,
   },
-  linkButton: {
+  forgotButton: {
     alignItems: 'center',
+    marginTop: 22,
+    paddingVertical: 6,
   },
-  linkText: {
-    color: '#888',
+  forgotText: {
+    color: '#999',
     fontSize: 14,
-  },
-  linkBold: {
-    color: '#e63946',
-    fontWeight: '600',
   },
 });

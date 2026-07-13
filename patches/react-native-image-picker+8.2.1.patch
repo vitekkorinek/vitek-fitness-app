@@ -1,0 +1,16 @@
+diff --git a/node_modules/react-native-image-picker/ios/ImagePickerManager.mm b/node_modules/react-native-image-picker/ios/ImagePickerManager.mm
+index 93e99be..c938bcc 100644
+--- a/node_modules/react-native-image-picker/ios/ImagePickerManager.mm
++++ b/node_modules/react-native-image-picker/ios/ImagePickerManager.mm
+@@ -554,7 +554,10 @@ - (void)picker:(PHPickerViewController *)picker didFinishPicking:(NSArray<PHPick
+                 dispatch_group_leave(completionGroup);
+             }];
+         } else if ([provider hasItemConformingToTypeIdentifier:(NSString *)kUTTypeMovie]) {
+-            [provider loadFileRepresentationForTypeIdentifier:(NSString *)kUTTypeMovie completionHandler:^(NSURL * _Nullable url, NSError * _Nullable error) {
++            // Use the provider's actual registered type (e.g. com.apple.quicktime-movie for HEVC)
++            // rather than kUTTypeMovie ("public.movie"), which NSItemProvider may not serve directly.
++            NSString *videoTypeId = provider.registeredTypeIdentifiers.firstObject ?: (NSString *)kUTTypeMovie;
++            [provider loadFileRepresentationForTypeIdentifier:videoTypeId completionHandler:^(NSURL * _Nullable url, NSError * _Nullable error) {
+                 NSDictionary *mappedAsset = [self mapVideoToAsset:url phAsset:asset error:nil];
+                 if (nil != mappedAsset) {
+                     assets[index] = mappedAsset;

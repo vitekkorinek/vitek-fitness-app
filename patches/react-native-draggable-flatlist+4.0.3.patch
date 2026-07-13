@@ -1,0 +1,14 @@
+diff --git a/node_modules/react-native-draggable-flatlist/src/components/CellRendererComponent.tsx b/node_modules/react-native-draggable-flatlist/src/components/CellRendererComponent.tsx
+index e4e861a..7d8bf25 100644
+--- a/node_modules/react-native-draggable-flatlist/src/components/CellRendererComponent.tsx
++++ b/node_modules/react-native-draggable-flatlist/src/components/CellRendererComponent.tsx
+@@ -63,6 +63,9 @@ function CellRendererComponent<T>(props: Props<T>) {
+     if (translate.value && !isWeb) {
+       heldTanslate.value = translate.value;
+     }
++    if (!activeKey) {
++      heldTanslate.value = 0;
++    }
+     const t = activeKey ? translate.value : heldTanslate.value;
+     return {
+       transform: [horizontalAnim.value ? { translateX: t } : { translateY: t }],

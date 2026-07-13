@@ -1,0 +1,2 @@
+ALTER TABLE public.users
+  ADD COLUMN IF NOT EXISTS banner_photo_zoom NUMERIC(3,2) NOT NULL DEFAULT 1.50;
