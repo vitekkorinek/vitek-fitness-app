@@ -20,7 +20,12 @@ const ACCENT = '#24ac88';
 type ExItem = { id: string; name: string; thumbnail_url: string | null; order_index: number };
 
 export default function SessionIntroScreen() {
-  const { workoutId } = useLocalSearchParams<{ workoutId: string }>();
+  // `sessionDate` (YYYY-MM-DD) + `planned` describe the day/session that was tapped:
+  //  - launcher (gallery / all-workouts / routine): neither param → View + Start
+  //  - completed session card today: sessionDate === today → View only
+  //  - completed session card in the past: sessionDate < today → View + Start (logs today)
+  //  - planned/future session card: planned=1 → View only
+  const { workoutId, sessionDate, planned } = useLocalSearchParams<{ workoutId: string; sessionDate?: string; planned?: string }>();
   const router = useRouter();
   const { profile } = useAuth();
   const insets = useSafeAreaInsets();
@@ -30,6 +35,24 @@ export default function SessionIntroScreen() {
   const [exercises, setExercises] = useState<ExItem[]>([]);
   const [slideshowIdx, setSlideshowIdx] = useState(0);
   const [loading, setLoading] = useState(true);
+
+  // Local (not UTC) today, to match the week-strip's YYYY-MM-DD day keys.
+  const todayStr = (() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  })();
+  const isPlanned = planned === '1';
+  const hasDate = !!sessionDate;
+  const isPast = hasDate && !isPlanned && (sessionDate as string) < todayStr;
+  const isLauncher = !hasDate && !isPlanned;
+  // Start is offered only when the client can actually train it now: a fresh launch,
+  // or repeating a past session (which logs a brand-new session dated today).
+  const showStart = isLauncher || isPast;
+  // View-only Do Mode header pill:
+  //  - 'finished' → completed session (today/past): non-clickable "mm:ss · FINISHED" pill
+  //  - 'start'    → launcher/not-done: clickable "00:00 · Start today" pill (begins logging)
+  //  - 'none'     → planned/future day: no pill (nothing to start yet)
+  const viewMode = isPlanned ? 'none' : hasDate ? 'finished' : 'start';
 
   // Alternating-layers crossfade:
   // Layer 1 is always rendered. Layer 2 sits on top, animated.
@@ -166,7 +189,7 @@ export default function SessionIntroScreen() {
     stopInterval();
     if (pauseTimeoutRef.current) clearTimeout(pauseTimeoutRef.current);
     // push (not replace) so backing out of view-only Do Mode returns to this pre-session screen
-    router.push(`/(client)/workout/${workoutId}?viewOnly=1` as any);
+    router.push(`/(client)/workout/${workoutId}?viewOnly=1&viewMode=${viewMode}` as any);
   };
 
   // Resume the slideshow when this screen regains focus (e.g. back from view-only Do Mode)
@@ -194,6 +217,16 @@ export default function SessionIntroScreen() {
   const activeExerciseId = cycleItems[slideshowIdx % Math.max(1, cycleItems.length)]?.id ?? null;
   const activeOrderIndex = exercises.find(e => e.id === activeExerciseId)?.order_index ?? -1;
   const today = new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+  const sessionDateLabel = sessionDate
+    ? new Date(sessionDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
+    : today;
+  // Top label + meta reflect what the client is looking at.
+  const topLabel = isPlanned ? 'Planned session' : isPast ? 'Past session' : "Today's session";
+  const metaText = isLauncher
+    ? `Session ${sessionCount + 1} · ${today}`
+    : isPlanned
+    ? `Planned · ${sessionDateLabel}`
+    : `Done · ${sessionDateLabel}`;
 
   return (
     <View style={styles.root}>
@@ -254,11 +287,11 @@ export default function SessionIntroScreen() {
           >
             <SymbolView name="chevron.left" size={16} tintColor="#fff" />
           </TouchableOpacity>
-          <Text style={styles.sessionMeta}>Session {sessionCount + 1} · {today}</Text>
+          <Text style={styles.sessionMeta}>{metaText}</Text>
           <View style={{ width: 34 }} />
         </View>
 
-        <Text style={styles.todayLabel}>Today's session</Text>
+        <Text style={styles.todayLabel}>{topLabel}</Text>
         <Text style={styles.workoutName} numberOfLines={2}>{workoutName}</Text>
 
         {cycleItems.length > 1 && (
@@ -329,9 +362,11 @@ export default function SessionIntroScreen() {
           <TouchableOpacity style={styles.viewBtn} onPress={handleView} activeOpacity={0.85}>
             <Text style={styles.viewBtnText}>View session</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.startBtnRow} onPress={handleStart} activeOpacity={0.85}>
-            <Text style={styles.startBtnText}>Start session</Text>
-          </TouchableOpacity>
+          {showStart && (
+            <TouchableOpacity style={styles.startBtnRow} onPress={handleStart} activeOpacity={0.85}>
+              <Text style={styles.startBtnText}>Start session today</Text>
+            </TouchableOpacity>
+          )}
         </View>
       </View>
     </View>
@@ -359,8 +394,8 @@ const styles = StyleSheet.create({
   sessionMeta: {
     flex: 1,
     textAlign: 'center',
-    fontSize: 10,
-    color: 'rgba(255,255,255,0.4)',
+    fontSize: 13,
+    color: 'rgba(255,255,255,0.55)',
   },
   todayLabel: {
     fontSize: 11,

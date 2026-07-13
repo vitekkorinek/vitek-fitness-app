@@ -460,7 +460,7 @@ export default function RoutineDetailScreen() {
                       onRenameChange={setRenameText}
                       onRenameConfirm={() => confirmRename(byOrder[0].id, renameText)}
                       onRenameCancel={() => setRenamingId(null)}
-                      onPress={() => router.push(`/(trainer)/client/${clientId}/workout/session-intro?workoutId=${byOrder[0].id}` as any)}
+                      onPress={() => router.push(`/(trainer)/client/${clientId}/workout/${byOrder[0].id}` as any)}
                       onMenuPress={() => setActiveMenu(byOrder[0])}
                     />
                   )}
@@ -478,7 +478,7 @@ export default function RoutineDetailScreen() {
                         onRenameChange={setRenameText}
                         onRenameConfirm={() => confirmRename(nextUp.id, renameText)}
                         onRenameCancel={() => setRenamingId(null)}
-                        onPress={() => router.push(`/(trainer)/client/${clientId}/workout/session-intro?workoutId=${nextUp.id}` as any)}
+                        onPress={() => router.push(`/(trainer)/client/${clientId}/workout/${nextUp.id}` as any)}
                         onMenuPress={() => setActiveMenu(nextUp)}
                       />
                     </>
@@ -493,7 +493,7 @@ export default function RoutineDetailScreen() {
                       onRenameChange={setRenameText}
                       onRenameConfirm={() => confirmRename(w.id, renameText)}
                       onRenameCancel={() => setRenamingId(null)}
-                      onPress={() => router.push(`/(trainer)/client/${clientId}/workout/session-intro?workoutId=${w.id}` as any)}
+                      onPress={() => router.push(`/(trainer)/client/${clientId}/workout/${w.id}` as any)}
                       onMenuPress={() => setActiveMenu(w)}
                     />
                   ))}
@@ -510,7 +510,7 @@ export default function RoutineDetailScreen() {
                           onRenameChange={setRenameText}
                           onRenameConfirm={() => confirmRename(w.id, renameText)}
                           onRenameCancel={() => setRenamingId(null)}
-                          onPress={() => router.push(`/(trainer)/client/${clientId}/workout/session-intro?workoutId=${w.id}` as any)}
+                          onPress={() => router.push(`/(trainer)/client/${clientId}/workout/${w.id}` as any)}
                           onMenuPress={() => setActiveMenu(w)}
                         />
                       ))}

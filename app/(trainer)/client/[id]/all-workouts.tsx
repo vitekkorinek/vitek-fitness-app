@@ -428,7 +428,7 @@ export default function AllWorkoutsScreen() {
                   onRenameChange={setRenameText}
                   onRenameConfirm={() => confirmRename(w.id, renameText)}
                   onRenameCancel={() => setRenamingId(null)}
-                  onPress={() => router.push(`/(trainer)/client/${clientId}/workout/session-intro?workoutId=${w.id}` as any)}
+                  onPress={() => router.push(`/(trainer)/client/${clientId}/workout/${w.id}` as any)}
                   onMenuPress={() => setActiveMenu(w)}
                 />
               ))}
@@ -445,7 +445,7 @@ export default function AllWorkoutsScreen() {
                   onRenameChange={setRenameText}
                   onRenameConfirm={() => confirmRename(w.id, renameText)}
                   onRenameCancel={() => setRenamingId(null)}
-                  onPress={() => router.push(`/(trainer)/client/${clientId}/workout/session-intro?workoutId=${w.id}` as any)}
+                  onPress={() => router.push(`/(trainer)/client/${clientId}/workout/${w.id}` as any)}
                   onMenuPress={() => setActiveMenu(w)}
                 />
               ))}

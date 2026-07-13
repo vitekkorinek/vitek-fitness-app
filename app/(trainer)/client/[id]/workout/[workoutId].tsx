@@ -2810,9 +2810,14 @@ export default function TrainerWorkoutSessionScreen() {
             )}
           </View>
 
-          <TouchableOpacity onPress={() => setDotsMenuOpen(true)} hitSlop={8} style={styles.floatIconBtn}>
-            <SymbolView name="ellipsis" size={18} tintColor="#fff" />
-          </TouchableOpacity>
+          <View style={{ position: 'relative' }}>
+            <TouchableOpacity onPress={() => setDotsMenuOpen(true)} hitSlop={8} style={styles.floatIconBtn}>
+              <SymbolView name="ellipsis" size={18} tintColor="#fff" />
+            </TouchableOpacity>
+            {hasTrainingNotes && !trainingNotesViewed && (
+              <View style={{ position: 'absolute', top: 2, right: 2, width: 8, height: 8, borderRadius: 4, backgroundColor: '#24ac88', borderWidth: 1.5, borderColor: 'rgba(0,0,0,0.2)' }} pointerEvents="none" />
+            )}
+          </View>
         </View>
       </View>
 
@@ -2900,12 +2905,6 @@ export default function TrainerWorkoutSessionScreen() {
                       ) : (
                         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                           <Text style={[styles.headerWorkoutName, { flexShrink: 1 }]} numberOfLines={2}>{workout?.name?.toUpperCase() ?? '—'}</Text>
-                          <Animated.View style={{ transform: [{ scale: workoutInfoBounceAnim }] }}>
-                            <TouchableOpacity onPress={() => { setTrainingNotesOpen(true); setTrainingNotesViewed(true); }} hitSlop={10} activeOpacity={0.7} style={[styles.headerInfoBtn, hasTrainingNotes && styles.headerInfoBtnActive]}>
-                              <Text style={[styles.headerInfoBtnText, hasTrainingNotes && styles.headerInfoBtnTextActive]}>i</Text>
-                              {hasTrainingNotes && !trainingNotesViewed && <View style={styles.headerInfoBtnDot} />}
-                            </TouchableOpacity>
-                          </Animated.View>
                         </View>
                       )}
                       <Text style={styles.headerSessionLabel}>
@@ -3105,12 +3104,6 @@ export default function TrainerWorkoutSessionScreen() {
                     ) : (
                       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                         <Text style={[styles.headerWorkoutName, { flexShrink: 1 }]} numberOfLines={2}>{workout?.name?.toUpperCase() ?? '—'}</Text>
-                        <Animated.View style={{ transform: [{ scale: workoutInfoBounceAnim }] }}>
-                          <TouchableOpacity onPress={() => { setTrainingNotesOpen(true); setTrainingNotesViewed(true); }} hitSlop={10} activeOpacity={0.7} style={[styles.headerInfoBtn, hasTrainingNotes && styles.headerInfoBtnActive]}>
-                            <Text style={[styles.headerInfoBtnText, hasTrainingNotes && styles.headerInfoBtnTextActive]}>i</Text>
-                            {hasTrainingNotes && !trainingNotesViewed && <View style={styles.headerInfoBtnDot} />}
-                          </TouchableOpacity>
-                        </Animated.View>
                       </View>
                     )}
                     <Text style={styles.headerSessionLabel}>
@@ -3655,6 +3648,15 @@ export default function TrainerWorkoutSessionScreen() {
           <Pressable style={StyleSheet.absoluteFill} onPress={() => setDotsMenuOpen(false)} />
           <View style={styles.centeredModal}>
             <Text style={styles.centeredModalTitle}>{isFreeSession ? freeSessionName : (workout?.name ?? 'Workout')}</Text>
+
+            <TouchableOpacity style={styles.dotsMenuItem} onPress={() => { setDotsMenuOpen(false); setTrainingNotesOpen(true); setTrainingNotesViewed(true); }} activeOpacity={0.7}>
+              <View style={styles.floatIconBtn}>
+                <SymbolView name="note.text" size={18} tintColor="#fff" />
+              </View>
+              <Text style={styles.dotsMenuItemText}>Training Notes</Text>
+              {hasTrainingNotes && !trainingNotesViewed && <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: '#24ac88', marginRight: 6 }} />}
+              <SymbolView name="chevron.right" size={13} tintColor="#ccc" />
+            </TouchableOpacity>
 
             <TouchableOpacity style={styles.dotsMenuItem} onPress={() => { setDotsMenuOpen(false); setMuscleSheetOpen(true); }} activeOpacity={0.7}>
               <View style={styles.floatIconBtn}>

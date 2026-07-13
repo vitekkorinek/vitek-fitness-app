@@ -156,7 +156,7 @@ Across the **entire app — trainer and client screens + shared components** —
 > **The two square WORKOUTS/ROUTINES tiles were removed (July 2026)** — the trainer client-profile Training view now mirrors the client Training tab: a horizontal **WORKOUTS gallery** + a **ROUTINES section** (`RoutineCard`), replacing the old `aspectRatio:1.3` tiles. The client side already worked this way; this brought the trainer side to parity. (The old `tileStyles` and `TrainerSmallRing` remain in `index.tsx` as unused dead code for now.)
 - Because the client-profile tab content sits inside a `scrollContent: { padding:16 }` container, both sections are wrapped in a **`sectionStyles.fullBleed` (`marginHorizontal:-16`)** so the gallery reaches the screen edge (each section re-adds its own 16px insets, matching the full-width client layout). Recent Activity + Trainer Note stay **outside** the wrapper (keep the 16px padding).
 - Ported **verbatim from the client** (`train.tsx`) as local defs in `index.tsx`: `sectionStyles`, `rcStyles`, `qlStyles`, `formatRoutinePeriod`, `RoutineCard`, `RoutineQuickLookModal`, plus the `WorkoutCard`/`RoutineRow` types. `RoutineCard` reuses the trainer's existing `ProgressRing`. Section-header + workout-card mini-routine icons reuse `TrainerRoutineIcon`. (In `rcStyles`/`qlStyles` the color literals are hardcoded — the `ACCENT`/`TEXT`/`HEADER`/`MUTED` consts are declared **below** these StyleSheets in the file, so referencing them there is a temporal-dead-zone error.)
-- **WORKOUTS gallery:** 🏋️ + "Workouts" header + `chevron.right` → `all-workouts`. `loadWorkoutsSection()` (client-scoped by `clientId`, called in the tab's `useFocusEffect` alongside `loadStripSessions`) fetches active, non-stretching workouts + each one's all-time last-completed date; sorted most-recently-done first, never-done last. Mini cover cards (`wCardOuter` 180px), tap → trainer `session-intro?workoutId=<id>`; card ⋯ opens the existing `SessionDetailsSheet` (`setQuickLookWorkout` + `setQuickLookVisible`). Dashed "See all N" card at the row end → `all-workouts`. Empty → "No workouts yet".
+- **WORKOUTS gallery:** 🏋️ + "Workouts" header + `chevron.right` → `all-workouts`. `loadWorkoutsSection()` (client-scoped by `clientId`, called in the tab's `useFocusEffect` alongside `loadStripSessions`) fetches active, non-stretching workouts + each one's all-time last-completed date; sorted most-recently-done first, never-done last. Mini cover cards (`wCardOuter` 180px), tap → trainer Do Mode `/(trainer)/client/[id]/workout/<id>` directly (the trainer pre-session screen was removed — July 2026); card ⋯ opens the existing `SessionDetailsSheet` (`setQuickLookWorkout` + `setQuickLookVisible`). Dashed "See all N" card at the row end → `all-workouts`. Empty → "No workouts yet".
 - **ROUTINES section:** `TrainerRoutineIcon` + "Routines" header + `chevron.right` → `all-routines`. Shows only the **active routine** as a `RoutineCard`, built into a `RoutineRow` from the already-fetched `fetchClientTraining` data (`activeRoutineRow` memo — no extra query). Tap → `routine/${id}`; card ⋯ opens the ported `RoutineQuickLookModal`. No active routine → grey "No active routine".
 - **Ring value is cycle-aware:** `RoutineCard` passes `current = cycleJustCompleted ? routineTotal : cycleDoneCount` — never `nextUpPosition`. Same rule applies to all routine progress rings.
 
@@ -481,20 +481,29 @@ Shared component used on both trainer and client sides to show a workout's exerc
 
 ## 5. Do Mode
 
-### Session Intro screen — both trainer and client
-Always shown between a workout card tap and Do Mode — **never skipped**, even when no exercises have a `thumbnail_url`.
+### Session Intro (pre-session) screen — CLIENT ONLY (July 2026)
+The pre-session intro screen is **client-only**. **The trainer version was removed** (`app/(trainer)/client/[id]/workout/session-intro.tsx` deleted) — Vitek didn't want a pre-session screen as a trainer. **Every trainer workout-card tap now navigates straight to Do Mode** (`/(trainer)/client/${clientId}/workout/${workoutId}`, no autoStart), where the trainer reviews/edits and presses START manually (or hits the existing hard-block prompt if they try to mark done / add a photo before starting). The old trainer navigations to `session-intro` from `index.tsx` (gallery, recent activity, week-strip session/planned cards), `all-workouts.tsx`, `routine/[routineId].tsx`, and `library.tsx` were all repointed to Do Mode. **Never reintroduce a trainer pre-session screen.**
 
-**Client:** `app/(client)/workout/session-intro.tsx`
+**Client:** `app/(client)/workout/session-intro.tsx` — always shown between a client workout-card tap and Do Mode (never skipped, even with no thumbnails).
 - Route: `/(client)/workout/session-intro?workoutId=<id>` — static route, takes priority over `[workoutId]`.
-- Navigation: all client workout card taps across `train.tsx`, `all-workouts.tsx`, and `routine/[routineId].tsx` navigate to `session-intro?workoutId=<id>`.
-- "Start session" navigates to `/(client)/workout/<id>?autoStart=1` — **auto-starts the session immediately** on arrival (no second START tap needed). The `introAutoStarted` ref in client do mode guards against double-fire; `timerPromptShown` is set true to suppress the soft prompt.
-- Session count: fetched for `profile.id` (the logged-in client).
+- Navigation: client workout-card taps across `train.tsx`, `all-workouts.tsx`, and `routine/[routineId].tsx`. The Training-tab week-strip cards pass **context params** so the intro can tailor its buttons.
+- **Context params (`sessionDate`, `planned`) decide the buttons:**
+  - **Launcher** (gallery / all-workouts / routine — no params) → **View session** + **Start session today**.
+  - **Completed session card, today** (`sessionDate === today`) → **View session** ONLY.
+  - **Completed session card, past** (`sessionDate < today`, from the week strip) → **View session** + **Start session today**.
+  - **Planned/future card** (`planned=1` — the planned session cards on the Training tab are now **tappable** for this) → **View session** ONLY.
+- **The Start button is always labelled "Start session today"** — starting always logs a brand-new session dated **today** regardless of which day was tapped (so the client understands it lands on today in the week strip). It navigates to `/(client)/workout/<id>?autoStart=1` (auto-starts on arrival; `introAutoStarted` ref guards double-fire; `timerPromptShown` suppresses the soft prompt).
+- **View session** navigates to `/(client)/workout/<id>?viewOnly=1&viewMode=<mode>` (push, not replace, so backing out returns here). `viewMode = isPlanned ? 'none' : hasDate ? 'finished' : 'start'` — drives the read-only Do Mode header pill (see "View-only Do Mode" below). **View is ALWAYS read-only — never startable** (the only way to start is the "Start session today" button).
+- Header meta reflects context: top label = `Planned session` / `Past session` / `Today's session`; meta = `Session N · <today>` (launcher) or `Planned · <date>` / `Done · <date>`. Date/meta text is 13px.
+- Session count: fetched for `profile.id`.
 
-**Trainer:** `app/(trainer)/client/[id]/workout/session-intro.tsx`
-- Route: `/(trainer)/client/[id]/workout/session-intro?workoutId=<id>` — static route.
-- Navigation: all trainer workout card taps from `index.tsx`, `all-workouts.tsx`, `routine/[routineId].tsx`, and `library.tsx` navigate here. Free sessions (`/workout/free`) skip the intro.
-- "Start session" navigates to `/(trainer)/client/${clientId}/workout/${workoutId}` (no autoStart — trainer lands in pre-session state and can review/edit before pressing START).
-- Session count: fetched for `clientId` (the client being coached, from the `[id]` route param).
+### View-only Do Mode — CLIENT (read-only, July 2026)
+Opening client Do Mode with `?viewOnly=1` is a **fully read-only browse view** — never startable, nothing editable. Vitek's rule: **View = look at video/notes/weights; Start = only ever the "Start session today" button on the pre-session screen.** (This replaced an earlier design where View was sometimes startable — that inconsistency was confusing.)
+- Params: `viewOnly=1` + `viewMode` (`finished` | `start` | `none`). `isViewOnly = viewOnly === '1'`; `showFinishedPill = isViewOnly && viewMode === 'finished'`.
+- **Header pill:** a running session always wins (timer + FINISH). Otherwise, in view-only: `finished` → non-clickable **`mm:ss · FINISHED`** pill (duration from the most recent completed session, `viewedSessionDuration`, read from the `recentSessData[0].duration_seconds` in `load()`); `start`/`none` → **no pill at all**. (The normal not-started START pill only shows outside view-only.)
+- **Read-only gating** — a `readOnly` prop is threaded to `ExerciseCard` (both call sites) and down to `InlineSetRow`. When `readOnly`: done circles non-tappable; weight/reps `TextInput`s `editable={false}`; **Add Set/Dropset + camera row hidden**; **Start-timer button hidden**; set ✓ / remove-✕ columns replaced with empty `setIconBtn` spacers (so the KG/REPS/TOTAL columns stay aligned); bar/machine selectors `pointerEvents="none"`; swipe (`Swipeable enabled={!isEditMode && !readOnly}`) and long-press-to-edit disabled.
+- **Notes are read-only too:** the per-exercise **Info modal** (`ExerciseInfoModal`) and the **Training Notes** modal (`TrainingNotesModal`, reached via the ⋯ `DotsMenuSheet`) both take a `readOnly` prop that hides the client "Add note" input **and** the note delete-✕ buttons. Viewing existing notes still works. `readOnly` is threaded ⋯ menu → `DotsMenuSheet` → `TrainingNotesModal`.
+- Still available in view: expand/collapse cards, Play video, Info/notes (read), Muscle Groups, Equipment, Session History.
 
 **Client auto-start:** `autoStart=1` param triggers a `useEffect` in client do mode (`[autoStart, loading]` deps) that calls `startSession(workoutId!)` + `createInProgressSessionRef.current()` once `loading` is false. Trainer side is unchanged (no autoStart).
 
@@ -527,7 +536,7 @@ Fixed `position:'absolute'` view at `top:0, height:HEADER_MIN`. Three slots:
 - **Left:** `‹` back button (`floatIconBtn` — 36×36 dark circle)
 - **Center (`flex:1`, `alignItems:'center'`):** combined pill (see below). In edit mode: "Done" button replaces it.
 - **Right (client):** ⋯ dots button (`floatIconBtn`) with green dot badge when `hasTrainingNotes && !trainingNotesViewed`.
-- **Right (trainer):** ⋯ dots button (always visible, never fades). Trainer training notes are accessed via the (i) button in the expanded header, not from ⋯.
+- **Right (trainer):** ⋯ dots button (always visible, never fades) — with a **green dot badge** when `hasTrainingNotes && !trainingNotesViewed`. Trainer training notes are accessed from the **⋯ menu** (Training Notes row), matching the client (July 2026) — the old expanded-header (i) button was removed.
 
 **Combined pill** (`combinedPill` style): always visible, not scroll-dependent. Tapping triggers FINISH/START.
 - White background (`#fff`), `borderRadius:20, paddingHorizontal:14, paddingVertical:7`, shadow (`shadowOpacity:0.22, shadowRadius:8`)
@@ -655,8 +664,8 @@ The exercise `(i)` is **not** on the collapsed name row — it lives as the **In
 
 ### Other Do Mode rules
 - **⋯ menu (client):** `DotsMenuSheet` bottom sheet — see dedicated section above. Training notes, Muscle Groups, Equipment, Session History all open as stacked panels. **No (i) button in client header** — training notes indicator is a green dot on the ⋯ button itself.
-- **⋯ menu (trainer):** white centered modal with 3 rows: Muscle Groups, Equipment, Session History. Category pill shown if set. Training notes accessed via (i) button in header — not in ⋯ menu.
-- **Header (i) button (trainer only):** 17×17 outline circle on dark header (`headerInfoBtn`). Active when `hasTrainingNotes`. White dot + bounce animation on unread notes. **Client file has no (i) button in the header.**
+- **⋯ menu (trainer):** white centered modal with 4 rows: **Training Notes** (first), Muscle Groups, Equipment, Session History. Category pill shown if set. **Training notes are now accessed from the ⋯ menu (July 2026), matching the client** — the old header (i) button was removed. The Training Notes row opens `TrainingNotesModal` (`setTrainingNotesOpen(true)` + `setTrainingNotesViewed(true)`); a green (`#24ac88`) dot shows on the row (before the chevron) when `hasTrainingNotes && !trainingNotesViewed`.
+- **No header (i) button (removed July 2026 on both sides).** Trainer note access moved into the ⋯ menu; unread notes are indicated by a **green dot on the ⋯ button** (`position:absolute, top:2, right:2, 8×8, #24ac88`, hairline border) — identical to the client. The `headerInfoBtn*` styles and the `workoutInfoBounceAnim` bounce effect remain in the trainer file as unused dead code.
 - **Thumbnail placeholder:** `<LinearGradient colors={['#2a4a3e','#3a7d6b']}...>` with white ▶. Never dashed border.
 - **`ExerciseThumbnail` location:** only in the **expanded row** peek button area. Never in the collapsed row — the collapsed row uses `MuscleThumb` instead.
 - **START prompt:** no confirmation dialog — tapping START fires immediately. Hard block for checkmark/photo before START still applies. No prompts once in_progress. Exception: past-session repeat shows a weight-choice modal ("Most recent weights" / "Weights from this session").

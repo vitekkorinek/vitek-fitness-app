@@ -1967,7 +1967,7 @@ function WorkoutsTab({
               onRenameChange={setRenameText}
               onRenameConfirm={() => confirmRename(w.id, renameText)}
               onRenameCancel={() => setRenamingId(null)}
-              onPress={() => router.push(`/(trainer)/client/${w.clientId}/workout/session-intro?workoutId=${w.id}` as any)}
+              onPress={() => router.push(`/(trainer)/client/${w.clientId}/workout/${w.id}` as any)}
               onMenuPress={() => setActiveMenu(w)}
             />
           ))}

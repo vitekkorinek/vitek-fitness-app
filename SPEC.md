@@ -596,13 +596,15 @@ In-app notifications for clients. Filtered by `area` — nutrition notifications
 24b. ✅ Scheduling v2 — VF logo + move requests badge on all trainer tabs, availability overlay on Schedule, cancel-charged, client availability grid, client move requests, Give Availability wired up
 24c. ✅ Availability notifications — client saved slots load on screen open; info note when editing existing availability; trainer notified via `availability_notifications` (new vs updated distinction); saved future weeks shown as chips in Appointments tab; "View schedule" navigates to the exact week
 24d. ✅ Scheduling v3 — recurring availability slots, availability submissions (sessions_wanted + note), personal blocks, Day/Week toggle, Plan Week screen, nutritional_advising type, combined time picker (start/end/presets), notes as overlay modal, availability_type on client profile Info tab
-28. ✅ Session Intro screen — both trainer and client; trainer navigates to pre-session do mode (can review/edit before pressing START)
+28. ✅ Session Intro (pre-session) screen — **client-only** (July 2026). The trainer version was removed; every trainer workout-card tap goes **straight to Do Mode** (not started; trainer presses START manually). Client intro tailors its buttons by context (see item 42).
 29. ✅ Do Mode — trainer header redesigned to match client (static combined pill, no scroll-driven fading)
 30. ✅ Suspended session system — "Leave for now" back button option saves session to `useSessionStore`; live timer indicators on trainer client profile header, TrainerLogoButton notifications modal, all client tab headers (absolute-positioned timer icon), client home screen pill, nutrition header; "Return" resumes with original timer via `resumeSessionId` + `resumeStartedAt` URL params
 31. ✅ Client Training tab + modal simplified — two options only: "Log workout" (faded/disabled if no standalone workouts) and "Log routine" (faded/disabled if no active routine)
 32. ✅ Trainer: Plan a workout scheduling flow — two-step picker → schedule modal inserted into the week strip Add Session menu; inserts `sessions` rows with `status='scheduled'`; workout picker shows mini cover cards with green ✓ badge on workouts already done this week
 33. ✅ Client All Workouts screen — THIS WEEK label + count (N / goal, amber when exceeded); Workouts/Stretching tab changed to underline style; workout cards sorted by done-this-week with green ✓ badge + ×N repeat count; "NOT DONE THIS WEEK" section divider; same THIS WEEK label on All Routines screen
-34. ✅ Client session intro auto-start — tapping "Start session" on the intro screen navigates directly into active do mode (session timer running, FINISH visible); trainer side unchanged (still lands in pre-session state)
+34. ✅ Client session intro auto-start — tapping "Start session today" on the intro screen navigates directly into active do mode (session timer running, FINISH visible). Trainer has no intro screen (goes straight to Do Mode, not started).
+42. ✅ Client pre-session buttons are context-aware + View is always read-only (July 2026) — the intro passes `sessionDate`/`planned`; buttons: **launcher / past** → View session + **Start session today**; **today already done / planned-future** → View session only. Planned session cards on the Training tab are now tappable → View. **"View session" opens a fully read-only Do Mode** (`?viewOnly=1&viewMode=finished|start|none`): no START (a completed session shows a non-clickable `mm:ss · FINISHED` pill; other views show no pill), and nothing editable — done circles, weight/reps, Add Set/camera/timer, set ✓/remove, bar/machine selectors, swipe/reorder, and note add/delete are all disabled. Starting is ONLY ever the "Start session today" button, which always logs a session dated today.
+43. ✅ Trainer training notes moved to the ⋯ menu (July 2026) — the trainer Do Mode header (i) button was removed; Training Notes is the first row of the ⋯ centered-modal menu, with a green dot on the ⋯ button when unread — matching the client.
 35. ✅ Workout/routine quick-look — ⋯ button on client workout cards (all-workouts, routine detail) opens `WorkoutExercisesModal` (exercise list + sets); ⋯ on routine cards opens `RoutineQuickLookModal` (workout list + exercise counts). Trainer side adds "View exercises" as first option in existing ⋯ menus (client profile, all-workouts, routine detail)
 36. ✅ Workout card layout update — ⋯ button at top-right corner (28×28 dark circle); done-this-week ✓ badge moved inline next to workout name (16×16 green circle, `nameRow` flex row)
 37. ✅ Trainer all-workouts weekly progress — matches client: THIS WEEK X / Y bar, thisWeekCount on each row, section sorting (done first → "NOT DONE THIS WEEK" → rest), ✓ badge inline next to name
@@ -849,7 +851,7 @@ The training tab contains programme and session content, switchable via a segmen
 
 **WORKOUTS gallery + ROUTINES section (below the `+` circle):**
 - Replaced the old two-tile row (July 2026). Both mirror the client Training tab and are ported verbatim from `app/(client)/(tabs)/train.tsx` (`sectionStyles`, `rcStyles`, `qlStyles`, `formatRoutinePeriod`, `RoutineCard`, `RoutineQuickLookModal`). Wrapped in a `marginHorizontal:-16` full-bleed container so the gallery reaches the screen edge despite the tab's `padding:16`.
-- **WORKOUTS gallery:** 🏋️ + "Workouts" header + chevron → `all-workouts`. Horizontal row of 180px cover cards (cover/gradient, name, category pill, routine name if linked, "Done D Mon" / "Never done"), fetched client-scoped and sorted most-recently-done first. Tap → trainer `session-intro`; card ⋯ → `SessionDetailsSheet`. Dashed "See all N" card at the row end.
+- **WORKOUTS gallery:** 🏋️ + "Workouts" header + chevron → `all-workouts`. Horizontal row of 180px cover cards (cover/gradient, name, category pill, routine name if linked, "Done D Mon" / "Never done"), fetched client-scoped and sorted most-recently-done first. Tap → trainer Do Mode directly (`/(trainer)/client/[id]/workout/<id>` — the trainer pre-session screen was removed, July 2026); card ⋯ → `SessionDetailsSheet`. Dashed "See all N" card at the row end.
 - **ROUTINES section:** routine icon + "Routines" header + chevron → `all-routines`. Shows the active routine as a `RoutineCard` (progress ring + program strips), built from `fetchClientTraining` data (no extra query). Tap → `routine/${id}`; card ⋯ → `RoutineQuickLookModal`. No active routine → "No active routine".
 
 **Recent Activity section:**
@@ -2111,13 +2113,19 @@ Dark green header "Training". Tab background: **`#faf9f7`**. Scroll order: gauge
 
 ---
 
-#### Session Intro screen ✅ (`app/(client)/workout/session-intro.tsx`)
+#### Session Intro screen ✅ (`app/(client)/workout/session-intro.tsx`) — CLIENT ONLY
 
-Shown between a workout card tap and Do Mode — a cinematic full-screen preview that replaces the old "go straight to Do Mode" flow. If **no** exercises in the workout have a `thumbnail_url`, this screen is skipped entirely and Do Mode opens directly.
+Shown between a **client** workout-card tap and Do Mode — a cinematic full-screen preview. **Client-only:** the trainer version was removed (July 2026); trainer taps go straight to Do Mode. It is **always shown** (never skipped) — with no exercise `thumbnail_url`s it falls back to a dark-green gradient + faint dumbbell.
 
-**Route:** `/(client)/workout/session-intro?workoutId=<id>` (static route — takes priority over the dynamic `[workoutId]` route). Navigates to Do Mode via `router.replace('/(client)/workout/<id>?autoStart=1')`.
+**Route:** `/(client)/workout/session-intro?workoutId=<id>` (static route — takes priority over the dynamic `[workoutId]` route).
 
-**Auto-start:** the `?autoStart=1` param causes the client Do Mode to skip the START button confirmation and begin the session immediately on load (timer running, FINISH button visible).
+**Two buttons, context-aware.** The screen reads `sessionDate` / `planned` params to decide what to show:
+- **Launcher** (gallery / all-workouts / routine — no params) → **View session** + **Start session today**.
+- **Completed session card, today** → **View session** only.
+- **Completed session card, past** (week strip) → **View session** + **Start session today**.
+- **Planned/future card** (`planned=1`) → **View session** only.
+
+**"Start session today"** (always this label — starting always logs a session dated **today**) → `router.replace('/(client)/workout/<id>?autoStart=1')`, which auto-starts immediately (timer running, FINISH visible). **"View session"** → `router.push('/(client)/workout/<id>?viewOnly=1&viewMode=<finished|start|none>')` — a **fully read-only** Do Mode (never startable; a completed session shows a non-clickable `mm:ss · FINISHED` pill, others no pill). Starting is only ever the Start button.
 
 **Background — alternating-layers crossfade:**
 Two `Image` / `Animated.Image` components always mounted (layer 1 + layer 2). Only the *invisible* layer ever has its source updated — this prevents any visible flash:
@@ -2132,8 +2140,8 @@ Slideshows through exercises with `thumbnail_url` in workout order, cycling ever
 
 **Top area:**
 - Back button: 34×34 white circle `rgba(255,255,255,0.12)`, chevron.left
-- Session meta centered (between back button and spacer): `"Session X · D Mon"`, fontSize 10, `rgba(255,255,255,0.4)`
-- "Today's session" label: fontSize 11, `rgba(255,255,255,0.35)`, letterSpacing 1, uppercase
+- Session meta centered (between back button and spacer): fontSize **13**, `rgba(255,255,255,0.55)` — context-aware text: `"Session X · D Mon"` (launcher) / `"Done · D Mon"` (completed) / `"Planned · D Mon"` (future)
+- Top label: fontSize 11, `rgba(255,255,255,0.35)`, letterSpacing 1, uppercase — `"Today's session"` / `"Past session"` / `"Planned session"` by context
 - Workout name: 24px/700, white
 - Progress dots (hidden when only 1 photo exercise): one dot per exercise with `thumbnail_url`; active = ACCENT `#24ac88` width 26; done (before active in slideshow) = `rgba(255,255,255,0.5)` width 18; upcoming = `rgba(255,255,255,0.2)` width 18; height 2, borderRadius 1, gap 4. Dots and exercise list update at the **start** of each transition (not the end), so they track the animation.
 
@@ -2144,7 +2152,7 @@ Exercise list (`paddingHorizontal:20, gap:8`) with a dot + name per row:
 - **Upcoming** (order_index after active): dot `rgba(255,255,255,0.2)`, name `rgba(255,255,255,0.25)`, 13px/400
 - Tapping an exercise name with a `thumbnail_url` jumps instantly to that slide; slideshow pauses and resumes after 2s.
 
-**Start session button:** ACCENT `#24ac88` filled pill, full width, `marginHorizontal:20`, `marginBottom: max(36, insets.bottom+16)`.
+**Buttons row:** `marginHorizontal:20`, `marginBottom: max(36, insets.bottom+16)`. **View session** = white outline pill (`rgba(255,255,255,0.6)` border, `flex:1`). **Start session today** = ACCENT `#24ac88` filled pill (`flex:1.25`), shown only for launcher / past contexts. When only View is shown it fills the row.
 
 ---
 
@@ -2844,7 +2852,7 @@ The trainer note and session highlights widgets are already built — only the N
 - Training note history: loaded from last 10 completed sessions on workout open; shown read-only in "PREVIOUS SESSIONS" section at top of training notes modal
 - Exercise (i) bounce: fires once on first card expansion when notes exist (not on mount)
 - Set (i) bounce: fires once on InlineSetRow mount (fires when card is expanded)
-- Training notes accessed via **(i) button** in the expanded header (next to workout name) — NOT in the ⋯ menu. White dot on (i) disappears once modal opened (`trainingNotesViewed` flag, resets each load). (i) turns ACCENT green when notes exist.
+- Training notes accessed from the **⋯ menu** (Training Notes is the first row) — the old expanded-header (i) button was removed (July 2026), matching the client. A green dot shows on the ⋯ button (and on the Training Notes row) when notes are unread; it clears once the modal is opened (`trainingNotesViewed` flag, resets each load).
 - Pre-session popups: notes popup first (if last session had training notes) → order mismatch popup second (only shown after notes popup dismissed)
 - All popups and info panels: white centered modal — NEVER dark glass bottom sheet
 - All confirmation/soft-prompt dialogs: custom confirmModal pattern — NEVER native Alert.alert (error-only single-button alerts are fine)

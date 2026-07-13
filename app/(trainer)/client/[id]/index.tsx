@@ -1193,7 +1193,7 @@ function TrainingTab({
                   key={c.id}
                   style={sectionStyles.wCardOuter}
                   activeOpacity={0.85}
-                  onPress={() => router.push(`/(trainer)/client/${clientId}/workout/session-intro?workoutId=${c.id}` as any)}
+                  onPress={() => router.push(`/(trainer)/client/${clientId}/workout/${c.id}` as any)}
                 >
                   <View style={sectionStyles.wCard}>
                     <View style={sectionStyles.wCover}>
@@ -1292,7 +1292,7 @@ function TrainingTab({
             ) : (
               <TouchableOpacity
                 style={coverCardStyles.card}
-                onPress={() => router.push(`/(trainer)/client/${clientId}/workout/session-intro?workoutId=${lastSessionWorkoutId}` as any)}
+                onPress={() => router.push(`/(trainer)/client/${clientId}/workout/${lastSessionWorkoutId}` as any)}
                 activeOpacity={0.92}
               >
                 {lastSessionCoverImageUrl ? (
@@ -1521,7 +1521,7 @@ function TrainingTab({
               workouts={allWksForPicker}
               onPick={(workoutId) => {
                 setLogWorkoutModal(false);
-                router.push(`/(trainer)/client/${clientId}/workout/session-intro?workoutId=${workoutId}` as any);
+                router.push(`/(trainer)/client/${clientId}/workout/${workoutId}` as any);
               }}
               onClose={() => setLogWorkoutModal(false)}
             />
@@ -1915,7 +1915,7 @@ function WeekStripCard({
           <View key={session.id} style={wsStyles.sessCardOuter}>
             <TouchableOpacity
               style={wsStyles.sessCardInner}
-              onPress={() => session.workoutId ? router.push(`/(trainer)/client/${clientId}/workout/session-intro?workoutId=${session.workoutId}` as any) : undefined}
+              onPress={() => session.workoutId ? router.push(`/(trainer)/client/${clientId}/workout/${session.workoutId}` as any) : undefined}
               activeOpacity={0.88}
             >
               <View style={wsStyles.sessCover}>
@@ -1955,7 +1955,7 @@ function WeekStripCard({
           <View key={session.id} style={wsStyles.sessCardOuter}>
             <TouchableOpacity
               style={wsStyles.sessCardInner}
-              onPress={() => detail.workoutId ? router.push(`/(trainer)/client/${clientId}/workout/session-intro?workoutId=${detail.workoutId}` as any) : undefined}
+              onPress={() => detail.workoutId ? router.push(`/(trainer)/client/${clientId}/workout/${detail.workoutId}` as any) : undefined}
               activeOpacity={0.88}
             >
               {/* Cover image */}

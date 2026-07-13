@@ -768,7 +768,12 @@ export default function TrainTabScreen() {
               daySessions={daySessions}
               sessionDetails={sessionDetails}
               onStartSession={() => setStartModalOpen(true)}
-              onOpenSession={(id) => router.push(`/(client)/workout/session-intro?workoutId=${id}` as any)}
+              onOpenSession={(id, opts) => {
+                let url = `/(client)/workout/session-intro?workoutId=${id}`;
+                if (opts?.date) url += `&sessionDate=${opts.date}`;
+                if (opts?.planned) url += '&planned=1';
+                router.push(url as any);
+              }}
               screenWidth={sw}
               weekOffset={weekOffset}
               onGoToToday={() => { setWeekOffset(0); setSelectedDate(todayStr); }}
@@ -1374,7 +1379,7 @@ interface WeeklyGaugeCardProps {
   daySessions: WeekSession[];
   sessionDetails: Record<string, SessionDetail>;
   onStartSession: () => void;
-  onOpenSession: (workoutId: string) => void;
+  onOpenSession: (workoutId: string, opts?: { date?: string; planned?: boolean }) => void;
   screenWidth: number;
   weekOffset: number;
   onOpenCalendar: () => void;
@@ -1542,7 +1547,13 @@ function WeeklyGaugeCard({
               /* Planned (scheduled) session — not performed. The client logs it for real on the day. */
               <View key={session.id} style={gcStyles.sessCardOuter}>
                 <View style={gcStyles.sessCard}>
-                  <View style={{ height: 62 }}>
+                  {/* Planned/future days are view-only — tapping the cover opens the pre-session
+                      screen with just "View session" (they can't start a future day). */}
+                  <TouchableOpacity
+                    activeOpacity={0.88}
+                    onPress={() => session.workout_id && onOpenSession(session.workout_id, { date: selectedDate, planned: true })}
+                    style={{ height: 62 }}
+                  >
                     {session.coverImageUrl
                       ? <Image source={{ uri: session.coverImageUrl }} style={StyleSheet.absoluteFill} resizeMode="cover" />
                       : <LinearGradient colors={['#2a5448', '#1a3832']} style={StyleSheet.absoluteFill} />
@@ -1556,7 +1567,7 @@ function WeeklyGaugeCard({
                         <Text style={gcStyles.sessCatPillText}>{session.category}</Text>
                       </View>
                     )}
-                  </View>
+                  </TouchableOpacity>
                   <View style={gcStyles.hlWrap}>
                     <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
                       <Text style={gcStyles.plannedNote}>
@@ -1577,7 +1588,7 @@ function WeeklyGaugeCard({
               <View style={gcStyles.sessCard}>
                 <TouchableOpacity
                   activeOpacity={0.88}
-                  onPress={() => session.workout_id && onOpenSession(session.workout_id)}
+                  onPress={() => session.workout_id && onOpenSession(session.workout_id, { date: selectedDate })}
                 >
                   <View style={{ height: 62 }}>
                     {session.coverImageUrl

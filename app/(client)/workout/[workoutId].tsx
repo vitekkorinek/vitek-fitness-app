@@ -411,8 +411,12 @@ export default function TrainerWorkoutSessionScreen() {
   const COLLAPSE_END = HEADER_MAX - HEADER_MIN;
   const COLLAPSE_START = Math.max(0, COLLAPSE_END - 80);
 
-  const { workoutId, autoStart, resumeSessionId, resumeStartedAt, viewOnly } = useLocalSearchParams<{ workoutId: string; autoStart?: string; resumeSessionId?: string; resumeStartedAt?: string; viewOnly?: string }>();
+  const { workoutId, autoStart, resumeSessionId, resumeStartedAt, viewOnly, viewMode } = useLocalSearchParams<{ workoutId: string; autoStart?: string; resumeSessionId?: string; resumeStartedAt?: string; viewOnly?: string; viewMode?: string }>();
   const isViewOnly = viewOnly === '1';
+  // View-only is always read-only (never startable — Start is only ever the "Start session
+  // today" button on the pre-session screen). Header pill: a completed session shows a
+  // non-clickable "mm:ss · FINISHED" pill; every other view shows no pill.
+  const showFinishedPill = isViewOnly && viewMode === 'finished';
   const isFreeSession = workoutId === 'free';
   const router = useRouter();
   const { startedAt, start: startSession, resume: resumeSession, finish: finishSession, suspendSession, clearSuspendedSession } = useSessionStore();
@@ -441,6 +445,8 @@ export default function TrainerWorkoutSessionScreen() {
   const [sessionHistory, setSessionHistory] = useState<SessionHistoryEntry[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [pastSession, setPastSession] = useState<PastSession | null>(null);
+  // Duration of the most recent completed session — shown in the view-only FINISHED pill.
+  const [viewedSessionDuration, setViewedSessionDuration] = useState<number | null>(null);
   const [videoModalUrl, setVideoModalUrl] = useState<string | null>(null);
   const [videoOverlayEx, setVideoOverlayEx] = useState<{ exerciseName: string; muscleGroups: string[]; equipment: string | null; videoUrls: string[]; photoUrls: string[] } | null>(null);
 
@@ -724,12 +730,13 @@ export default function TrainerWorkoutSessionScreen() {
       supabase.from('sessions').select('*', { count: 'exact', head: true }).eq('workout_id', workoutId).eq('client_id', clientId).eq('status', 'completed'),
       // Fetch last 10 sessions so we can find the most recent weight per exercise+set,
       // even if individual sessions didn't cover all exercises.
-      supabase.from('sessions').select('id, date').eq('workout_id', workoutId).eq('client_id', clientId).eq('status', 'completed').order('created_at', { ascending: false }).limit(10),
+      supabase.from('sessions').select('id, date, duration_seconds').eq('workout_id', workoutId).eq('client_id', clientId).eq('status', 'completed').order('created_at', { ascending: false }).limit(10),
       // Fetch all sessions oldest-first so we can find first-completed data per exercise (for peek).
       supabase.from('sessions').select('id').eq('workout_id', workoutId).eq('client_id', clientId).eq('status', 'completed').order('created_at', { ascending: true }),
       supabase.from('workout_exercise_slots').select('id, slot_number, current_exercise_id').eq('workout_id', workoutId),
     ]);
     setSessionCount(sessCount ?? 0);
+    setViewedSessionDuration(((recentSessData as any[])?.[0]?.duration_seconds) ?? null);
 
     // Build map: exercise_id → movedFromLabel (from permanent drag history)
     const exIdToMoveLabel = new Map<string, string>();
@@ -1097,7 +1104,7 @@ export default function TrainerWorkoutSessionScreen() {
         .maybeSingle();
 
       if (lastCompletedSess) {
-        let mismatches: Array<{ name: string; programmedPos: number; lastPos: number }> = [];
+        let mismatches: Array<{ name: string; programmedPos: number; lastPos: number; workoutExerciseId: string }> = [];
 
         if (slotRows?.length) {
           const slotIds = (slotRows as any[]).map((s: any) => s.id);
@@ -2768,11 +2775,33 @@ export default function TrainerWorkoutSessionScreen() {
               <TouchableOpacity style={styles.editDoneBtn} onPress={exitEditMode} activeOpacity={0.8}>
                 <Text style={styles.editDoneBtnText}>Done</Text>
               </TouchableOpacity>
-            ) : (
-              <TouchableOpacity style={styles.combinedPill} onPress={isRunning && !pastSession ? handleFinish : handleStartPress} activeOpacity={0.85}>
+            ) : isRunning && !pastSession ? (
+              // Active session (including one started from a view-only "Start today" pill).
+              <TouchableOpacity style={styles.combinedPill} onPress={handleFinish} activeOpacity={0.85}>
                 <Text style={styles.combinedPillTimerText}>{formatTimer(elapsed)}</Text>
                 <View style={styles.combinedPillSep} />
-                <Text style={styles.combinedPillFinishText}>{isRunning && !pastSession ? 'FINISH' : 'START'}</Text>
+                <Text style={styles.combinedPillFinishText}>FINISH</Text>
+              </TouchableOpacity>
+            ) : showFinishedPill ? (
+              // Completed session in view-only mode: session duration + FINISHED, not tappable.
+              <View style={styles.combinedPill}>
+                {viewedSessionDuration != null && (
+                  <>
+                    <Text style={styles.combinedPillTimerText}>{formatTimer(viewedSessionDuration)}</Text>
+                    <View style={styles.combinedPillSep} />
+                  </>
+                )}
+                <Text style={styles.combinedPillFinishText}>FINISHED</Text>
+              </View>
+            ) : isViewOnly ? (
+              // View-only is always read-only — never startable. Non-completed views show no pill.
+              null
+            ) : (
+              // Not started (real session flow): tap START to begin logging.
+              <TouchableOpacity style={styles.combinedPill} onPress={handleStartPress} activeOpacity={0.85}>
+                <Text style={styles.combinedPillTimerText}>{formatTimer(elapsed)}</Text>
+                <View style={styles.combinedPillSep} />
+                <Text style={styles.combinedPillFinishText}>START</Text>
               </TouchableOpacity>
             )}
           </View>
@@ -2966,6 +2995,7 @@ export default function TrainerWorkoutSessionScreen() {
                                   isLiveShown={false}
                                   isLiveActive={false}
                                   onLiveTap={undefined}
+                                  readOnly={isViewOnly}
                                   isRevealed={revealedExId === member.workoutExerciseId}
                                   onReveal={setRevealedExId}
                                   onSwipeLeftOpen={handleEditBeforeStart}
@@ -3033,6 +3063,7 @@ export default function TrainerWorkoutSessionScreen() {
                           isLiveShown={false}
                           isLiveActive={false}
                           onLiveTap={undefined}
+                          readOnly={isViewOnly}
                           isRevealed={revealedExId === ex.workoutExerciseId}
                           onReveal={setRevealedExId}
                           onSwipeLeftOpen={handleEditBeforeStart}
@@ -3162,6 +3193,7 @@ export default function TrainerWorkoutSessionScreen() {
           onAddClientNote={text => addClientNote(infoModalExIdx, text)}
           onDeleteClientNote={noteId => deleteClientNote(infoModalExIdx, noteId)}
           onClose={() => setInfoModalExIdx(null)}
+          readOnly={isViewOnly}
         />
       )}
 
@@ -3398,13 +3430,14 @@ export default function TrainerWorkoutSessionScreen() {
           }
           hasTrainingNotes={hasTrainingNotes}
           trainingNotesViewed={trainingNotesViewed}
-          category={workout?.category}
+          category={workout?.category ?? undefined}
           trainerNotes={trainingTrainerNotes}
           clientNotes={trainingClientNotes}
           noteHistory={trainingNoteHistory}
           onAddNote={addTrainingNote}
           onDeleteNote={deleteTrainingNote}
           onMarkViewed={() => setTrainingNotesViewed(true)}
+          readOnly={isViewOnly}
           muscleGroups={muscleGroups}
           equipmentList={equipmentList}
           sessionHistory={sessionHistory}
@@ -3857,11 +3890,13 @@ function ExerciseCard({
   isLiveShown,
   isLiveActive,
   onLiveTap,
+  readOnly,
 }: {
   exercise: SessionExercise;
   isExpanded: boolean;
   isSuperset: boolean;
   isDragging: boolean;
+  readOnly?: boolean;
   isTrainer: boolean;
   isEditMode: boolean;
   isSelected: boolean;
@@ -4058,7 +4093,7 @@ function ExerciseCard({
     <View>
     <Swipeable
       ref={swipeableRef}
-      enabled={!isEditMode}
+      enabled={!isEditMode && !readOnly}
       renderRightActions={renderRightActions}
       renderLeftActions={renderLeftActions}
       onSwipeableOpen={handleSwipeableOpen}
@@ -4077,12 +4112,13 @@ function ExerciseCard({
               style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8 }}
               activeOpacity={0.85}
               onPress={onToggleExpand}
-              onLongPress={!isExpanded ? () => { onLongPressCollapsed?.(); } : undefined}
+              onLongPress={!isExpanded && !readOnly ? () => { onLongPressCollapsed?.(); } : undefined}
               delayLongPress={300}
             >
               <Animated.View style={{ transform: [{ scale: doneCircleScale }] }}>
                 <TouchableOpacity
-                  onPress={exercise.isDone ? onUnmarkDone : onMarkDone}
+                  onPress={readOnly ? undefined : (exercise.isDone ? onUnmarkDone : onMarkDone)}
+                  disabled={readOnly}
                   hitSlop={10}
                   style={[styles.numCircle, exercise.isDone && styles.numCircleDone]}
                 >
@@ -4142,7 +4178,7 @@ function ExerciseCard({
 
             {/* Bar selector — barbell and z-bar exercises */}
             {isBarType && (
-              <View style={styles.barSelectorRow}>
+              <View style={styles.barSelectorRow} pointerEvents={readOnly ? 'none' : 'auto'}>
                 {(() => {
                   const hasPeekSetData = peekingSetId !== null && exercise.sets.some(s => s.firstSessionWeightKg != null || s.firstSessionReps != null);
                   const peekBarbellWeight = hasPeekSetData
@@ -4209,7 +4245,7 @@ function ExerciseCard({
 
             {/* Machine selector — cable and machine exercises */}
             {isCableMachine && (
-              <View style={styles.barSelectorRow}>
+              <View style={styles.barSelectorRow} pointerEvents={readOnly ? 'none' : 'auto'}>
                 {(() => {
                   const peekedSet = peekingSetId != null ? exercise.sets.find(s => s.localId === peekingSetId) ?? null : null;
                   const hasPeekSetData = peekedSet != null && (peekedSet.firstSessionWeightKg != null || peekedSet.firstSessionReps != null);
@@ -4291,13 +4327,15 @@ function ExerciseCard({
                       isPeeking={peekingSetId !== null}
                       onPeekStart={() => setPeekingSetId(s.localId)}
                       onPeekEnd={() => setPeekingSetId(null)}
+                      readOnly={readOnly}
                     />
                   </View>
                 );
               });
             })()}
 
-            {addSetMenuOpen ? (
+            {/* Add / camera / rest-timer affordances hidden in read-only view. */}
+            {!readOnly && (addSetMenuOpen ? (
               <View style={styles.addSetMenu}>
                 <TouchableOpacity style={styles.addSetMenuBtn} onPress={() => { onAddRegularSet(); setAddSetMenuOpen(false); }} activeOpacity={0.7}>
                   <SymbolView name="plus.circle" size={16} tintColor={ACCENT} />
@@ -4320,13 +4358,15 @@ function ExerciseCard({
                   <Text style={styles.addSetBtnText}>{en.doMode.addPhoto}</Text>
                 </DashedBtnWrapper>
               </View>
-            )}
+            ))}
 
             {/* Start timer button */}
-            <TouchableOpacity style={styles.startTimerBtn} onPress={() => onStartRest()} activeOpacity={0.7}>
-              <SymbolView name="timer" size={14} tintColor={ACCENT} />
-              <Text style={styles.startTimerBtnText}>{en.doMode.startTimer}</Text>
-            </TouchableOpacity>
+            {!readOnly && (
+              <TouchableOpacity style={styles.startTimerBtn} onPress={() => onStartRest()} activeOpacity={0.7}>
+                <SymbolView name="timer" size={14} tintColor={ACCENT} />
+                <Text style={styles.startTimerBtnText}>{en.doMode.startTimer}</Text>
+              </TouchableOpacity>
+            )}
 
             {/* Session photo thumbnails */}
             {photoUrls.length > 0 && (
@@ -4437,6 +4477,7 @@ function InlineSetRow({
   isPeeking,
   onPeekStart,
   onPeekEnd,
+  readOnly,
 }: {
   set: SessionSet;
   onChangeReps: (v: string) => void;
@@ -4451,6 +4492,7 @@ function InlineSetRow({
   isPeeking: boolean;
   onPeekStart: () => void;
   onPeekEnd: () => void;
+  readOnly?: boolean;
 }) {
   const hasSetNotes = set.trainerNotes.length + set.clientNotes.length > 0;
   const noteBounceAnim = useRef(new Animated.Value(1)).current;
@@ -4534,7 +4576,7 @@ function InlineSetRow({
         placeholder={set.targetWeightKg != null ? String(set.targetWeightKg) : '—'}
         placeholderTextColor="#bbb"
         keyboardType="decimal-pad"
-        editable={!set.isRemoved && !isPeeking}
+        editable={!set.isRemoved && !isPeeking && !readOnly}
         selectTextOnFocus
       />
 
@@ -4546,7 +4588,7 @@ function InlineSetRow({
         placeholder={set.targetReps != null ? String(set.targetReps) : '—'}
         placeholderTextColor="#bbb"
         keyboardType="number-pad"
-        editable={!set.isRemoved && !isPeeking}
+        editable={!set.isRemoved && !isPeeking && !readOnly}
         selectTextOnFocus
       />
 
@@ -4554,15 +4596,26 @@ function InlineSetRow({
         <Text style={[styles.totalText, isPeeking && styles.totalTextPeeking]}>{totalStr}</Text>
       </View>
 
-      <TouchableOpacity onPress={onSetDone} style={styles.setIconBtn} activeOpacity={0.7}>
-        <View style={[styles.setDoneCheck, set.isDone && styles.setDoneCheckActive]}>
-          {set.isDone && <Text style={styles.setDoneCheckMark}>✓</Text>}
-        </View>
-      </TouchableOpacity>
+      {/* Set-done + remove are logging actions — in read-only view keep the two columns as
+          empty spacers so the inputs stay aligned with the KG/REPS/TOTAL header above. */}
+      {readOnly ? (
+        <>
+          <View style={styles.setIconBtn} />
+          <View style={styles.setIconBtn} />
+        </>
+      ) : (
+        <>
+          <TouchableOpacity onPress={onSetDone} style={styles.setIconBtn} activeOpacity={0.7}>
+            <View style={[styles.setDoneCheck, set.isDone && styles.setDoneCheckActive]}>
+              {set.isDone && <Text style={styles.setDoneCheckMark}>✓</Text>}
+            </View>
+          </TouchableOpacity>
 
-      <TouchableOpacity onPress={onRemoveSet} style={styles.setIconBtn}>
-        <Text style={[styles.setRemoveX, set.isRemoved && styles.setRemoveXActive]}>✕</Text>
-      </TouchableOpacity>
+          <TouchableOpacity onPress={onRemoveSet} style={styles.setIconBtn}>
+            <Text style={[styles.setRemoveX, set.isRemoved && styles.setRemoveXActive]}>✕</Text>
+          </TouchableOpacity>
+        </>
+      )}
     </View>
   );
 }
@@ -4591,7 +4644,7 @@ function SubInfoSheet({ title, onClose, children }: { title: string; onClose: ()
 }
 
 // ─── DotsMenuSheet ───────────────────────────────────────────────────────────────
-function DotsMenuSheet({ onClose, title, sessionLabel, hasTrainingNotes, trainingNotesViewed, category, trainerNotes, clientNotes, noteHistory, onAddNote, onDeleteNote, onMarkViewed, muscleGroups, equipmentList, sessionHistory, historyLoading, onLoadHistory, onNavigatePastSession }: {
+function DotsMenuSheet({ onClose, title, sessionLabel, hasTrainingNotes, trainingNotesViewed, category, trainerNotes, clientNotes, noteHistory, onAddNote, onDeleteNote, onMarkViewed, muscleGroups, equipmentList, sessionHistory, historyLoading, onLoadHistory, onNavigatePastSession, readOnly }: {
   onClose: () => void; title: string; sessionLabel: string; hasTrainingNotes: boolean; trainingNotesViewed: boolean; category?: string;
   trainerNotes: NoteEntry[]; clientNotes: NoteEntry[]; noteHistory: TrainingNoteHistorySession[];
   onAddNote: (role: 'trainer' | 'client', text: string) => Promise<boolean>;
@@ -4601,6 +4654,7 @@ function DotsMenuSheet({ onClose, title, sessionLabel, hasTrainingNotes, trainin
   sessionHistory: SessionHistoryEntry[]; historyLoading: boolean;
   onLoadHistory: () => void;
   onNavigatePastSession: (id: string, date: string) => void;
+  readOnly?: boolean;
 }) {
   const { translateY: sheetY, panHandlers: sheetPan, dismiss } = useSheetDismissGesture(onClose);
   const close = (then?: () => void) => { dismiss(); then && setTimeout(then, 230); };
@@ -4668,6 +4722,7 @@ function DotsMenuSheet({ onClose, title, sessionLabel, hasTrainingNotes, trainin
             onAddNote={onAddNote}
             onDeleteNote={onDeleteNote}
             onClose={() => setNotesOpen(false)}
+            readOnly={readOnly}
           />
         )}
 
@@ -4733,6 +4788,7 @@ function ExerciseInfoModal({
   onAddClientNote,
   onDeleteClientNote,
   onClose,
+  readOnly,
 }: {
   exercise: SessionExercise;
   sessionCount: number;
@@ -4743,6 +4799,7 @@ function ExerciseInfoModal({
   onAddClientNote: (text: string) => void;
   onDeleteClientNote: (id: string) => void;
   onClose: () => void;
+  readOnly?: boolean;
 }) {
   const { profile: modalProfile } = useAuth();
   const [newNote, setNewNote] = useState('');
@@ -4846,16 +4903,18 @@ function ExerciseInfoModal({
                     <Text style={[styles.noteDateLabel, styles.clientNoteDateLabel, n.isDeleted && styles.noteDeletedText]}>{n.date}</Text>
                     <Text style={[styles.noteBodyText, styles.clientNoteBodyText, n.isDeleted && styles.noteDeletedText]}>{n.text}</Text>
                   </View>
-                  <TouchableOpacity onPress={() => onDeleteClientNote(n.id)} hitSlop={10} style={styles.noteDeleteBtn}>
-                    <SymbolView name="xmark" size={11} tintColor={n.isDeleted ? ACCENT : '#ccc'} />
-                  </TouchableOpacity>
+                  {!readOnly && (
+                    <TouchableOpacity onPress={() => onDeleteClientNote(n.id)} hitSlop={10} style={styles.noteDeleteBtn}>
+                      <SymbolView name="xmark" size={11} tintColor={n.isDeleted ? ACCENT : '#ccc'} />
+                    </TouchableOpacity>
+                  )}
                 </View>
               );
               return isNewest
                 ? <Animated.View key={n.id} style={{ opacity: newAnim }}>{entry}</Animated.View>
                 : entry;
             })}
-            {modalProfile?.role === 'client' && (
+            {modalProfile?.role === 'client' && !readOnly && (
               <View style={styles.noteAddRow}>
                 <TextInput
                   style={styles.noteAddInput}
@@ -5723,6 +5782,7 @@ function TrainingNotesModal({
   onAddNote,
   onDeleteNote,
   onClose,
+  readOnly,
 }: {
   trainerNotes: NoteEntry[];
   clientNotes: NoteEntry[];
@@ -5730,6 +5790,7 @@ function TrainingNotesModal({
   onAddNote: (role: 'trainer' | 'client', text: string) => Promise<boolean>;
   onDeleteNote: (role: 'trainer' | 'client', noteId: string) => void;
   onClose: () => void;
+  readOnly?: boolean;
 }) {
   const { profile: trainingNotesProfile } = useAuth();
   const [newNote, setNewNote] = useState('');
@@ -5825,12 +5886,14 @@ function TrainingNotesModal({
                   <Text style={[styles.noteDateLabel, styles.clientNoteDateLabel, n.isDeleted && styles.noteDeletedText]}>{n.date}</Text>
                   <Text style={[styles.noteBodyText, styles.clientNoteBodyText, n.isDeleted && styles.noteDeletedText]}>{n.text}</Text>
                 </View>
-                <TouchableOpacity onPress={() => onDeleteNote('client', n.id)} hitSlop={10} style={styles.noteDeleteBtn}>
-                  <SymbolView name="xmark" size={11} tintColor={n.isDeleted ? ACCENT : '#ccc'} />
-                </TouchableOpacity>
+                {!readOnly && (
+                  <TouchableOpacity onPress={() => onDeleteNote('client', n.id)} hitSlop={10} style={styles.noteDeleteBtn}>
+                    <SymbolView name="xmark" size={11} tintColor={n.isDeleted ? ACCENT : '#ccc'} />
+                  </TouchableOpacity>
+                )}
               </View>
             ))}
-            {trainingNotesProfile?.role === 'client' && (
+            {trainingNotesProfile?.role === 'client' && !readOnly && (
               <View style={styles.noteAddRow}>
                 <TextInput
                   style={styles.noteAddInput}

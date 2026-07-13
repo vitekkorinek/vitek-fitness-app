@@ -11,7 +11,7 @@ export type SuspendedSession = {
 interface SessionStore {
   startedAt: number | null;
   workoutId: string | null;
-  start: (workoutId: string) => void;
+  start: (workoutId?: string | null) => void;
   resume: (workoutId: string, startedAt: number) => void;
   finish: () => void;
   suspendedSession: SuspendedSession | null;
@@ -28,7 +28,7 @@ interface SessionStore {
 export const useSessionStore = create<SessionStore>((set) => ({
   startedAt: null,
   workoutId: null,
-  start: (workoutId) => set({ startedAt: Date.now(), workoutId }),
+  start: (workoutId = null) => set({ startedAt: Date.now(), workoutId }),
   resume: (workoutId, startedAt) => set({ startedAt, workoutId }),
   finish: () => set({ startedAt: null, workoutId: null }),
   suspendedSession: null,
