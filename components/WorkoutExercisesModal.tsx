@@ -59,6 +59,7 @@ export function WorkoutExercisesModal({
       .from('workout_exercises')
       .select('id, order_index, exercises(name, equipment)')
       .eq('workout_id', workoutId)
+      .eq('is_active', true)
       .order('order_index')
       .then(async ({ data: weData }) => {
         const weRows = (weData ?? []) as any[];

@@ -8,7 +8,6 @@ import {
   StyleSheet,
   StatusBar,
   ActivityIndicator,
-  Alert,
   Image,
   RefreshControl,
 } from 'react-native';
@@ -25,9 +24,10 @@ const HEADER = '#244e43';
 const ACCENT = '#24ac88';
 const BG = '#f0f1f3';
 const CARD = '#ffffff';
-const BORDER = '#e8e8e4';
 const TEXT = '#1a1a1a';
 const MUTED = '#999';
+
+type MainTab = 'workouts' | 'templates';
 
 type PickerWorkout = {
   id: string;
@@ -37,6 +37,15 @@ type PickerWorkout = {
   clientId: string;
   clientName: string;
   lastSessionDate: string | null;
+  createdAt: string;
+};
+
+type PickerTemplate = {
+  id: string;
+  name: string;
+  category: string | null;
+  coverImageUrl: string | null;
+  exerciseCount: number;
   createdAt: string;
 };
 
@@ -92,79 +101,31 @@ async function fetchAllWorkouts(trainerId: string): Promise<PickerWorkout[]> {
   }));
 }
 
-// Deep-copy a workout (exercises + sets) into a new standalone workout for `clientId`.
-// Returns the new workout's id.
-async function copyWorkoutToClient(
-  sourceId: string,
-  clientId: string,
-  profileId: string,
-): Promise<string> {
-  const { data: src } = await supabase.from('workouts').select('*').eq('id', sourceId).single();
-  if (!src) throw new Error('Source workout not found');
+async function fetchTemplates(trainerId: string): Promise<PickerTemplate[]> {
+  const { data: tRows } = await supabase
+    .from('workout_templates')
+    .select('id, name, category, cover_image_url, created_at')
+    .eq('created_by', trainerId)
+    .order('created_at', { ascending: false });
 
-  const { data: newW, error: wErr } = await supabase
-    .from('workouts')
-    .insert({
-      name: (src as any).name,
-      client_id: clientId,
-      routine_id: null,
-      created_by: profileId,
-      equipment_list: (src as any).equipment_list ?? [],
-      muscle_groups: (src as any).muscle_groups ?? [],
-      order_index: 0,
-      notes: (src as any).notes ?? null,
-      category: (src as any).category ?? null,
-      stretch_type: (src as any).stretch_type ?? null,
-      cover_image_url: (src as any).cover_image_url ?? null,
-    })
-    .select()
-    .single();
+  if (!tRows?.length) return [];
 
-  if (wErr || !newW) throw wErr ?? new Error('Could not create workout');
-  const newId = (newW as any).id;
+  const ids = (tRows as any[]).map(t => t.id);
+  const { data: teRows } = await supabase
+    .from('template_exercises')
+    .select('template_id')
+    .in('template_id', ids);
+  const countMap = new Map<string, number>();
+  (teRows ?? []).forEach((te: any) => countMap.set(te.template_id, (countMap.get(te.template_id) ?? 0) + 1));
 
-  const { data: srcExs } = await supabase
-    .from('workout_exercises')
-    .select('*')
-    .eq('workout_id', sourceId)
-    .order('order_index');
-
-  if (!srcExs?.length) return newId;
-
-  const weInserts = (srcExs as any[]).map(we => ({
-    workout_id: newId,
-    exercise_id: we.exercise_id,
-    order_index: we.order_index,
-    notes: we.notes ?? null,
-    is_superset: we.is_superset ?? false,
-    superset_group_id: we.superset_group_id ?? null,
-    equipment_type: we.equipment_type ?? null,
-    barbell_weight_kg: we.barbell_weight_kg ?? null,
+  return (tRows as any[]).map(t => ({
+    id: t.id,
+    name: t.name,
+    category: t.category ?? null,
+    coverImageUrl: t.cover_image_url ?? null,
+    exerciseCount: countMap.get(t.id) ?? 0,
+    createdAt: t.created_at,
   }));
-
-  const { data: newExs } = await supabase.from('workout_exercises').insert(weInserts).select();
-  if (!newExs?.length) return newId;
-
-  const idMap = new Map<string, string>();
-  (srcExs as any[]).forEach((we, i) => idMap.set(we.id, (newExs as any[])[i].id));
-
-  const srcWeIds = (srcExs as any[]).map(we => we.id);
-  const { data: srcSets } = await supabase.from('workout_sets').select('*').in('workout_exercise_id', srcWeIds);
-  if (!srcSets?.length) return newId;
-
-  const wsInserts = (srcSets as any[])
-    .map(s => ({
-      workout_exercise_id: idMap.get(s.workout_exercise_id),
-      set_number: s.set_number,
-      target_reps: s.target_reps ?? null,
-      target_weight_kg: s.target_weight_kg ?? null,
-      rest_seconds: s.rest_seconds ?? null,
-      is_added_during_session: false,
-    }))
-    .filter(s => s.workout_exercise_id);
-
-  if (wsInserts.length) await supabase.from('workout_sets').insert(wsInserts);
-  return newId;
 }
 
 export default function AddWorkoutToDayScreen() {
@@ -172,7 +133,9 @@ export default function AddWorkoutToDayScreen() {
   const router = useRouter();
   const { profile } = useAuth();
 
+  const [mainTab, setMainTab] = useState<MainTab>('workouts');
   const [allWorkouts, setAllWorkouts] = useState<PickerWorkout[]>([]);
+  const [templates, setTemplates] = useState<PickerTemplate[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [search, setSearch] = useState('');
@@ -180,12 +143,12 @@ export default function AddWorkoutToDayScreen() {
   const [selectedClientId, setSelectedClientId] = useState<string | null>(null);
   const [categoryExpanded, setCategoryExpanded] = useState(false);
   const [clientExpanded, setClientExpanded] = useState(false);
-  const [adding, setAdding] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     if (!profile) return;
-    const rows = await fetchAllWorkouts(profile.id);
-    setAllWorkouts(rows);
+    const [w, t] = await Promise.all([fetchAllWorkouts(profile.id), fetchTemplates(profile.id)]);
+    setAllWorkouts(w);
+    setTemplates(t);
   }, [profile]);
 
   useEffect(() => {
@@ -226,28 +189,26 @@ export default function AddWorkoutToDayScreen() {
     return [...performed, ...neverDone];
   }, [allWorkouts, search, selectedCategory, selectedClientId]);
 
-  const handlePick = useCallback(async (workout: PickerWorkout) => {
-    if (!profile || adding || !date) return;
-    setAdding(workout.id);
-    try {
-      // His own workout → schedule the same workout on this day (no duplicate row).
-      // Another client's workout → deep-copy into this client first, then schedule the copy.
-      const workoutId = workout.clientId === clientId
-        ? workout.id
-        : await copyWorkoutToClient(workout.id, clientId, profile.id);
+  const filteredTemplates = useMemo(() => {
+    return templates.filter(t => {
+      const q = search.trim().toLowerCase();
+      if (q && !t.name.toLowerCase().includes(q)) return false;
+      if (selectedCategory && t.category !== selectedCategory) return false;
+      return true;
+    });
+  }, [templates, search, selectedCategory]);
 
-      await supabase.from('sessions').insert({
-        workout_id: workoutId,
-        client_id: clientId,
-        date,
-        status: 'scheduled',
-      });
-      router.back();
-    } catch {
-      Alert.alert('Error', 'Could not add workout. Please try again.');
-      setAdding(null);
-    }
-  }, [profile, adding, date, clientId, router]);
+  // Tapping a workout no longer instant-schedules — it opens the builder in edit
+  // mode (review/tweak weights/exercises), which schedules + saves to the library
+  // on Save. `router.replace` so the builder's post-save back returns to the
+  // client profile (not this picker).
+  const openWorkout = useCallback((w: PickerWorkout) => {
+    router.replace(`/(trainer)/workout-builder?clientId=${clientId}&editWorkoutId=${w.id}&scheduleDate=${date}` as any);
+  }, [router, clientId, date]);
+
+  const openTemplate = useCallback((t: PickerTemplate) => {
+    router.replace(`/(trainer)/workout-builder?clientId=${clientId}&templateId=${t.id}&scheduleDate=${date}` as any);
+  }, [router, clientId, date]);
 
   return (
     <View style={styles.root}>
@@ -258,12 +219,30 @@ export default function AddWorkoutToDayScreen() {
             <SymbolView name="chevron.left" size={20} tintColor="#ffffff" />
           </TouchableOpacity>
           <View style={{ alignItems: 'center' }}>
-            <Text style={styles.headerTitle}>Add Workout</Text>
+            <Text style={styles.headerTitle}>Workouts Library</Text>
             {date ? <Text style={styles.headerSub}>{formatDay(date)}</Text> : null}
           </View>
           <View style={{ width: 28 }} />
         </View>
       </SafeAreaView>
+
+      {/* Workouts / Templates sub-tabs */}
+      <View style={styles.subTabRow}>
+        <View style={styles.subTabBar}>
+          {(['workouts', 'templates'] as MainTab[]).map(tab => (
+            <TouchableOpacity
+              key={tab}
+              style={[styles.subTabItem, mainTab === tab && styles.subTabItemActive]}
+              onPress={() => { setMainTab(tab); setClientExpanded(false); setCategoryExpanded(false); }}
+              activeOpacity={0.8}
+            >
+              <Text style={[styles.subTabText, mainTab === tab && styles.subTabTextActive]}>
+                {tab === 'workouts' ? 'Workouts' : 'Templates'}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+      </View>
 
       {loading ? (
         <View style={styles.loaderWrap}>
@@ -282,7 +261,7 @@ export default function AddWorkoutToDayScreen() {
             <SymbolView name="magnifyingglass" size={14} tintColor="#aaa" />
             <TextInput
               style={styles.searchInput}
-              placeholder="Search workouts..."
+              placeholder={mainTab === 'workouts' ? 'Search workouts...' : 'Search templates...'}
               placeholderTextColor="#bbb"
               value={search}
               onChangeText={setSearch}
@@ -292,7 +271,7 @@ export default function AddWorkoutToDayScreen() {
             />
           </View>
 
-          {/* Filter row */}
+          {/* Filter row — Category always; Client only on the Workouts tab */}
           <View style={styles.filterRow}>
             <TouchableOpacity
               style={[styles.dropdownBtn, categoryExpanded && styles.dropdownBtnActive]}
@@ -304,20 +283,22 @@ export default function AddWorkoutToDayScreen() {
               </Text>
               <SymbolView name="chevron.down" size={10} tintColor={categoryExpanded ? '#fff' : '#555'} />
             </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.dropdownBtn, clientExpanded && styles.dropdownBtnActive]}
-              onPress={() => { setClientExpanded(v => !v); setCategoryExpanded(false); }}
-              activeOpacity={0.8}
-            >
-              <Text style={[styles.dropdownBtnText, clientExpanded && styles.dropdownBtnTextActive]}>
-                {selectedClientName ?? 'All Clients'}
-              </Text>
-              <SymbolView name="chevron.down" size={10} tintColor={clientExpanded ? '#fff' : '#555'} />
-            </TouchableOpacity>
+            {mainTab === 'workouts' && (
+              <TouchableOpacity
+                style={[styles.dropdownBtn, clientExpanded && styles.dropdownBtnActive]}
+                onPress={() => { setClientExpanded(v => !v); setCategoryExpanded(false); }}
+                activeOpacity={0.8}
+              >
+                <Text style={[styles.dropdownBtnText, clientExpanded && styles.dropdownBtnTextActive]}>
+                  {selectedClientName ?? 'All Clients'}
+                </Text>
+                <SymbolView name="chevron.down" size={10} tintColor={clientExpanded ? '#fff' : '#555'} />
+              </TouchableOpacity>
+            )}
           </View>
 
           {/* Client panel */}
-          {clientExpanded && (
+          {clientExpanded && mainTab === 'workouts' && (
             <View style={styles.panel}>
               <Text style={styles.panelLabel}>CLIENT</Text>
               <View style={styles.pills}>
@@ -375,55 +356,105 @@ export default function AddWorkoutToDayScreen() {
             </View>
           )}
 
-          {/* List */}
-          {workouts.length === 0 ? (
-            <View style={styles.emptyWrap}>
-              <Text style={styles.emptyText}>No workouts found</Text>
-            </View>
-          ) : (
-            <View style={{ gap: 8 }}>
-              {workouts.map(w => {
-                const catColors = w.category ? CATEGORY_COLORS[w.category as WorkoutCategory] : null;
-                const subtitle = w.lastSessionDate
-                  ? `${w.clientName} · ${formatShortDate(w.lastSessionDate)}`
-                  : w.clientName;
-                return (
-                  <TouchableOpacity
-                    key={w.id}
-                    style={styles.card}
-                    onPress={() => handlePick(w)}
-                    activeOpacity={0.9}
-                    disabled={!!adding}
-                  >
-                    {w.coverImageUrl ? (
-                      <Image source={{ uri: w.coverImageUrl }} style={StyleSheet.absoluteFill} resizeMode="cover" />
-                    ) : (
-                      <LinearGradient
-                        colors={[catColors?.border ?? '#2a4a3e', '#1a3832']}
-                        style={StyleSheet.absoluteFill}
-                      />
-                    )}
-                    <View style={styles.cardScrim} />
-                    {adding === w.id && (
-                      <View style={styles.cardLoading}>
-                        <ActivityIndicator color="#fff" />
-                      </View>
-                    )}
-                    <View style={styles.cardBottom}>
-                      <View style={styles.cardBottomLeft}>
-                        <Text style={styles.cardName} numberOfLines={1}>{w.name}</Text>
-                        <Text style={styles.cardSub} numberOfLines={1}>{subtitle}</Text>
-                      </View>
-                      {catColors && (
-                        <View style={[styles.catPill, { backgroundColor: catColors.border }]}>
-                          <Text style={styles.catPillText}>{w.category}</Text>
+          {/* ── Workouts list ── */}
+          {mainTab === 'workouts' && (
+            workouts.length === 0 ? (
+              <View style={styles.emptyWrap}>
+                <Text style={styles.emptyText}>No workouts found</Text>
+              </View>
+            ) : (
+              <View style={{ gap: 8 }}>
+                {workouts.map(w => {
+                  const catColors = w.category ? CATEGORY_COLORS[w.category as WorkoutCategory] : null;
+                  const clientFirstName = (w.clientName ?? '').split(' ')[0];
+                  const subtitle = w.lastSessionDate ? formatShortDate(w.lastSessionDate) : 'Not yet done';
+                  return (
+                    <TouchableOpacity
+                      key={w.id}
+                      style={styles.card}
+                      onPress={() => openWorkout(w)}
+                      activeOpacity={0.9}
+                    >
+                      {w.coverImageUrl ? (
+                        <Image source={{ uri: w.coverImageUrl }} style={StyleSheet.absoluteFill} resizeMode="cover" />
+                      ) : (
+                        <LinearGradient
+                          colors={[catColors?.border ?? '#2a4a3e', '#1a3832']}
+                          style={StyleSheet.absoluteFill}
+                        />
+                      )}
+                      <View style={styles.cardScrim} />
+                      {!!clientFirstName && (
+                        <View style={styles.clientPill}>
+                          <SymbolView name="person.fill" size={9} tintColor="#fff" />
+                          <Text style={styles.clientPillText}>{clientFirstName}</Text>
                         </View>
                       )}
-                    </View>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
+                      <View style={styles.cardBottom}>
+                        <View style={styles.cardBottomLeft}>
+                          <Text style={styles.cardName} numberOfLines={1}>{w.name}</Text>
+                          <Text style={styles.cardSub} numberOfLines={1}>{subtitle}</Text>
+                        </View>
+                        {catColors && (
+                          <View style={[styles.catPill, { backgroundColor: catColors.border }]}>
+                            <Text style={styles.catPillText}>{w.category}</Text>
+                          </View>
+                        )}
+                      </View>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            )
+          )}
+
+          {/* ── Templates list ── */}
+          {mainTab === 'templates' && (
+            filteredTemplates.length === 0 ? (
+              <View style={styles.emptyWrap}>
+                <Text style={styles.emptyText}>No templates found</Text>
+              </View>
+            ) : (
+              <View style={{ gap: 8 }}>
+                {filteredTemplates.map(t => {
+                  const catColors = t.category ? CATEGORY_COLORS[t.category as WorkoutCategory] : null;
+                  return (
+                    <TouchableOpacity
+                      key={t.id}
+                      style={styles.card}
+                      onPress={() => openTemplate(t)}
+                      activeOpacity={0.9}
+                    >
+                      {t.coverImageUrl ? (
+                        <Image source={{ uri: t.coverImageUrl }} style={StyleSheet.absoluteFill} resizeMode="cover" />
+                      ) : (
+                        <LinearGradient
+                          colors={[catColors?.border ?? '#2a4a3e', '#1a3832']}
+                          style={StyleSheet.absoluteFill}
+                        />
+                      )}
+                      <View style={styles.cardScrim} />
+                      <View style={styles.templateBadge}>
+                        <Text style={styles.templateBadgeText}>TEMPLATE</Text>
+                      </View>
+                      <View style={styles.cardBottom}>
+                        <View style={styles.cardBottomLeft}>
+                          <Text style={styles.cardName} numberOfLines={1}>{t.name}</Text>
+                          <Text style={styles.cardSub} numberOfLines={1}>
+                            {t.exerciseCount} {t.exerciseCount === 1 ? 'exercise' : 'exercises'}
+                          </Text>
+                        </View>
+                        {catColors && (
+                          <View style={[styles.catPill, { backgroundColor: catColors.border }]}>
+                            <Text style={styles.catPillText}>{t.category}</Text>
+                          </View>
+                        )}
+                      </View>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            )
           )}
           <View style={{ height: 40 }} />
         </ScrollView>
@@ -443,17 +474,24 @@ const styles = StyleSheet.create({
   headerSub: { fontSize: 12, fontWeight: '500', color: 'rgba(255,255,255,0.65)', marginTop: 2 },
   loaderWrap: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   scroll: { flex: 1 },
-  content: { paddingHorizontal: 16, paddingTop: 14 },
+  content: { paddingHorizontal: 16, paddingTop: 4 },
+
+  subTabRow: { paddingHorizontal: 16, paddingTop: 12, paddingBottom: 4 },
+  subTabBar: { flexDirection: 'row', backgroundColor: '#e2e2de', borderRadius: 100, padding: 3 },
+  subTabItem: { flex: 1, alignItems: 'center', paddingVertical: 7, borderRadius: 100 },
+  subTabItemActive: { backgroundColor: CARD },
+  subTabText: { fontSize: 13, fontWeight: '600', color: MUTED },
+  subTabTextActive: { color: TEXT, fontWeight: '700' },
 
   searchBar: {
     flexDirection: 'row', alignItems: 'center',
     backgroundColor: CARD, borderRadius: 100,
-    paddingHorizontal: 12, paddingVertical: 10, gap: 8, marginBottom: 10,
+    paddingHorizontal: 12, paddingVertical: 10, gap: 8, marginTop: 10, marginBottom: 10,
     shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.06, shadowRadius: 4, elevation: 2,
   },
   searchInput: { flex: 1, fontSize: 15, color: TEXT, padding: 0 },
 
-  filterRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 },
+  filterRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 10 },
   dropdownBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 6,
     paddingHorizontal: 14, paddingVertical: 8,
@@ -493,11 +531,6 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFillObject,
     backgroundColor: 'rgba(0,0,0,0.28)',
   },
-  cardLoading: {
-    ...StyleSheet.absoluteFillObject,
-    alignItems: 'center', justifyContent: 'center',
-    backgroundColor: 'rgba(0,0,0,0.35)',
-  },
   cardBottom: {
     position: 'absolute', left: 0, right: 0, bottom: 0,
     flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between',
@@ -508,4 +541,17 @@ const styles = StyleSheet.create({
   cardSub: { fontSize: 10, color: 'rgba(255,255,255,0.65)', marginTop: 2 },
   catPill: { borderRadius: 100, paddingHorizontal: 8, paddingVertical: 3 },
   catPillText: { fontSize: 9, fontWeight: '700', color: '#fff' },
+  templateBadge: {
+    position: 'absolute', top: 8, left: 8,
+    backgroundColor: 'rgba(0,0,0,0.55)', borderRadius: 100,
+    paddingHorizontal: 8, paddingVertical: 3,
+  },
+  templateBadgeText: { fontSize: 9, fontWeight: '700', color: '#fff', letterSpacing: 0.5 },
+  clientPill: {
+    position: 'absolute', top: 8, left: 8,
+    flexDirection: 'row', alignItems: 'center', gap: 3,
+    backgroundColor: 'rgba(0,0,0,0.55)', borderRadius: 100,
+    paddingHorizontal: 8, paddingVertical: 3,
+  },
+  clientPillText: { fontSize: 10, fontWeight: '700', color: '#fff' },
 });

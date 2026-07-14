@@ -75,7 +75,7 @@ export function RoutineDetailsSheet({
       const wRows = (wData ?? []) as any[];
       const wIds = wRows.map(w => w.id);
       const { data: weData } = wIds.length
-        ? await supabase.from('workout_exercises').select('workout_id').in('workout_id', wIds)
+        ? await supabase.from('workout_exercises').select('workout_id').in('workout_id', wIds).eq('is_active', true)
         : { data: [] as any[] };
       const countMap = new Map<string, number>();
       ((weData ?? []) as any[]).forEach(we => countMap.set(we.workout_id, (countMap.get(we.workout_id) ?? 0) + 1));

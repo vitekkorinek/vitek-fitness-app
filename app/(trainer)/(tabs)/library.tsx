@@ -2084,10 +2084,8 @@ function WorkoutLibraryRow({
 
   const gradColors = (CATEGORY_GRADIENTS[workout.category ?? ''] ?? GRADIENT_DEFAULT) as [string, string];
   const catColors = workout.category ? CATEGORY_COLORS[workout.category as WorkoutCategory] : null;
-  const subtitle = [
-    workout.clientName,
-    workout.lastSessionDate ? formatShortDate(workout.lastSessionDate) : 'Not yet done',
-  ].join(' · ');
+  const clientFirstName = (workout.clientName ?? '').split(' ')[0];
+  const subtitle = workout.lastSessionDate ? formatShortDate(workout.lastSessionDate) : 'Not yet done';
 
   return (
     <TouchableOpacity style={coverCardStyles.card} onPress={onPress} activeOpacity={0.92}>
@@ -2103,6 +2101,12 @@ function WorkoutLibraryRow({
         style={StyleSheet.absoluteFill}
         pointerEvents="none"
       />
+      {!!clientFirstName && (
+        <View style={coverCardStyles.clientPill}>
+          <SymbolView name="person.fill" size={9} tintColor="#fff" />
+          <Text style={coverCardStyles.clientPillText}>{clientFirstName}</Text>
+        </View>
+      )}
       <TouchableOpacity style={coverCardStyles.menuBtn} onPress={onMenuPress} hitSlop={8} activeOpacity={0.5}>
         <SymbolView name="ellipsis" size={14} tintColor="rgba(255,255,255,0.9)" />
       </TouchableOpacity>
@@ -2573,6 +2577,13 @@ const coverCardStyles = StyleSheet.create({
     borderRadius: 100, paddingHorizontal: 8, paddingVertical: 3, flexShrink: 0,
   },
   catPillText: { fontSize: 9, fontWeight: '700', color: '#ffffff' },
+  clientPill: {
+    position: 'absolute', top: 9, left: 10,
+    flexDirection: 'row', alignItems: 'center', gap: 3,
+    backgroundColor: 'rgba(0,0,0,0.55)', borderRadius: 100,
+    paddingHorizontal: 8, paddingVertical: 3,
+  },
+  clientPillText: { fontSize: 10, fontWeight: '700', color: '#fff' },
 });
 
 const tmplStyles = StyleSheet.create({

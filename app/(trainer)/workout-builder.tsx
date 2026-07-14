@@ -54,6 +54,10 @@ type BuilderExercise = {
   sets: BuilderSet[];
   is_superset: boolean;
   expanded: boolean;
+  // Set only when loaded from an existing workout (edit-in-place flow). Preserved
+  // so save can update/keep the original workout_exercise row (and its logged
+  // history) instead of deleting + re-inserting it.
+  originalWeId?: string;
 };
 
 type SaveIntent =
@@ -172,6 +176,70 @@ async function fetchLastWeight(clientId: string, exerciseId: string): Promise<nu
   return null;
 }
 
+// For each exercise, find the client's most-recent completed-session performance
+// and return a map of set_number → { weight, reps } (as strings, '' when blank).
+// Used to pre-fill the builder when opening a workout to schedule — the trainer
+// sees what the client actually last did, not stale planned targets.
+async function fetchLastPerformedMap(
+  clientId: string,
+  exerciseIds: string[],
+): Promise<Map<string, Map<number, { weight: string; reps: string }>>> {
+  const result = new Map<string, Map<number, { weight: string; reps: string }>>();
+  if (exerciseIds.length === 0) return result;
+
+  const { data: weRows } = await supabase.from('workout_exercises').select('id, exercise_id').in('exercise_id', exerciseIds);
+  if (!weRows?.length) return result;
+  const weToEx = new Map<string, string>();
+  (weRows as any[]).forEach(r => weToEx.set(r.id, r.exercise_id));
+  const weIds = (weRows as any[]).map(r => r.id);
+
+  const { data: sessions } = await supabase
+    .from('sessions')
+    .select('id')
+    .eq('client_id', clientId)
+    .eq('status', 'completed')
+    .order('date', { ascending: false })
+    .order('created_at', { ascending: false })
+    .limit(60);
+  if (!sessions?.length) return result;
+  const sessionRank = new Map<string, number>(); // lower = more recent
+  (sessions as any[]).forEach((s, i) => sessionRank.set(s.id, i));
+  const sessionIds = (sessions as any[]).map(s => s.id);
+
+  const { data: logs } = await supabase
+    .from('session_logs')
+    .select('workout_exercise_id, session_id, set_number, weight_kg, reps_completed')
+    .in('workout_exercise_id', weIds)
+    .in('session_id', sessionIds)
+    .eq('is_removed', false)
+    .eq('is_dropset', false);
+  if (!logs?.length) return result;
+
+  // Most recent session per exercise
+  const bestSession = new Map<string, string>();
+  (logs as any[]).forEach(l => {
+    const exId = weToEx.get(l.workout_exercise_id);
+    if (!exId) return;
+    const rank = sessionRank.get(l.session_id) ?? Infinity;
+    const cur = bestSession.get(exId);
+    if (cur == null || rank < (sessionRank.get(cur) ?? Infinity)) bestSession.set(exId, l.session_id);
+  });
+
+  (logs as any[]).forEach(l => {
+    const exId = weToEx.get(l.workout_exercise_id);
+    if (!exId || bestSession.get(exId) !== l.session_id) return;
+    let m = result.get(exId);
+    if (!m) { m = new Map(); result.set(exId, m); }
+    if (!m.has(l.set_number)) {
+      m.set(l.set_number, {
+        weight: l.weight_kg != null ? String(l.weight_kg) : '',
+        reps: l.reps_completed != null ? String(l.reps_completed) : '',
+      });
+    }
+  });
+  return result;
+}
+
 // Ensure a client has a stretch workout of the given type — auto-provisioned from
 // the matching stretch template the first time a workout points to it. Returns
 // silently if the client already has one, or if no matching template exists. The
@@ -262,9 +330,19 @@ export default function WorkoutBuilderScreen() {
   // `clientId` is present only when launched from a specific client context
   // (client profile / routine detail). Launched from the Library it is empty —
   // the destination (template vs client → placement) is then chosen at Save time.
-  const { clientId = '', routineId: defaultRoutineId, templateId } = useLocalSearchParams<{ clientId?: string; routineId?: string; templateId?: string }>();
+  // `editWorkoutId` opens an existing workout to review/tweak (weights pre-filled
+  // from the client's last performance). `scheduleDate` (YYYY-MM-DD) schedules the
+  // saved workout on that day after Save. Both are set by the "Workouts Library"
+  // day picker (add-workout.tsx).
+  const { clientId = '', routineId: defaultRoutineId, templateId, editWorkoutId, scheduleDate } = useLocalSearchParams<{ clientId?: string; routineId?: string; templateId?: string; editWorkoutId?: string; scheduleDate?: string }>();
   const router = useRouter();
   const { profile } = useAuth();
+
+  // Edit-in-place bookkeeping: the source workout's owner (update in place only
+  // when it's THIS client's workout — otherwise Save copies), and the loaded cover
+  // URL so an unchanged remote cover isn't needlessly re-uploaded.
+  const [loadedWorkoutClientId, setLoadedWorkoutClientId] = useState<string | null>(null);
+  const [loadedCoverUrl, setLoadedCoverUrl] = useState<string | null>(null);
 
   const [workoutName, setWorkoutName] = useState('');
   const [workoutCategory, setWorkoutCategory] = useState<WorkoutCategory | null>(null);
@@ -338,38 +416,102 @@ export default function WorkoutBuilderScreen() {
       setWorkoutName(t.name ?? '');
       setWorkoutCategory((t.category ?? null) as WorkoutCategory | null);
       setStretchType((t.stretch_type ?? null) as 'upper_body' | 'lower_body' | 'full_body' | null);
-      if (t.cover_image_url) setCoverImageUri(t.cover_image_url);
+      if (t.cover_image_url) { setCoverImageUri(t.cover_image_url); setLoadedCoverUrl(t.cover_image_url); }
 
       const { data: tes } = await supabase.from('template_exercises').select('*').eq('template_id', templateId).order('order_index', { ascending: true });
       const teList = (tes ?? []) as any[];
       if (teList.length === 0) return;
-      const exIds = [...new Set(teList.map(te => te.exercise_id))];
+      const exIds = [...new Set(teList.map(te => te.exercise_id))] as string[];
       const { data: exs } = await supabase.from('exercises').select('*').in('id', exIds);
       const exMap = new Map((exs ?? []).map((e: any) => [e.id, e as Exercise]));
       const { data: tss } = await supabase.from('template_sets').select('*').in('template_exercise_id', teList.map(te => te.id)).order('set_number', { ascending: true });
       const tsByTe = new Map<string, any[]>();
       (tss ?? []).forEach((s: any) => { const arr = tsByTe.get(s.template_exercise_id) ?? []; arr.push(s); tsByTe.set(s.template_exercise_id, arr); });
 
+      // Overlay the client's last-performed weight/reps (when scheduling for a
+      // known client). For a template we keep the blueprint's own numbers when the
+      // client has no history for that exercise.
+      const lastPerf = clientId ? await fetchLastPerformedMap(clientId, exIds) : new Map();
+
       const loaded: BuilderExercise[] = [];
       for (const te of teList) {
         const ex = exMap.get(te.exercise_id);
         if (!ex) continue;
+        const perfForEx = lastPerf.get(te.exercise_id);
         const setRows = (tsByTe.get(te.id) ?? []).sort((a, b) => a.set_number - b.set_number);
         const sets: BuilderSet[] = setRows.length > 0
-          ? setRows.map(s => ({
-              key: uid(),
-              set_number: s.set_number,
-              target_reps: s.target_reps != null ? String(s.target_reps) : '',
-              target_weight_kg: s.target_weight_kg != null ? String(s.target_weight_kg) : '',
-              rest_seconds: s.rest_seconds != null ? String(s.rest_seconds) : '',
-            }))
+          ? setRows.map(s => {
+              const perf = perfForEx?.get(s.set_number);
+              return {
+                key: uid(),
+                set_number: s.set_number,
+                target_reps: perf ? perf.reps : (s.target_reps != null ? String(s.target_reps) : ''),
+                target_weight_kg: perf ? perf.weight : (s.target_weight_kg != null ? String(s.target_weight_kg) : ''),
+                rest_seconds: s.rest_seconds != null ? String(s.rest_seconds) : '',
+              };
+            })
           : [makeSet(1), makeSet(2), makeSet(3)];
         loaded.push({ key: uid(), exercise: ex, sets, is_superset: !!te.is_superset, expanded: false });
       }
       if (!cancelled) setItems(loaded);
     })();
     return () => { cancelled = true; };
-  }, [templateId]);
+  }, [templateId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Launched from the Workouts Library day picker: preload an existing workout to
+  // review/tweak before scheduling. Set rows are pre-filled with the client's
+  // last-performed weight/reps (blank when never done) — not stale planned targets.
+  useEffect(() => {
+    if (!editWorkoutId) return;
+    let cancelled = false;
+    (async () => {
+      const { data: w } = await supabase.from('workouts').select('*').eq('id', editWorkoutId).maybeSingle();
+      if (cancelled || !w) return;
+      const wr = w as any;
+      setWorkoutName(wr.name ?? '');
+      setWorkoutCategory((wr.category ?? null) as WorkoutCategory | null);
+      setStretchType((wr.stretch_type ?? null) as 'upper_body' | 'lower_body' | 'full_body' | null);
+      setLoadedWorkoutClientId(wr.client_id ?? null);
+      if (wr.cover_image_url) { setCoverImageUri(wr.cover_image_url); setLoadedCoverUrl(wr.cover_image_url); }
+
+      const { data: wes } = await supabase.from('workout_exercises').select('*').eq('workout_id', editWorkoutId).eq('is_active', true).order('order_index', { ascending: true });
+      const weList = (wes ?? []) as any[];
+      if (weList.length === 0) { if (!cancelled) setItems([]); return; }
+      const exIds = [...new Set(weList.map(we => we.exercise_id))] as string[];
+      const { data: exs } = await supabase.from('exercises').select('*').in('id', exIds);
+      const exMap = new Map((exs ?? []).map((e: any) => [e.id, e as Exercise]));
+      const { data: wss } = await supabase.from('workout_sets').select('*').in('workout_exercise_id', weList.map(we => we.id)).order('set_number', { ascending: true });
+      const wsByWe = new Map<string, any[]>();
+      (wss ?? []).forEach((s: any) => { const arr = wsByWe.get(s.workout_exercise_id) ?? []; arr.push(s); wsByWe.set(s.workout_exercise_id, arr); });
+
+      // Pre-fill from the client this workout will be scheduled for (the launch
+      // clientId), falling back to the workout's own owner.
+      const perfClient = clientId || wr.client_id;
+      const lastPerf = perfClient ? await fetchLastPerformedMap(perfClient, exIds) : new Map();
+
+      const loaded: BuilderExercise[] = [];
+      for (const we of weList) {
+        const ex = exMap.get(we.exercise_id);
+        if (!ex) continue;
+        const perfForEx = lastPerf.get(we.exercise_id);
+        const setRows = (wsByWe.get(we.id) ?? []).sort((a, b) => a.set_number - b.set_number);
+        const baseRows: any[] = setRows.length > 0 ? setRows : [{ set_number: 1 }, { set_number: 2 }, { set_number: 3 }];
+        const sets: BuilderSet[] = baseRows.map((s: any) => {
+          const perf = perfForEx?.get(s.set_number);
+          return {
+            key: uid(),
+            set_number: s.set_number,
+            target_reps: perf ? perf.reps : '',
+            target_weight_kg: perf ? perf.weight : '',
+            rest_seconds: s.rest_seconds != null ? String(s.rest_seconds) : '60',
+          };
+        });
+        loaded.push({ key: uid(), exercise: ex, sets, is_superset: !!we.is_superset, expanded: false, originalWeId: we.id });
+      }
+      if (!cancelled) setItems(loaded);
+    })();
+    return () => { cancelled = true; };
+  }, [editWorkoutId, clientId]);
 
   const updateItem = useCallback((key: string, patch: Partial<BuilderExercise>) => {
     setItems(prev => prev.map(i => i.key === key ? { ...i, ...patch } : i));
@@ -559,12 +701,6 @@ export default function WorkoutBuilderScreen() {
     handleSave(intent, true);
   };
 
-  const handleConflictSkip = () => {
-    if (!conflictModal) return;
-    const { intent } = conflictModal;
-    setConflictModal(null);
-    handleSave(intent, true);
-  };
 
   const handleSavePress = () => {
     if (!workoutName.trim()) { Alert.alert('Name required', 'Please enter a workout name.'); return; }
@@ -581,9 +717,17 @@ export default function WorkoutBuilderScreen() {
       const equipment_list = [...new Set(items.map(i => i.exercise.equipment).filter(Boolean) as string[])];
       const muscle_groups = [...new Set(items.flatMap(i => i.exercise.muscle_groups))];
 
+      // Resolve the cover: reuse an unchanged remote URL as-is (loaded from an
+      // existing workout/template), only re-upload a freshly picked local image.
+      const resolveCover = async (folder: string): Promise<string | null> => {
+        if (!coverImageUri) return null;
+        if (loadedCoverUrl && coverImageUri === loadedCoverUrl) return loadedCoverUrl;
+        return await uploadCoverImage(coverImageUri, folder);
+      };
+
       if (intent.type === 'template') {
         // Upload cover image if one was picked; failure is non-fatal
-        const tmplCoverUrl = coverImageUri ? await uploadCoverImage(coverImageUri, 'templates') : null;
+        const tmplCoverUrl = await resolveCover('templates');
         const { data: tmpl, error: tmplErr } = await supabase.from('workout_templates').insert({
           name: workoutName.trim(),
           created_by: profile!.id,
@@ -644,7 +788,11 @@ export default function WorkoutBuilderScreen() {
             .eq('client_id', targetClientId).eq('status', 'active')
             .limit(1).maybeSingle();
           if (existing) {
+            // Close the Save sheet first — a second native Modal stacked on top of
+            // an open one blocks touches on iOS, so the conflict prompt would be
+            // unresponsive and the user falls back to the sheet ("never saves").
             setSaving(false);
+            setSaveSheetOpen(false);
             setConflictModal({ id: (existing as any).id, name: (existing as any).name, intent });
             return;
           }
@@ -662,34 +810,94 @@ export default function WorkoutBuilderScreen() {
       }
 
       // Upload cover image if one was picked; failure is non-fatal
-      const cover_image_url = coverImageUri ? await uploadCoverImage(coverImageUri, targetClientId) : null;
+      const cover_image_url = await resolveCover(targetClientId);
       if (coverImageUri && !cover_image_url) {
         console.warn('[WorkoutBuilder] cover image upload failed — workout will be saved without cover');
       }
 
-      const { data: workout, error: wErr } = await supabase.from('workouts').insert({
-        name: workoutName.trim(), client_id: targetClientId, routine_id: routineId,
-        created_by: profile!.id, equipment_list, muscle_groups, order_index,
-        description: null, goal: null, notes: null,
-        category: workoutCategory ?? null,
-        stretch_type: stretchType ?? null,
-        ...(cover_image_url != null ? { cover_image_url } : {}),
-      }).select().single();
-      if (wErr || !workout) throw wErr ?? new Error('Workout insert failed');
-      createdWorkoutId = (workout as any).id;
-
       const groups = assignSupersetGroups(items);
-      const { data: weRows, error: weErr } = await supabase.from('workout_exercises').insert(
-        items.map((item, i) => ({ workout_id: createdWorkoutId, exercise_id: item.exercise.id, order_index: i, is_superset: item.is_superset, superset_group_id: groups[i], notes: null, equipment_type: null, barbell_weight_kg: null }))
-      ).select('id');
-      if (weErr || !weRows) throw weErr ?? new Error('WorkoutExercise insert failed');
 
-      const allSets = items.flatMap((item, i) =>
-        item.sets.map(s => ({ workout_exercise_id: (weRows as any[])[i].id, set_number: s.set_number, target_reps: parseInt(s.target_reps) || null, target_weight_kg: parseFloat(s.target_weight_kg) || null, rest_seconds: parseInt(s.rest_seconds) || null }))
-      );
-      if (allSets.length > 0) {
-        const { error: setsErr } = await supabase.from('workout_sets').insert(allSets);
-        if (setsErr) throw setsErr;
+      // Update in place ONLY when editing this client's own workout — preserves the
+      // existing workout_exercise rows (and their logged history). Editing another
+      // client's workout, or a template, copies into a fresh workout instead.
+      const doUpdateInPlace = !!editWorkoutId && loadedWorkoutClientId != null && loadedWorkoutClientId === targetClientId;
+      let finalWorkoutId: string;
+
+      if (doUpdateInPlace) {
+        finalWorkoutId = editWorkoutId!;
+        const upd: Record<string, any> = {
+          name: workoutName.trim(), equipment_list, muscle_groups,
+          routine_id: routineId, order_index,
+          category: workoutCategory ?? null,
+          stretch_type: stretchType ?? null,
+        };
+        if (cover_image_url != null) upd.cover_image_url = cover_image_url;
+        const { error: uErr } = await supabase.from('workouts').update(upd).eq('id', finalWorkoutId);
+        if (uErr) throw uErr;
+
+        // Reconcile exercises: keep + update existing rows (their session logs are
+        // untouched), insert added ones, soft-remove the rest.
+        const { data: existingWe } = await supabase.from('workout_exercises').select('id').eq('workout_id', finalWorkoutId).eq('is_active', true);
+        const existingIds = new Set((existingWe ?? []).map((r: any) => r.id as string));
+
+        // Resolve the final workout_exercise id for each item, inserting new ones.
+        const finalWeId: (string | null)[] = items.map(it => (it.originalWeId && existingIds.has(it.originalWeId)) ? it.originalWeId : null);
+        const newIdx = items.map((_, i) => i).filter(i => finalWeId[i] === null);
+        if (newIdx.length > 0) {
+          const { data: insWe, error: insErr } = await supabase.from('workout_exercises').insert(
+            newIdx.map(i => ({ workout_id: finalWorkoutId, exercise_id: items[i].exercise.id, order_index: i, is_superset: items[i].is_superset, superset_group_id: groups[i], notes: null, equipment_type: null, barbell_weight_kg: null }))
+          ).select('id');
+          if (insErr || !insWe) throw insErr ?? new Error('WorkoutExercise insert failed');
+          newIdx.forEach((i, k) => { finalWeId[i] = (insWe as any[])[k].id; });
+        }
+
+        const finalIds = new Set(finalWeId.filter(Boolean) as string[]);
+        // Update kept rows (order / superset grouping may have changed)
+        for (let i = 0; i < items.length; i++) {
+          if (items[i].originalWeId && existingIds.has(items[i].originalWeId!)) {
+            await supabase.from('workout_exercises').update({ order_index: i, is_superset: items[i].is_superset, superset_group_id: groups[i] }).eq('id', finalWeId[i]!);
+          }
+        }
+        // Soft-remove exercises the trainer took out: is_active=false keeps the row
+        // and its session logs, so the exercise's logged history stays the client's
+        // baseline wherever it's used again. (A hard delete would cascade the logs.)
+        const removedIds = [...existingIds].filter(id => !finalIds.has(id));
+        if (removedIds.length > 0) await supabase.from('workout_exercises').update({ is_active: false }).in('id', removedIds);
+
+        // Replace all workout_sets (safe — session_logs are not FK'd to workout_sets)
+        if (finalIds.size > 0) await supabase.from('workout_sets').delete().in('workout_exercise_id', [...finalIds]);
+        const allSets = items.flatMap((item, i) =>
+          item.sets.map(s => ({ workout_exercise_id: finalWeId[i], set_number: s.set_number, target_reps: parseInt(s.target_reps) || null, target_weight_kg: parseFloat(s.target_weight_kg) || null, rest_seconds: parseInt(s.rest_seconds) || null }))
+        );
+        if (allSets.length > 0) {
+          const { error: setsErr } = await supabase.from('workout_sets').insert(allSets);
+          if (setsErr) throw setsErr;
+        }
+      } else {
+        const { data: workout, error: wErr } = await supabase.from('workouts').insert({
+          name: workoutName.trim(), client_id: targetClientId, routine_id: routineId,
+          created_by: profile!.id, equipment_list, muscle_groups, order_index,
+          description: null, goal: null, notes: null,
+          category: workoutCategory ?? null,
+          stretch_type: stretchType ?? null,
+          ...(cover_image_url != null ? { cover_image_url } : {}),
+        }).select().single();
+        if (wErr || !workout) throw wErr ?? new Error('Workout insert failed');
+        createdWorkoutId = (workout as any).id;
+        finalWorkoutId = createdWorkoutId!;
+
+        const { data: weRows, error: weErr } = await supabase.from('workout_exercises').insert(
+          items.map((item, i) => ({ workout_id: createdWorkoutId, exercise_id: item.exercise.id, order_index: i, is_superset: item.is_superset, superset_group_id: groups[i], notes: null, equipment_type: null, barbell_weight_kg: null }))
+        ).select('id');
+        if (weErr || !weRows) throw weErr ?? new Error('WorkoutExercise insert failed');
+
+        const allSets = items.flatMap((item, i) =>
+          item.sets.map(s => ({ workout_exercise_id: (weRows as any[])[i].id, set_number: s.set_number, target_reps: parseInt(s.target_reps) || null, target_weight_kg: parseFloat(s.target_weight_kg) || null, rest_seconds: parseInt(s.rest_seconds) || null }))
+        );
+        if (allSets.length > 0) {
+          const { error: setsErr } = await supabase.from('workout_sets').insert(allSets);
+          if (setsErr) throw setsErr;
+        }
       }
 
       // Post-workout stretch: if this regular workout points to an Upper/Lower/Full
@@ -702,6 +910,14 @@ export default function WorkoutBuilderScreen() {
         } catch (stretchErr) {
           console.warn('[WorkoutBuilder] auto stretch provisioning failed:', stretchErr);
         }
+      }
+
+      // Schedule the workout on the picked day (Workouts Library flow).
+      if (scheduleDate) {
+        const { error: schedErr } = await supabase.from('sessions').insert({
+          workout_id: finalWorkoutId, client_id: targetClientId, date: scheduleDate, status: 'scheduled',
+        });
+        if (schedErr) console.warn('[WorkoutBuilder] scheduling failed:', JSON.stringify(schedErr));
       }
 
       setSaving(false);
@@ -1004,13 +1220,10 @@ export default function WorkoutBuilderScreen() {
             <Pressable style={conflictStyles.sheet}>
               <Text style={conflictStyles.title}>Active Routine Exists</Text>
               <Text style={conflictStyles.body}>
-                {`"${conflictModal.name}" is currently active. What would you like to do?`}
+                {`"${conflictModal.name}" is currently active. A client can only have one active routine, so it will be deactivated (moved to Closed) when the new one starts.`}
               </Text>
               <TouchableOpacity style={conflictStyles.primaryBtn} onPress={handleConflictConfirm} activeOpacity={0.85}>
-                <Text style={conflictStyles.primaryBtnText}>{`Deactivate "${conflictModal.name}"`}</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={conflictStyles.secondaryBtn} onPress={handleConflictSkip} activeOpacity={0.85}>
-                <Text style={conflictStyles.secondaryBtnText}>Keep Both Active</Text>
+                <Text style={conflictStyles.primaryBtnText}>{`Deactivate & continue`}</Text>
               </TouchableOpacity>
               <TouchableOpacity onPress={() => setConflictModal(null)} hitSlop={8} style={conflictStyles.cancelWrap}>
                 <Text style={conflictStyles.cancelText}>Cancel</Text>

@@ -175,8 +175,10 @@ status (text, NOT NULL, DEFAULT 'active' — active | completed)
 ### WorkoutExercise
 ```
 id, workout_id, exercise_id, order_index, notes,
-is_superset (boolean), superset_group_id, equipment_type, barbell_weight_kg
+is_superset (boolean), superset_group_id, equipment_type, barbell_weight_kg,
+is_active (boolean, NOT NULL, DEFAULT true)
 ```
+`is_active` is a **soft-delete flag**. When a trainer edits a workout and removes an exercise, the builder sets `is_active=false` rather than deleting the row — a hard delete would cascade the row's `session_logs` and erase the client's logged history for that exercise. Keeping the row (and its logs) means the client's last-performed weight/reps stay available and pre-fill the next time that exercise is used (anywhere, matched by `exercise_id`). **Every query that renders a workout's exercise list filters `is_active = true`** (both Do Mode files, `WorkoutExercisesModal`, `RoutineDetailsSheet`, the routine quick-look count, the builder's edit-load). The last-performed / weight-memory queries intentionally do NOT filter it, so inactive rows still contribute their logs.
 
 ### WorkoutSet
 ```
@@ -793,7 +795,7 @@ Dark green header: **VF logo left** (TrainerLogoButton — tappable, shows Notif
 #### Client Profile (4 tabs)
 
 **Layout:**
-- Dark green header: client name centred, back chevron left, **+ button right** (plain white `+` text, no circle — navigates directly to Workout Builder `/(trainer)/workout-builder?clientId=${id}`, no modal)
+- Dark green header: client name centred, back chevron left, **+ button right** (plain white `+` text, no circle). Opens an **"Add Session"** white centered modal that mirrors the week-strip + menu, defaulting every action to **today** (July 2026 — previously it navigated straight to the builder): Create new workout · Add workout to this day (→ Workouts Library picker, date=today) · Plan a workout (shared `PlanWorkoutFlow`, scheduled to today) · Continue routine (if an active routine exists) · Start Free Session.
 - Tab bar (Training / Nutrition / Progress / Info) sits directly on the #faf9f7 background immediately below the header
 - Default tab on open: **Training**
 - Tab labels are muted grey (13px, weight 600); active tab label is accent green (#24ac88) with a 2px accent underline indicator. Tab bar background is #faf9f7 (not white).
@@ -833,13 +835,15 @@ The training tab contains programme and session content, switchable via a segmen
 - **Step 1 — Workout picker:** white centered modal showing all client's active non-stretching workouts as 70px cover cards (photo or category gradient + bottom vignette). Green ✓ badge (20px ACCENT circle, top-right) on workouts that already have a completed session in the current week. Tapping a card advances to step 2.
 - **Step 2 — Schedule:** shows workout name, date navigation (‹ date › with 1-day increments), "Repeat weekly" custom toggle (ACCENT when on). When repeat is on: DOW pills (Mo–Su, pre-filled from the chosen date's day of week; selecting a different day updates the date to the next occurrence of that day); "End after" switcher (No end | Weeks) + stepper (1–52) when Weeks is selected. "No end" = 52 occurrences inserted.
 - **Save:** inserts one `sessions` row per occurrence with `status='scheduled'`, `workout_id`, `client_id`, `date`. Dates are the chosen date + N×7 days (one week apart). Reloads the week strip via `loadStripSessions()`.
-- All plan flow state lives in `WeekStripCard`; `onReloadStrip: () => void` prop passed from `TrainingTab` → `loadStripSessions`.
+- The two-step flow is the extracted **`PlanWorkoutFlow`** component (module-level in `client/[id]/index.tsx`), shared by both the **week-strip +** and the **header + "Add Session"** menu (its state used to be duplicated inside `WeekStripCard` — that copy was removed). Props: `clientId`, `initialDate`, `onClose`, `onDone` (the caller's reload — `onReloadStrip`/`loadAll`). Mounting it opens it.
 
-**Add Workout picker (`app/(trainer)/client/[id]/add-workout.tsx`):**
-- Full screen reached from the "Add workout to this day" option. Query params: `id` (clientId), `date` (the selected day). Dark-green header showing "Add Workout" + the formatted day.
-- Same filter UI as the Library Workouts tab — **Category** dropdown + **Client** dropdown (default label "All Clients") + search, **no Recent/Oldest toggle**, always most-recent first. Shows **all workouts across all clients** (fetched by `created_by = profile.id`, includes stretching workouts — matches the library). Rendered as the shared 100px cover cards.
-- **On tap:** if the workout already belongs to this client → insert a `scheduled` `sessions` row on `date` pointing to the same `workout_id` (no duplicate workout row — one workout can appear on many days). If it belongs to another client → `copyWorkoutToClient()` deep-copies it (workout + exercises + sets, `routine_id:null`) into this client first, then schedules the copy. Then returns.
-- The trainer client-profile week strip reloads on focus (`WeekStripCard` uses `useFocusEffect`), so the newly-added session shows on return.
+**Workouts Library picker (`app/(trainer)/client/[id]/add-workout.tsx`):**
+- Full screen reached from the "Add workout to this day" option. Query params: `id` (clientId), `date` (the selected day). Dark-green header showing **"Workouts Library"** (renamed from "Add Workout", July 2026) + the formatted day.
+- **Workouts / Templates sub-tabs** (Type 1 pill switcher at top).
+  - **Workouts tab:** **Category** + **Client** dropdowns (default "All Clients") + search, always most-recent first. **All workouts across all clients** (`created_by = profile.id`, includes stretching). Client is shown as a `person.fill` pill (top-left of each cover card, first name); the subtitle is the last-done date ("Not yet done" fallback). Shared 100px cover cards.
+  - **Templates tab:** Category dropdown + search only (no Client filter). Lists the trainer's `workout_templates` as cover cards with a "TEMPLATE" badge + exercise count.
+- **On tap (opens the builder in edit mode — no longer instant-schedules, July 2026):** a **workout** → `router.replace('/(trainer)/workout-builder?clientId=${id}&editWorkoutId=${w.id}&scheduleDate=${date}')`; a **template** → `…?clientId=${id}&templateId=${t.id}&scheduleDate=${date}`. The builder loads it with set rows pre-filled from the client's last-performed weight/reps, the trainer reviews/tweaks, and **Save** saves to the library **and** schedules a `sessions` row on `date`. `router.replace` (not push) so the builder's post-save `router.back()` returns to the client profile, not this picker. (The old `copyWorkoutToClient()` instant-copy path was removed — copying another client's workout into this client now happens inside the builder's update-in-place-vs-copy logic; see Workout Builder below.)
+- The trainer client-profile week strip reloads on focus (`WeekStripCard` uses `useFocusEffect`), so the newly-scheduled session shows on return.
 
 **Session card ⋯ menu (trainer — both scheduled and completed sessions):**
 - `ellipsis` SF Symbol button right-aligned in the highlights area of the session card (below the cover image).
@@ -1148,6 +1152,13 @@ Each metric shows a `ZoneBarCard` component (or plain graph if no zone data avai
 - **Library Workouts `+`** (both Workouts and Templates sub-tabs) → opens the builder with **no client / no mode**. The destination (template vs client, and placement) is chosen at Save.
 - **Client profile `+` / routine detail** → opens the builder with a `clientId` param (client already known → Save sheet opens straight on placement).
 - **Templates gallery tap / "Use template"** → opens the builder with a `templateId` param (loads that template's name, category, cover, exercises, sets for review/assign).
+- **Workouts Library day picker (`add-workout.tsx`)** → opens the builder with `editWorkoutId` (a workout) or `templateId` (a template) **plus `scheduleDate`** — review/tweak, then Save both saves and schedules on that day.
+
+**Edit-in-place, last-performed pre-fill & schedule-on-save (`editWorkoutId` / `scheduleDate` params, July 2026):**
+- `editWorkoutId` preloads an existing workout; `scheduleDate` (YYYY-MM-DD) schedules the saved workout on that day after Save (inserts a `sessions` row `status='scheduled'`).
+- **Last-performed pre-fill (`fetchLastPerformedMap`):** when scheduling for a known client, each set row is pre-filled with what the client **actually last did** (most-recent completed-session `weight_kg`/`reps_completed` per `set_number`), not the stale planned targets. Blank if never performed. Applies to both the `editWorkoutId` and `templateId` (when `clientId` present) loads.
+- **Update-in-place vs copy at Save:** if `editWorkoutId` is set **and** the loaded workout belongs to the target client, the existing `workouts` row is **updated in place** and its exercises **reconciled** — kept rows updated (order/superset), added rows inserted, removed rows **soft-deleted (`is_active=false`, see WorkoutExercise model)**; `workout_sets` fully replaced. Otherwise (editing another client's workout, or from a template) Save **inserts a fresh workout** — this is how a workout gets copied into a new client (replacing the old standalone `copyWorkoutToClient` helper). `BuilderExercise.originalWeId` tracks each loaded row so its logged history is preserved.
+- **`resolveCover`:** an unchanged remote cover URL is reused as-is; only a freshly-picked local image is re-uploaded.
 
 **Save flow — universal destination sheet (`SaveSheet`, white centered modal, multi-step):**
 - **Step 1 — destination:** "Assign to a client" or "Save as a template" (a template is saved to `workout_templates` + `template_exercises` + `template_sets`; no client).
@@ -1158,12 +1169,12 @@ Each metric shows a `ZoneBarCard` component (or plain graph if no zone data avai
 - After a client save, if the workout has a Post-workout stretch `stretch_type` and the client has no matching stretch workout, one is auto-provisioned from the matching stretch template (see §5 Stretch sessions).
 
 **Conflict prompt (new routine while active routine exists):**
-When saving as a new routine and the client already has an active routine, a white centered modal appears before inserting:
-- Title: "Active routine exists"
-- Message: `"[ExistingRoutineName]" is currently active. What would you like to do?`
-- **"Deactivate [name]" (green filled pill):** sets existing routine `status='closed'` with `closed_at` + appends to `status_history`, then saves the new routine as active
-- **"Keep Both Active" (gray filled pill):** saves the new routine as active without touching the existing one
+When saving as a new routine and the client already has an active routine, a white centered modal appears before inserting. A client can only have one active routine, so there is **no "keep both" path** (July 2026):
+- Title: "Active Routine Exists"
+- Message: `"[ExistingRoutineName]" is currently active. A client can only have one active routine, so it will be deactivated (moved to Closed) when the new one starts.`
+- **"Deactivate & continue" (green filled pill):** sets the existing routine `status='closed'` with `closed_at` + appends to `status_history`, then saves the new routine as active
 - **Cancel (gray text link)**
+- The Save sheet is closed **before** this prompt opens — two stacked native Modals block touches on iOS (the prompt would otherwise be unresponsive).
 
 ---
 

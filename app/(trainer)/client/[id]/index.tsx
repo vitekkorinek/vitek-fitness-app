@@ -70,6 +70,7 @@ export default function ClientProfileScreen() {
 
   // Add popup state
   const [addModal, setAddModal] = useState(false);
+  const [headerPlanOpen, setHeaderPlanOpen] = useState(false);
   const [templateModal, setTemplateModal] = useState(false);
   const [templates, setTemplates] = useState<{ id: string; name: string; equipment_list: string[]; muscle_groups: string[] }[]>([]);
   const [loadingTemplates, setLoadingTemplates] = useState(false);
@@ -341,7 +342,7 @@ export default function ClientProfileScreen() {
           )}
           <TouchableOpacity
             style={styles.addButton}
-            onPress={() => router.push(`/(trainer)/workout-builder?clientId=${id}` as any)}
+            onPress={() => setAddModal(true)}
             activeOpacity={0.75}
             hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
           >
@@ -452,19 +453,19 @@ export default function ClientProfileScreen() {
         </View>
       )}
 
-      {/* ── Add modal ───────────────────────────────────────────────────────── */}
+      {/* ── Add Session modal (header +) — mirrors the week-strip +, defaults to today ── */}
       <Modal visible={addModal} transparent animationType="fade" onRequestClose={() => setAddModal(false)}>
         <Pressable style={addPopStyles.overlay} onPress={() => setAddModal(false)}>
           <Pressable style={addPopStyles.card} onPress={() => {}}>
-            <Text style={addPopStyles.heading}>Add Workout</Text>
+            <Text style={addPopStyles.heading}>Add Session</Text>
 
             <TouchableOpacity
               style={addPopStyles.option}
               activeOpacity={0.7}
               onPress={() => { setAddModal(false); router.push(`/(trainer)/workout-builder?clientId=${id}` as any); }}
             >
-              <SymbolView name="dumbbell" size={18} tintColor="#244e43" />
-              <Text style={addPopStyles.optionText}>New Workout</Text>
+              <SymbolView name="square.and.pencil" size={18} tintColor="#244e43" />
+              <Text style={addPopStyles.optionText}>Create new workout</Text>
             </TouchableOpacity>
 
             <View style={addPopStyles.divider} />
@@ -472,11 +473,36 @@ export default function ClientProfileScreen() {
             <TouchableOpacity
               style={addPopStyles.option}
               activeOpacity={0.7}
-              onPress={openTemplateModal}
+              onPress={() => { setAddModal(false); router.push(`/(trainer)/client/${id}/add-workout?date=${localDateStr(new Date())}` as any); }}
             >
-              <SymbolView name="doc.on.doc" size={18} tintColor="#244e43" />
-              <Text style={addPopStyles.optionText}>From Template</Text>
+              <SymbolView name="plus.rectangle.on.rectangle" size={18} tintColor="#244e43" />
+              <Text style={addPopStyles.optionText}>Add workout to this day</Text>
             </TouchableOpacity>
+
+            <View style={addPopStyles.divider} />
+
+            <TouchableOpacity
+              style={addPopStyles.option}
+              activeOpacity={0.7}
+              onPress={() => { setAddModal(false); setHeaderPlanOpen(true); }}
+            >
+              <SymbolView name="calendar" size={18} tintColor="#244e43" />
+              <Text style={addPopStyles.optionText}>Plan a workout</Text>
+            </TouchableOpacity>
+
+            {training?.activeRoutine && (
+              <>
+                <View style={addPopStyles.divider} />
+                <TouchableOpacity
+                  style={addPopStyles.option}
+                  activeOpacity={0.7}
+                  onPress={() => { setAddModal(false); router.push(`/(trainer)/client/${id}/routine/${training.activeRoutine!.id}` as any); }}
+                >
+                  <SymbolView name="arrow.triangle.2.circlepath" size={18} tintColor="#244e43" />
+                  <Text style={addPopStyles.optionText}>Continue routine</Text>
+                </TouchableOpacity>
+              </>
+            )}
 
             <View style={addPopStyles.divider} />
 
@@ -495,6 +521,16 @@ export default function ClientProfileScreen() {
           </Pressable>
         </Pressable>
       </Modal>
+
+      {/* Header Plan-a-workout — shared flow (pick → schedule), scheduled to today */}
+      {headerPlanOpen && (
+        <PlanWorkoutFlow
+          clientId={id}
+          initialDate={localDateStr(new Date())}
+          onClose={() => setHeaderPlanOpen(false)}
+          onDone={loadAll}
+        />
+      )}
 
       {/* ── Template picker modal ────────────────────────────────────────────── */}
       <Modal visible={templateModal} transparent animationType="fade" onRequestClose={() => { if (!applyingTemplate) setTemplateModal(false); }}>
@@ -659,6 +695,249 @@ function nextDowFrom(fromDate: string, jsDow: number): string {
 function fmtPlanDate(dateStr: string): string {
   const [y, m, d] = dateStr.split('-').map(Number);
   return new Date(y, m - 1, d).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
+}
+
+// ─── PlanWorkoutFlow ───────────────────────────────────────────────────────────
+// Self-contained "Plan a workout" two-step flow (pick workout → schedule), shared
+// by the week-strip + and the header + Add Session menus. Mounting = open; it
+// loads the client's active workouts on mount. `onDone` fires after a successful
+// schedule (reload the caller's view); `onClose` dismisses.
+function PlanWorkoutFlow({ clientId, initialDate, onClose, onDone }: {
+  clientId: string;
+  initialDate: string;
+  onClose: () => void;
+  onDone: () => void;
+}) {
+  const [planStep, setPlanStep] = useState<'pick' | 'schedule'>('pick');
+  const [planWorkoutsForPicker, setPlanWorkoutsForPicker] = useState<{ id: string; name: string; category: string | null; cover_image_url: string | null; doneThisWeek: boolean }[]>([]);
+  const [planLoadingWorkouts, setPlanLoadingWorkouts] = useState(true);
+  const [planPickedId, setPlanPickedId] = useState<string | null>(null);
+  const [planPickedName, setPlanPickedName] = useState<string | null>(null);
+  const [planDate, setPlanDate] = useState(initialDate);
+  const [planRepeat, setPlanRepeat] = useState(false);
+  const [planRepeatDow, setPlanRepeatDow] = useState(() => {
+    const [y, m, d] = initialDate.split('-').map(Number);
+    return new Date(y, m - 1, d).getDay();
+  });
+  const [planEndMode, setPlanEndMode] = useState<'no_end' | 'weeks'>('no_end');
+  const [planEndWeeks, setPlanEndWeeks] = useState(4);
+  const [savingPlan, setSavingPlan] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const today = new Date();
+      const todayDow = today.getDay();
+      const monDiff = todayDow === 0 ? -6 : 1 - todayDow;
+      const mon = new Date(today.getFullYear(), today.getMonth(), today.getDate() + monDiff);
+      const weekStart = localDateStr(mon);
+      const weekEnd = localDateStr(new Date(mon.getFullYear(), mon.getMonth(), mon.getDate() + 6));
+      const [{ data }, { data: weekSessions }] = await Promise.all([
+        supabase.from('workouts').select('id, name, category, cover_image_url').eq('client_id', clientId).eq('status', 'active').order('created_at', { ascending: false }),
+        supabase.from('sessions').select('workout_id').eq('client_id', clientId).eq('status', 'completed').gte('date', weekStart).lte('date', weekEnd),
+      ]);
+      if (cancelled) return;
+      const doneIds = new Set((weekSessions ?? []).map((s: any) => s.workout_id as string));
+      setPlanWorkoutsForPicker(
+        (data ?? []).filter((w: any) => !PLAN_STRETCHING_CATS.includes(w.category)).map((w: any) => ({ id: w.id, name: w.name, category: w.category ?? null, cover_image_url: w.cover_image_url ?? null, doneThisWeek: doneIds.has(w.id) }))
+      );
+      setPlanLoadingWorkouts(false);
+    })();
+    return () => { cancelled = true; };
+  }, [clientId]);
+
+  const handlePlanDateNav = (delta: number) => {
+    const newDate = addDaysToDateStr(planDate, delta);
+    setPlanDate(newDate);
+    if (planRepeat) {
+      const [y, m, d] = newDate.split('-').map(Number);
+      setPlanRepeatDow(new Date(y, m - 1, d).getDay());
+    }
+  };
+
+  const savePlan = async () => {
+    if (!planPickedId) return;
+    setSavingPlan(true);
+    const count = planRepeat ? (planEndMode === 'weeks' ? planEndWeeks : 52) : 1;
+    const inserts = Array.from({ length: count }, (_, i) => ({
+      workout_id: planPickedId,
+      client_id: clientId,
+      date: addDaysToDateStr(planDate, i * 7),
+      status: 'scheduled' as const,
+    }));
+    await supabase.from('sessions').insert(inserts);
+    setSavingPlan(false);
+    onDone();
+    onClose();
+  };
+
+  return (
+    <>
+      {planStep === 'pick' && (
+        <Modal visible transparent animationType="fade" onRequestClose={onClose} statusBarTranslucent>
+          <Pressable style={addPopStyles.overlay} onPress={onClose}>
+            <Pressable style={[addPopStyles.card, { paddingBottom: 12 }]} onPress={() => {}}>
+              <Text style={addPopStyles.heading}>Plan a Workout</Text>
+              {planLoadingWorkouts ? (
+                <ActivityIndicator color={ACCENT} style={{ marginVertical: 20 }} />
+              ) : planWorkoutsForPicker.length === 0 ? (
+                <View style={addPopStyles.emptyWrap}>
+                  <Text style={addPopStyles.emptyText}>No active workouts</Text>
+                  <Text style={addPopStyles.emptySub}>Create a workout first</Text>
+                </View>
+              ) : (
+                <ScrollView
+                  style={{ maxHeight: 340, width: '100%' }}
+                  contentContainerStyle={{ gap: 7, paddingHorizontal: 12, paddingBottom: 4 }}
+                  bounces={false}
+                  showsVerticalScrollIndicator={false}
+                >
+                  {planWorkoutsForPicker.map(w => {
+                    const catColor = w.category ? (CATEGORY_COLORS[w.category as WorkoutCategory]?.border ?? '#2a4a3e') : '#2a4a3e';
+                    return (
+                      <TouchableOpacity
+                        key={w.id}
+                        style={planStyles.pickerCard}
+                        activeOpacity={0.85}
+                        onPress={() => { setPlanPickedId(w.id); setPlanPickedName(w.name); setPlanStep('schedule'); }}
+                      >
+                        {w.cover_image_url ? (
+                          <Image source={{ uri: w.cover_image_url }} style={StyleSheet.absoluteFill} resizeMode="cover" />
+                        ) : (
+                          <LinearGradient colors={[catColor, '#1a3832']} style={StyleSheet.absoluteFill} />
+                        )}
+                        <LinearGradient colors={['transparent', 'rgba(0,0,0,0.52)']} style={StyleSheet.absoluteFill} pointerEvents="none" />
+                        {w.doneThisWeek && (
+                          <View style={planStyles.pickerCardCheck}>
+                            <Text style={planStyles.pickerCardCheckText}>✓</Text>
+                          </View>
+                        )}
+                        <View style={planStyles.pickerCardBottom}>
+                          <Text style={planStyles.pickerCardName} numberOfLines={1}>{w.name}</Text>
+                          {w.category && (
+                            <View style={[planStyles.pickerCardPill, { backgroundColor: catColor }]}>
+                              <Text style={planStyles.pickerCardPillText}>{w.category}</Text>
+                            </View>
+                          )}
+                        </View>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </ScrollView>
+              )}
+              <TouchableOpacity style={addPopStyles.cancelBtn} onPress={onClose}>
+                <Text style={addPopStyles.cancelText}>Cancel</Text>
+              </TouchableOpacity>
+            </Pressable>
+          </Pressable>
+        </Modal>
+      )}
+
+      {planStep === 'schedule' && (
+        <Modal visible transparent animationType="fade" onRequestClose={() => setPlanStep('pick')} statusBarTranslucent>
+          <View style={addPopStyles.overlay}>
+            <View style={[addPopStyles.card, { paddingHorizontal: 20, paddingBottom: 16, width: '100%' }]}>
+              <Text style={addPopStyles.heading}>Schedule</Text>
+              <Text style={planStyles.workoutName} numberOfLines={1}>{planPickedName}</Text>
+
+              <View style={planStyles.dateRow}>
+                <TouchableOpacity onPress={() => handlePlanDateNav(-1)} hitSlop={10} activeOpacity={0.6}>
+                  <Text style={planStyles.dateArrow}>‹</Text>
+                </TouchableOpacity>
+                <Text style={planStyles.dateText}>{fmtPlanDate(planDate)}</Text>
+                <TouchableOpacity onPress={() => handlePlanDateNav(1)} hitSlop={10} activeOpacity={0.6}>
+                  <Text style={planStyles.dateArrow}>›</Text>
+                </TouchableOpacity>
+              </View>
+
+              <TouchableOpacity
+                style={planStyles.repeatRow}
+                onPress={() => {
+                  const next = !planRepeat;
+                  setPlanRepeat(next);
+                  if (next) {
+                    const [y, m, d] = planDate.split('-').map(Number);
+                    setPlanRepeatDow(new Date(y, m - 1, d).getDay());
+                  }
+                }}
+                activeOpacity={0.7}
+              >
+                <Text style={planStyles.repeatLabel}>Repeat weekly</Text>
+                <View style={[planStyles.toggleTrack, planRepeat && planStyles.toggleTrackOn]}>
+                  <View style={[planStyles.toggleThumb, planRepeat && planStyles.toggleThumbOn]} />
+                </View>
+              </TouchableOpacity>
+
+              {planRepeat && (
+                <>
+                  <View style={planStyles.dowRow}>
+                    {PLAN_DOW_LABELS.map((label, i) => {
+                      const jsDow = PLAN_DOW_ORDER[i];
+                      const active = planRepeatDow === jsDow;
+                      return (
+                        <TouchableOpacity
+                          key={label}
+                          style={[planStyles.dowPill, active && planStyles.dowPillActive]}
+                          onPress={() => { setPlanRepeatDow(jsDow); setPlanDate(nextDowFrom(planDate, jsDow)); }}
+                          activeOpacity={0.7}
+                        >
+                          <Text style={[planStyles.dowPillText, active && planStyles.dowPillTextActive]}>{label}</Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+
+                  <View style={planStyles.endAfterRow}>
+                    <Text style={planStyles.endAfterLabel}>End after</Text>
+                    <View style={planStyles.endAfterPills}>
+                      <TouchableOpacity style={[planStyles.endPill, planEndMode === 'no_end' && planStyles.endPillActive]} onPress={() => setPlanEndMode('no_end')} activeOpacity={0.7}>
+                        <Text style={[planStyles.endPillText, planEndMode === 'no_end' && planStyles.endPillTextActive]}>No end</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity style={[planStyles.endPill, planEndMode === 'weeks' && planStyles.endPillActive]} onPress={() => setPlanEndMode('weeks')} activeOpacity={0.7}>
+                        <Text style={[planStyles.endPillText, planEndMode === 'weeks' && planStyles.endPillTextActive]}>Weeks</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                  {planEndMode === 'weeks' && (
+                    <View style={planStyles.weeksStepper}>
+                      <TouchableOpacity onPress={() => setPlanEndWeeks(Math.max(1, planEndWeeks - 1))} hitSlop={8} activeOpacity={0.6} style={planStyles.stepBtn}>
+                        <Text style={planStyles.stepBtnText}>−</Text>
+                      </TouchableOpacity>
+                      <Text style={planStyles.weeksNum}>{planEndWeeks}</Text>
+                      <TouchableOpacity onPress={() => setPlanEndWeeks(Math.min(52, planEndWeeks + 1))} hitSlop={8} activeOpacity={0.6} style={planStyles.stepBtn}>
+                        <Text style={planStyles.stepBtnText}>+</Text>
+                      </TouchableOpacity>
+                    </View>
+                  )}
+                </>
+              )}
+
+              {savingPlan ? (
+                <ActivityIndicator color={ACCENT} style={{ marginTop: 16 }} />
+              ) : (
+                <TouchableOpacity style={planStyles.saveBtn} onPress={savePlan} activeOpacity={0.85}>
+                  <Text style={planStyles.saveBtnText}>
+                    {planRepeat
+                      ? `Schedule ${planEndMode === 'no_end' ? 52 : planEndWeeks} sessions`
+                      : 'Schedule session'}
+                  </Text>
+                </TouchableOpacity>
+              )}
+
+              <View style={{ flexDirection: 'row', justifyContent: 'center', gap: 24, marginTop: 6 }}>
+                <TouchableOpacity onPress={() => setPlanStep('pick')} style={{ paddingVertical: 10 }}>
+                  <Text style={[addPopStyles.cancelText, { color: ACCENT }]}>← Change workout</Text>
+                </TouchableOpacity>
+                <TouchableOpacity onPress={onClose} style={{ paddingVertical: 10 }}>
+                  <Text style={addPopStyles.cancelText}>Cancel</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </Modal>
+      )}
+    </>
+  );
 }
 
 function buildCalendarGrid(year: number, month: number): (number | null)[][] {
@@ -1762,73 +2041,8 @@ function WeekStripCard({
     setCalOpen(true);
   };
 
-  // Plan a workout flow state
-  const [planStep, setPlanStep] = useState<null | 'pick' | 'schedule'>(null);
-  const [planWorkoutsForPicker, setPlanWorkoutsForPicker] = useState<{ id: string; name: string; category: string | null; cover_image_url: string | null; doneThisWeek: boolean }[]>([]);
-  const [planLoadingWorkouts, setPlanLoadingWorkouts] = useState(false);
-  const [planPickedId, setPlanPickedId] = useState<string | null>(null);
-  const [planPickedName, setPlanPickedName] = useState<string | null>(null);
-  const [planDate, setPlanDate] = useState(selectedDate);
-  const [planRepeat, setPlanRepeat] = useState(false);
-  const [planRepeatDow, setPlanRepeatDow] = useState(0);
-  const [planEndMode, setPlanEndMode] = useState<'no_end' | 'weeks'>('no_end');
-  const [planEndWeeks, setPlanEndWeeks] = useState(4);
-  const [savingPlan, setSavingPlan] = useState(false);
-
-  const handlePlanDateNav = (delta: number) => {
-    const newDate = addDaysToDateStr(planDate, delta);
-    setPlanDate(newDate);
-    if (planRepeat) {
-      const [y, m, d] = newDate.split('-').map(Number);
-      setPlanRepeatDow(new Date(y, m - 1, d).getDay());
-    }
-  };
-
-  const openPlanPicker = async () => {
-    setNoSessModal(false);
-    const [y, m, d] = selectedDate.split('-').map(Number);
-    setPlanDate(selectedDate);
-    setPlanRepeat(false);
-    setPlanRepeatDow(new Date(y, m - 1, d).getDay());
-    setPlanEndMode('no_end');
-    setPlanEndWeeks(4);
-    setPlanPickedId(null);
-    setPlanPickedName(null);
-    setPlanLoadingWorkouts(true);
-    setPlanStep('pick');
-    const today = new Date();
-    const todayDow = today.getDay();
-    const monDiff = todayDow === 0 ? -6 : 1 - todayDow;
-    const mon = new Date(today.getFullYear(), today.getMonth(), today.getDate() + monDiff);
-    const weekStart = localDateStr(mon);
-    const weekEnd = localDateStr(new Date(mon.getFullYear(), mon.getMonth(), mon.getDate() + 6));
-
-    const [{ data }, { data: weekSessions }] = await Promise.all([
-      supabase.from('workouts').select('id, name, category, cover_image_url').eq('client_id', clientId).eq('status', 'active').order('created_at', { ascending: false }),
-      supabase.from('sessions').select('workout_id').eq('client_id', clientId).eq('status', 'completed').gte('date', weekStart).lte('date', weekEnd),
-    ]);
-    const doneIds = new Set((weekSessions ?? []).map((s: any) => s.workout_id as string));
-    setPlanWorkoutsForPicker(
-      (data ?? []).filter((w: any) => !PLAN_STRETCHING_CATS.includes(w.category)).map((w: any) => ({ id: w.id, name: w.name, category: w.category ?? null, cover_image_url: w.cover_image_url ?? null, doneThisWeek: doneIds.has(w.id) }))
-    );
-    setPlanLoadingWorkouts(false);
-  };
-
-  const savePlan = async () => {
-    if (!planPickedId) return;
-    setSavingPlan(true);
-    const count = planRepeat ? (planEndMode === 'weeks' ? planEndWeeks : 52) : 1;
-    const inserts = Array.from({ length: count }, (_, i) => ({
-      workout_id: planPickedId,
-      client_id: clientId,
-      date: addDaysToDateStr(planDate, i * 7),
-      status: 'scheduled' as const,
-    }));
-    await supabase.from('sessions').insert(inserts);
-    setSavingPlan(false);
-    setPlanStep(null);
-    onReloadStrip();
-  };
+  // Plan a workout flow — delegated to the shared <PlanWorkoutFlow> component
+  const [planOpen, setPlanOpen] = useState(false);
 
   const panRef = useRef(
     PanResponder.create({
@@ -2026,7 +2240,7 @@ function WeekStripCard({
                 <Text style={addPopStyles.optionText}>Add workout to this day</Text>
               </TouchableOpacity>
               <View style={addPopStyles.divider} />
-              <TouchableOpacity style={addPopStyles.option} activeOpacity={0.7} onPress={openPlanPicker}>
+              <TouchableOpacity style={addPopStyles.option} activeOpacity={0.7} onPress={() => { setNoSessModal(false); setPlanOpen(true); }}>
                 <SymbolView name="calendar" size={18} tintColor="#244e43" />
                 <Text style={addPopStyles.optionText}>Plan a workout</Text>
               </TouchableOpacity>
@@ -2054,174 +2268,14 @@ function WeekStripCard({
         </Modal>
       )}
 
-      {/* Plan workout picker */}
-      {planStep === 'pick' && (
-        <Modal visible transparent animationType="fade" onRequestClose={() => setPlanStep(null)} statusBarTranslucent>
-          <Pressable style={addPopStyles.overlay} onPress={() => setPlanStep(null)}>
-            <Pressable style={[addPopStyles.card, { paddingBottom: 12 }]} onPress={() => {}}>
-              <Text style={addPopStyles.heading}>Plan a Workout</Text>
-              {planLoadingWorkouts ? (
-                <ActivityIndicator color={ACCENT} style={{ marginVertical: 20 }} />
-              ) : planWorkoutsForPicker.length === 0 ? (
-                <View style={addPopStyles.emptyWrap}>
-                  <Text style={addPopStyles.emptyText}>No active workouts</Text>
-                  <Text style={addPopStyles.emptySub}>Create a workout first</Text>
-                </View>
-              ) : (
-                <ScrollView
-                  style={{ maxHeight: 340, width: '100%' }}
-                  contentContainerStyle={{ gap: 7, paddingHorizontal: 12, paddingBottom: 4 }}
-                  bounces={false}
-                  showsVerticalScrollIndicator={false}
-                >
-                  {planWorkoutsForPicker.map(w => {
-                    const catColor = w.category ? (CATEGORY_COLORS[w.category as WorkoutCategory]?.border ?? '#2a4a3e') : '#2a4a3e';
-                    return (
-                      <TouchableOpacity
-                        key={w.id}
-                        style={planStyles.pickerCard}
-                        activeOpacity={0.85}
-                        onPress={() => { setPlanPickedId(w.id); setPlanPickedName(w.name); setPlanStep('schedule'); }}
-                      >
-                        {w.cover_image_url ? (
-                          <Image source={{ uri: w.cover_image_url }} style={StyleSheet.absoluteFill} resizeMode="cover" />
-                        ) : (
-                          <LinearGradient colors={[catColor, '#1a3832']} style={StyleSheet.absoluteFill} />
-                        )}
-                        <LinearGradient colors={['transparent', 'rgba(0,0,0,0.52)']} style={StyleSheet.absoluteFill} pointerEvents="none" />
-                        {w.doneThisWeek && (
-                          <View style={planStyles.pickerCardCheck}>
-                            <Text style={planStyles.pickerCardCheckText}>✓</Text>
-                          </View>
-                        )}
-                        <View style={planStyles.pickerCardBottom}>
-                          <Text style={planStyles.pickerCardName} numberOfLines={1}>{w.name}</Text>
-                          {w.category && (
-                            <View style={[planStyles.pickerCardPill, { backgroundColor: catColor }]}>
-                              <Text style={planStyles.pickerCardPillText}>{w.category}</Text>
-                            </View>
-                          )}
-                        </View>
-                      </TouchableOpacity>
-                    );
-                  })}
-                </ScrollView>
-              )}
-              <TouchableOpacity style={addPopStyles.cancelBtn} onPress={() => setPlanStep(null)}>
-                <Text style={addPopStyles.cancelText}>Cancel</Text>
-              </TouchableOpacity>
-            </Pressable>
-          </Pressable>
-        </Modal>
-      )}
-
-      {/* Plan schedule */}
-      {planStep === 'schedule' && (
-        <Modal visible transparent animationType="fade" onRequestClose={() => setPlanStep('pick')} statusBarTranslucent>
-          <View style={addPopStyles.overlay}>
-            <View style={[addPopStyles.card, { paddingHorizontal: 20, paddingBottom: 16, width: '100%' }]}>
-              <Text style={addPopStyles.heading}>Schedule</Text>
-              <Text style={planStyles.workoutName} numberOfLines={1}>{planPickedName}</Text>
-
-              {/* Date navigation */}
-              <View style={planStyles.dateRow}>
-                <TouchableOpacity onPress={() => handlePlanDateNav(-1)} hitSlop={10} activeOpacity={0.6}>
-                  <Text style={planStyles.dateArrow}>‹</Text>
-                </TouchableOpacity>
-                <Text style={planStyles.dateText}>{fmtPlanDate(planDate)}</Text>
-                <TouchableOpacity onPress={() => handlePlanDateNav(1)} hitSlop={10} activeOpacity={0.6}>
-                  <Text style={planStyles.dateArrow}>›</Text>
-                </TouchableOpacity>
-              </View>
-
-              {/* Repeat weekly toggle */}
-              <TouchableOpacity
-                style={planStyles.repeatRow}
-                onPress={() => {
-                  const next = !planRepeat;
-                  setPlanRepeat(next);
-                  if (next) {
-                    const [y, m, d] = planDate.split('-').map(Number);
-                    setPlanRepeatDow(new Date(y, m - 1, d).getDay());
-                  }
-                }}
-                activeOpacity={0.7}
-              >
-                <Text style={planStyles.repeatLabel}>Repeat weekly</Text>
-                <View style={[planStyles.toggleTrack, planRepeat && planStyles.toggleTrackOn]}>
-                  <View style={[planStyles.toggleThumb, planRepeat && planStyles.toggleThumbOn]} />
-                </View>
-              </TouchableOpacity>
-
-              {planRepeat && (
-                <>
-                  {/* Day of week pills */}
-                  <View style={planStyles.dowRow}>
-                    {PLAN_DOW_LABELS.map((label, i) => {
-                      const jsDow = PLAN_DOW_ORDER[i];
-                      const active = planRepeatDow === jsDow;
-                      return (
-                        <TouchableOpacity
-                          key={label}
-                          style={[planStyles.dowPill, active && planStyles.dowPillActive]}
-                          onPress={() => { setPlanRepeatDow(jsDow); setPlanDate(nextDowFrom(planDate, jsDow)); }}
-                          activeOpacity={0.7}
-                        >
-                          <Text style={[planStyles.dowPillText, active && planStyles.dowPillTextActive]}>{label}</Text>
-                        </TouchableOpacity>
-                      );
-                    })}
-                  </View>
-
-                  {/* End after */}
-                  <View style={planStyles.endAfterRow}>
-                    <Text style={planStyles.endAfterLabel}>End after</Text>
-                    <View style={planStyles.endAfterPills}>
-                      <TouchableOpacity style={[planStyles.endPill, planEndMode === 'no_end' && planStyles.endPillActive]} onPress={() => setPlanEndMode('no_end')} activeOpacity={0.7}>
-                        <Text style={[planStyles.endPillText, planEndMode === 'no_end' && planStyles.endPillTextActive]}>No end</Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity style={[planStyles.endPill, planEndMode === 'weeks' && planStyles.endPillActive]} onPress={() => setPlanEndMode('weeks')} activeOpacity={0.7}>
-                        <Text style={[planStyles.endPillText, planEndMode === 'weeks' && planStyles.endPillTextActive]}>Weeks</Text>
-                      </TouchableOpacity>
-                    </View>
-                  </View>
-                  {planEndMode === 'weeks' && (
-                    <View style={planStyles.weeksStepper}>
-                      <TouchableOpacity onPress={() => setPlanEndWeeks(Math.max(1, planEndWeeks - 1))} hitSlop={8} activeOpacity={0.6} style={planStyles.stepBtn}>
-                        <Text style={planStyles.stepBtnText}>−</Text>
-                      </TouchableOpacity>
-                      <Text style={planStyles.weeksNum}>{planEndWeeks}</Text>
-                      <TouchableOpacity onPress={() => setPlanEndWeeks(Math.min(52, planEndWeeks + 1))} hitSlop={8} activeOpacity={0.6} style={planStyles.stepBtn}>
-                        <Text style={planStyles.stepBtnText}>+</Text>
-                      </TouchableOpacity>
-                    </View>
-                  )}
-                </>
-              )}
-
-              {savingPlan ? (
-                <ActivityIndicator color={ACCENT} style={{ marginTop: 16 }} />
-              ) : (
-                <TouchableOpacity style={planStyles.saveBtn} onPress={savePlan} activeOpacity={0.85}>
-                  <Text style={planStyles.saveBtnText}>
-                    {planRepeat
-                      ? `Schedule ${planEndMode === 'no_end' ? 52 : planEndWeeks} sessions`
-                      : 'Schedule session'}
-                  </Text>
-                </TouchableOpacity>
-              )}
-
-              <View style={{ flexDirection: 'row', justifyContent: 'center', gap: 24, marginTop: 6 }}>
-                <TouchableOpacity onPress={() => setPlanStep('pick')} style={{ paddingVertical: 10 }}>
-                  <Text style={[addPopStyles.cancelText, { color: ACCENT }]}>← Change workout</Text>
-                </TouchableOpacity>
-                <TouchableOpacity onPress={() => setPlanStep(null)} style={{ paddingVertical: 10 }}>
-                  <Text style={addPopStyles.cancelText}>Cancel</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          </View>
-        </Modal>
+      {/* Plan a workout — shared flow (pick → schedule) */}
+      {planOpen && (
+        <PlanWorkoutFlow
+          clientId={clientId}
+          initialDate={selectedDate}
+          onClose={() => setPlanOpen(false)}
+          onDone={onReloadStrip}
+        />
       )}
 
       {/* Month calendar — jump the week strip to any day */}
@@ -2598,7 +2652,7 @@ function RoutineQuickLookModal({ routineId, routineName, onClose }: { routineId:
         const wRows = (wData ?? []) as any[];
         const wIds = wRows.map(w => w.id);
         const { data: weData } = wIds.length
-          ? await supabase.from('workout_exercises').select('workout_id').in('workout_id', wIds)
+          ? await supabase.from('workout_exercises').select('workout_id').in('workout_id', wIds).eq('is_active', true)
           : { data: [] };
         const countMap = new Map<string, number>();
         ((weData ?? []) as any[]).forEach(we => {

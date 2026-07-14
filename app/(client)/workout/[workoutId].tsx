@@ -688,7 +688,7 @@ export default function TrainerWorkoutSessionScreen() {
 
     const [{ data: wData }, { data: weData }, { data: clientData }] = await Promise.all([
       supabase.from('workouts').select('id, name, description, goal, client_id, routine_id, created_by, equipment_list, muscle_groups, order_index, notes, cover_image_url, category, stretch_type, created_at').eq('id', workoutId).single(),
-      supabase.from('workout_exercises').select('*, exercises(id, name, muscle_groups, secondary_muscle_groups, video_url, extra_video_urls, extra_photo_urls, thumbnail_url, equipment, description)').eq('workout_id', workoutId).order('order_index'),
+      supabase.from('workout_exercises').select('*, exercises(id, name, muscle_groups, secondary_muscle_groups, video_url, extra_video_urls, extra_photo_urls, thumbnail_url, equipment, description)').eq('workout_id', workoutId).eq('is_active', true).order('order_index'),
       supabase.from('users').select('name').eq('id', clientId).single(),
     ]);
 

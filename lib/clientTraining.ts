@@ -33,7 +33,7 @@ export async function fetchClientTraining(clientId: string): Promise<ClientTrain
     { data: standaloneData },
     { data: closedData },
   ] = await Promise.all([
-    supabase.from('routines').select('*').eq('client_id', clientId).eq('status', 'active').maybeSingle(),
+    supabase.from('routines').select('*').eq('client_id', clientId).eq('status', 'active').order('created_at', { ascending: false }).limit(1).maybeSingle(),
     supabase.from('sessions').select('workout_id, date, status, workouts(name, category, cover_image_url, routines(name))').eq('client_id', clientId).order('date', { ascending: false }).order('created_at', { ascending: false }),
     supabase.from('workouts').select('*').eq('client_id', clientId).is('routine_id', null).order('created_at', { ascending: false }).limit(3),
     supabase.from('routines').select('id, name, auto_name, closed_at').eq('client_id', clientId).eq('status', 'closed').order('closed_at', { ascending: false }).limit(1),
