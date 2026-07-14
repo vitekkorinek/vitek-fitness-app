@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet, Modal,
   StatusBar, PanResponder, ActivityIndicator, TextInput,
-  Alert, Platform, KeyboardAvoidingView, ScrollView,
+  Alert,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { SymbolView } from 'expo-symbols';
@@ -10,6 +10,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { smartBack } from '@/lib/navHistory';
 import { useAuth } from '@/context/AuthContext';
 import { VFIcon } from '@/components/VFIcon';
+import { BottomSheet } from '@/components/BottomSheet';
 import { supabase } from '@/lib/supabase';
 
 const HEADER = '#244e43';
@@ -534,84 +535,86 @@ export default function AvailabilityScreen() {
 
       </View>
 
-      {/* ── Save modal (single Modal — panels swap in place to avoid the iOS
-              double-render glitch caused by two native Modals cross-fading) ──── */}
-      {(showSaveModal || showRecurringConfirm) && (
+      {/* ── Save popup — slide-up sheet ──────────────────────────────── */}
+      {showSaveModal && (
+        <BottomSheet avoidKeyboard onClose={() => setShowSaveModal(false)}>
+          {close => (
+            <View style={{ paddingHorizontal: 20, paddingBottom: 4 }}>
+              <Text style={sv.title}>How often do you want to train?</Text>
+
+              <View style={sv.freqRow}>
+                {([1,2,3] as const).map(n => (
+                  <TouchableOpacity
+                    key={n}
+                    style={[sv.freqPill, sessionsWanted === n && sv.freqPillActive]}
+                    onPress={() => setSessionsWanted(n)}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={[sv.freqText, sessionsWanted === n && sv.freqTextActive]}>{n}×</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              <Text style={sv.noteLabel}>Note for Vitek (optional)</Text>
+              <TextInput
+                style={sv.noteInput}
+                placeholder="Anything I should know..."
+                placeholderTextColor={MUTED}
+                value={trainerNote}
+                onChangeText={setTrainerNote}
+                multiline
+                textAlignVertical="top"
+              />
+
+              <TouchableOpacity style={sv.saveFillBtn} onPress={handleSaveAllWeeks} activeOpacity={0.85}>
+                <Text style={sv.saveFillBtnText}>Save for all coming weeks</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={sv.saveOutlineBtn} onPress={handleSaveWeekOnly} activeOpacity={0.85}>
+                <Text style={sv.saveOutlineBtnText}>Save for this week only</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={() => close()} style={sv.cancelLink}>
+                <Text style={sv.cancelLinkText}>Cancel</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+        </BottomSheet>
+      )}
+
+      {/* ── Recurring confirm — centered modal (binary decision) ─────── */}
+      {showRecurringConfirm && (
         <Modal
           transparent
           animationType="fade"
-          onRequestClose={() => { setShowSaveModal(false); setShowRecurringConfirm(false); }}
+          onRequestClose={() => setShowRecurringConfirm(false)}
         >
           <TouchableOpacity
             style={sv.overlay}
             activeOpacity={1}
-            onPress={() => { setShowSaveModal(false); setShowRecurringConfirm(false); }}
+            onPress={() => setShowRecurringConfirm(false)}
           />
-          {showRecurringConfirm ? (
-            <View style={sv.kvWrap} pointerEvents="box-none">
-              <View style={sv.modal}>
-                <Text style={sv.title}>Update recurring availability?</Text>
-                <Text style={sv.recurConfirmSub}>You already have a saved recurring schedule. What would you like to do?</Text>
-                <TouchableOpacity
-                  style={sv.saveFillBtn}
-                  onPress={() => { setShowRecurringConfirm(false); doSave(true); }}
-                  activeOpacity={0.85}
-                >
-                  <Text style={sv.saveFillBtnText}>All coming weeks</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[sv.saveOutlineBtn, { marginTop: 8 }]}
-                  onPress={() => { setShowRecurringConfirm(false); doSave(false); }}
-                  activeOpacity={0.85}
-                >
-                  <Text style={sv.saveOutlineBtnText}>This week only</Text>
-                </TouchableOpacity>
-                <TouchableOpacity onPress={() => setShowRecurringConfirm(false)} style={sv.cancelLink}>
-                  <Text style={sv.cancelLinkText}>Cancel</Text>
-                </TouchableOpacity>
-              </View>
+          <View style={sv.kvWrap} pointerEvents="box-none">
+            <View style={sv.modal}>
+              <Text style={sv.title}>Update recurring availability?</Text>
+              <Text style={sv.recurConfirmSub}>You already have a saved recurring schedule. What would you like to do?</Text>
+              <TouchableOpacity
+                style={sv.saveFillBtn}
+                onPress={() => { setShowRecurringConfirm(false); doSave(true); }}
+                activeOpacity={0.85}
+              >
+                <Text style={sv.saveFillBtnText}>All coming weeks</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[sv.saveOutlineBtn, { marginTop: 8 }]}
+                onPress={() => { setShowRecurringConfirm(false); doSave(false); }}
+                activeOpacity={0.85}
+              >
+                <Text style={sv.saveOutlineBtnText}>This week only</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={() => setShowRecurringConfirm(false)} style={sv.cancelLink}>
+                <Text style={sv.cancelLinkText}>Cancel</Text>
+              </TouchableOpacity>
             </View>
-          ) : (
-            <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={sv.kvWrap}>
-              <View style={sv.modal}>
-                <Text style={sv.title}>How often do you want to train?</Text>
-
-                <View style={sv.freqRow}>
-                  {([1,2,3] as const).map(n => (
-                    <TouchableOpacity
-                      key={n}
-                      style={[sv.freqPill, sessionsWanted === n && sv.freqPillActive]}
-                      onPress={() => setSessionsWanted(n)}
-                      activeOpacity={0.8}
-                    >
-                      <Text style={[sv.freqText, sessionsWanted === n && sv.freqTextActive]}>{n}×</Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-
-                <Text style={sv.noteLabel}>Note for Vitek (optional)</Text>
-                <TextInput
-                  style={sv.noteInput}
-                  placeholder="Anything I should know..."
-                  placeholderTextColor={MUTED}
-                  value={trainerNote}
-                  onChangeText={setTrainerNote}
-                  multiline
-                  textAlignVertical="top"
-                />
-
-                <TouchableOpacity style={sv.saveFillBtn} onPress={handleSaveAllWeeks} activeOpacity={0.85}>
-                  <Text style={sv.saveFillBtnText}>Save for all coming weeks</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={sv.saveOutlineBtn} onPress={handleSaveWeekOnly} activeOpacity={0.85}>
-                  <Text style={sv.saveOutlineBtnText}>Save for this week only</Text>
-                </TouchableOpacity>
-                <TouchableOpacity onPress={() => setShowSaveModal(false)} style={sv.cancelLink}>
-                  <Text style={sv.cancelLinkText}>Cancel</Text>
-                </TouchableOpacity>
-              </View>
-            </KeyboardAvoidingView>
-          )}
+          </View>
         </Modal>
       )}
     </View>

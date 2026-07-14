@@ -63,6 +63,7 @@ import {
   BridgedNoteEntry,
 } from '@/lib/doModeBridge';
 import en from '@/i18n/en';
+import { BottomSheet } from '@/components/BottomSheet';
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -1877,46 +1878,47 @@ function DetailMachineBrandModal({
   const [customText, setCustomText] = useState(isCustom ? currentBrand! : '');
 
   return (
-    <Modal visible transparent animationType="fade" onRequestClose={onClose} statusBarTranslucent>
-      <Pressable style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.52)' }]} onPress={onClose} />
-      <View style={styles.brandModal}>
-        <Text style={styles.centeredModalTitle}>{en.machineSelector.moreBrandsTitle}</Text>
-        <ScrollView bounces={false} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} style={{ marginBottom: 12 }} contentContainerStyle={{ gap: 8 }}>
-          {PRESET_BRANDS.map(brand => (
+    <BottomSheet onClose={onClose}>
+      {close => (
+        <View style={styles.sheetContent}>
+          <Text style={styles.centeredModalTitle}>{en.machineSelector.moreBrandsTitle}</Text>
+          <ScrollView bounces={false} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} style={{ marginBottom: 12 }} contentContainerStyle={{ gap: 8 }}>
+            {PRESET_BRANDS.map(brand => (
+              <TouchableOpacity
+                key={brand}
+                onPress={() => close(() => onSelect(brand))}
+                style={[styles.brandPickerRow, currentBrand === brand && styles.brandPickerRowActive]}
+                activeOpacity={0.7}
+              >
+                <Text style={[styles.brandPickerText, currentBrand === brand && styles.brandPickerTextActive]}>{brand}</Text>
+                {currentBrand === brand && <SymbolView name="checkmark" size={14} tintColor="#fff" />}
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+          <View style={styles.brandCustomRow}>
+            <TextInput
+              style={styles.brandCustomInput}
+              value={customText}
+              onChangeText={setCustomText}
+              placeholder={en.machineSelector.customPlaceholder}
+              placeholderTextColor="#bbb"
+              returnKeyType="done"
+              onSubmitEditing={() => { if (customText.trim()) { const v = customText.trim(); close(() => onSelect(v)); } }}
+            />
             <TouchableOpacity
-              key={brand}
-              onPress={() => onSelect(brand)}
-              style={[styles.brandPickerRow, currentBrand === brand && styles.brandPickerRowActive]}
+              onPress={() => { if (customText.trim()) { const v = customText.trim(); close(() => onSelect(v)); } }}
+              style={[styles.brandCustomSetBtn, !customText.trim() && styles.brandCustomSetBtnDisabled]}
               activeOpacity={0.7}
             >
-              <Text style={[styles.brandPickerText, currentBrand === brand && styles.brandPickerTextActive]}>{brand}</Text>
-              {currentBrand === brand && <SymbolView name="checkmark" size={14} tintColor="#fff" />}
+              <Text style={styles.brandCustomSetBtnText}>{en.machineSelector.set}</Text>
             </TouchableOpacity>
-          ))}
-        </ScrollView>
-        <View style={styles.brandCustomRow}>
-          <TextInput
-            style={styles.brandCustomInput}
-            value={customText}
-            onChangeText={setCustomText}
-            placeholder={en.machineSelector.customPlaceholder}
-            placeholderTextColor="#bbb"
-            returnKeyType="done"
-            onSubmitEditing={() => { if (customText.trim()) onSelect(customText.trim()); }}
-          />
-          <TouchableOpacity
-            onPress={() => { if (customText.trim()) onSelect(customText.trim()); }}
-            style={[styles.brandCustomSetBtn, !customText.trim() && styles.brandCustomSetBtnDisabled]}
-            activeOpacity={0.7}
-          >
-            <Text style={styles.brandCustomSetBtnText}>{en.machineSelector.set}</Text>
+          </View>
+          <TouchableOpacity style={[styles.centeredModalDoneBtn, { marginTop: 8 }]} onPress={() => close()} activeOpacity={0.85}>
+            <Text style={styles.centeredModalDoneBtnText}>{en.common.cancel}</Text>
           </TouchableOpacity>
         </View>
-        <TouchableOpacity style={[styles.centeredModalDoneBtn, { marginTop: 8 }]} onPress={onClose} activeOpacity={0.85}>
-          <Text style={styles.centeredModalDoneBtnText}>{en.common.cancel}</Text>
-        </TouchableOpacity>
-      </View>
-    </Modal>
+      )}
+    </BottomSheet>
   );
 }
 
@@ -3046,6 +3048,7 @@ const styles = StyleSheet.create({
   confirmBtnText: { color: '#fff', fontSize: 15, fontWeight: '700' },
   confirmCancelText: { fontSize: 14, color: MUTED },
   centeredModal: { backgroundColor: CARD, borderRadius: 20, padding: 20, maxHeight: SCREEN_H * 0.78 },
+  sheetContent: { paddingHorizontal: 20, paddingBottom: 8 },
   centeredModalTitle: { fontSize: 16, fontWeight: '700', color: TEXT, marginBottom: 14 },
   centeredModalDoneBtn: { backgroundColor: ACCENT, borderRadius: 100, paddingVertical: 13, alignItems: 'center', marginTop: 14 },
   centeredModalDoneBtnText: { color: '#fff', fontWeight: '700', fontSize: 15 },

@@ -28,6 +28,7 @@ import { SymbolView } from 'expo-symbols';
 import { useFocusEffect } from 'expo-router';
 import { useAuth } from '@/context/AuthContext';
 import { supabase } from '@/lib/supabase';
+import { BottomSheet } from '@/components/BottomSheet';
 // uuid v14 requires crypto.getRandomValues which is not available in Hermes
 function newId(): string {
   return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
@@ -1278,21 +1279,19 @@ function MeasDetailModal({
     : t.clientProfile.progress.addedByTrainer;
 
   return (
-    <Modal visible transparent animationType="fade" onRequestClose={onClose}>
-      <View style={dStyles.overlay}>
-        <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
-        <View style={dStyles.box}>
-          <View style={dStyles.header}>
-            <View>
-              <Text style={dStyles.title}>{fmtDate(measurement.date)}</Text>
-              <Text style={dStyles.sub}>{addedBy}</Text>
-            </View>
-            <TouchableOpacity onPress={onClose} hitSlop={8}>
-              <SymbolView name="xmark" size={16} tintColor={MUTED} />
-            </TouchableOpacity>
+    <BottomSheet onClose={onClose}>{close => (
+      <View style={dStyles.sheetContent}>
+        <View style={dStyles.header}>
+          <View>
+            <Text style={dStyles.title}>{fmtDate(measurement.date)}</Text>
+            <Text style={dStyles.sub}>{addedBy}</Text>
           </View>
+          <TouchableOpacity onPress={() => close()} hitSlop={8}>
+            <SymbolView name="xmark" size={16} tintColor={MUTED} />
+          </TouchableOpacity>
+        </View>
 
-          <ScrollView showsVerticalScrollIndicator={false} style={{ maxHeight: 400 }}>
+        <ScrollView showsVerticalScrollIndicator={false} style={{ maxHeight: 400 }}>
             <Text style={dStyles.section}>{t.clientProfile.progress.formSectionBasic}</Text>
             {row(t.clientProfile.progress.formWeight, measurement.weight_kg, ' kg')}
             {row(t.clientProfile.progress.formFatPct, measurement.body_fat_pct, '%')}
@@ -1330,22 +1329,20 @@ function MeasDetailModal({
                 <Text style={dStyles.notesText}>{measurement.notes}</Text>
               </>
             )}
-          </ScrollView>
+        </ScrollView>
 
-          {isTrainer && (
-            <TouchableOpacity style={dStyles.deleteBtn} onPress={onDelete} activeOpacity={0.7}>
-              <Text style={dStyles.deleteBtnText}>{t.clientProfile.progress.deleteEntry}</Text>
-            </TouchableOpacity>
-          )}
-        </View>
+        {isTrainer && (
+          <TouchableOpacity style={dStyles.deleteBtn} onPress={() => close(() => onDelete())} activeOpacity={0.7}>
+            <Text style={dStyles.deleteBtnText}>{t.clientProfile.progress.deleteEntry}</Text>
+          </TouchableOpacity>
+        )}
       </View>
-    </Modal>
+    )}</BottomSheet>
   );
 }
 
 const dStyles = StyleSheet.create({
-  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.52)', justifyContent: 'center', paddingHorizontal: 24 },
-  box: { backgroundColor: CARD, borderRadius: RADIUS, padding: 20 },
+  sheetContent: { paddingHorizontal: 20, paddingBottom: 8 },
   header: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 12 },
   title: { fontSize: 16, fontWeight: '700', color: TEXT },
   sub: { fontSize: 12, color: MUTED, marginTop: 2 },
@@ -2164,12 +2161,12 @@ function StrengthSubTab({ clientId }: { clientId: string }) {
         )}
 
         {/* Compare picker modal */}
-        <Modal visible={comparePickerOpen} transparent animationType="fade" onRequestClose={() => setComparePickerOpen(false)} statusBarTranslucent>
-          <Pressable style={str.pickerOverlay} onPress={() => setComparePickerOpen(false)}>
-            <Pressable style={str.pickerSheet} onPress={() => {}}>
+        {comparePickerOpen && (
+          <BottomSheet onClose={() => setComparePickerOpen(false)}>{close => (
+            <View style={{ paddingHorizontal: 20 }}>
               <View style={str.pickerHeader}>
                 <Text style={str.pickerTitle}>{t.clientProfile.progress.comparePickerTitle}</Text>
-                <TouchableOpacity onPress={() => setComparePickerOpen(false)} hitSlop={8}>
+                <TouchableOpacity onPress={() => close()} hitSlop={8}>
                   <SymbolView name="xmark" size={16} tintColor={MUTED} />
                 </TouchableOpacity>
               </View>
@@ -2189,7 +2186,7 @@ function StrengthSubTab({ clientId }: { clientId: string }) {
                 {filteredCompareExercises.map((ex, i) => (
                   <React.Fragment key={ex.id}>
                     {i > 0 && <View style={s.divider} />}
-                    <TouchableOpacity style={str.pickerRow} onPress={() => selectCompare(ex)} activeOpacity={0.7}>
+                    <TouchableOpacity style={str.pickerRow} onPress={() => close(() => selectCompare(ex))} activeOpacity={0.7}>
                       <Text style={str.pickerRowName}>{ex.name}</Text>
                       {ex.equipment && <Text style={str.pickerRowMeta}>{ex.equipment}</Text>}
                     </TouchableOpacity>
@@ -2199,9 +2196,9 @@ function StrengthSubTab({ clientId }: { clientId: string }) {
                   <Text style={str.noResults}>{t.clientProfile.progress.noStrengthData}</Text>
                 )}
               </ScrollView>
-            </Pressable>
-          </Pressable>
-        </Modal>
+            </View>
+          )}</BottomSheet>
+        )}
       </View>
     );
   }

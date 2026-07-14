@@ -1,9 +1,12 @@
 import { useEffect, useState } from 'react';
 import {
-  View, Text, Modal, Pressable, ScrollView,
-  ActivityIndicator, TouchableOpacity, StyleSheet,
+  View, Text, ScrollView,
+  ActivityIndicator, TouchableOpacity, StyleSheet, Dimensions,
 } from 'react-native';
 import { supabase } from '@/lib/supabase';
+import { BottomSheet } from './BottomSheet';
+
+const SCREEN_H = Dimensions.get('window').height;
 
 const ACCENT = '#24ac88';
 const TEXT = '#1a1a1a';
@@ -92,9 +95,9 @@ export function WorkoutExercisesModal({
   if (!workoutId) return null;
 
   return (
-    <Modal visible transparent animationType="fade" onRequestClose={onClose} statusBarTranslucent>
-      <Pressable style={s.overlay} onPress={onClose}>
-        <Pressable style={s.card} onPress={() => {}}>
+    <BottomSheet onClose={onClose}>
+      {close => (
+        <View style={s.sheetContent}>
           <Text style={s.title} numberOfLines={2}>{workoutName}</Text>
           <View style={s.divider} />
           {loading ? (
@@ -115,12 +118,12 @@ export function WorkoutExercisesModal({
               })}
             </ScrollView>
           )}
-          <TouchableOpacity style={s.doneBtn} onPress={onClose} activeOpacity={0.8}>
+          <TouchableOpacity style={s.doneBtn} onPress={() => close()} activeOpacity={0.8}>
             <Text style={s.doneBtnText}>Done</Text>
           </TouchableOpacity>
-        </Pressable>
-      </Pressable>
-    </Modal>
+        </View>
+      )}
+    </BottomSheet>
   );
 }
 
@@ -137,7 +140,8 @@ const s = StyleSheet.create({
   },
   title: { fontSize: 17, fontWeight: '700', color: TEXT, textAlign: 'center' },
   divider: { height: StyleSheet.hairlineWidth, backgroundColor: '#e8e8e4', marginVertical: 14 },
-  scroll: {},
+  sheetContent: { paddingHorizontal: 20 },
+  scroll: { maxHeight: SCREEN_H * 0.6 },
   exRow: { paddingVertical: 10 },
   exRowBorder: { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#e8e8e4' },
   exName: { fontSize: 15, fontWeight: '600', color: HEADER },

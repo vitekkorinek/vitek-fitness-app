@@ -27,6 +27,7 @@ import Svg, { Circle as SvgCircle, Rect as SvgRect, Line as SvgLine, Path as Svg
 import { supabase } from '@/lib/supabase';
 import { VFIcon } from '@/components/VFIcon';
 import { SessionDetailsSheet } from '@/components/SessionDetailsSheet';
+import { BottomSheet } from '@/components/BottomSheet';
 import { useAuth } from '@/context/AuthContext';
 import { fetchClientTraining } from '@/lib/clientTraining';
 import NutritionTab from './nutrition-tab';
@@ -454,73 +455,75 @@ export default function ClientProfileScreen() {
       )}
 
       {/* ── Add Session modal (header +) — mirrors the week-strip +, defaults to today ── */}
-      <Modal visible={addModal} transparent animationType="fade" onRequestClose={() => setAddModal(false)}>
-        <Pressable style={addPopStyles.overlay} onPress={() => setAddModal(false)}>
-          <Pressable style={addPopStyles.card} onPress={() => {}}>
-            <Text style={addPopStyles.heading}>Add Session</Text>
+      {addModal && (
+        <BottomSheet onClose={() => setAddModal(false)}>
+          {close => (
+            <View style={addPopStyles.sheetContent}>
+              <Text style={addPopStyles.heading}>Add Session</Text>
 
-            <TouchableOpacity
-              style={addPopStyles.option}
-              activeOpacity={0.7}
-              onPress={() => { setAddModal(false); router.push(`/(trainer)/workout-builder?clientId=${id}` as any); }}
-            >
-              <SymbolView name="square.and.pencil" size={18} tintColor="#244e43" />
-              <Text style={addPopStyles.optionText}>Create new workout</Text>
-            </TouchableOpacity>
+              <TouchableOpacity
+                style={addPopStyles.option}
+                activeOpacity={0.7}
+                onPress={() => close(() => router.push(`/(trainer)/workout-builder?clientId=${id}` as any))}
+              >
+                <SymbolView name="square.and.pencil" size={18} tintColor="#244e43" />
+                <Text style={addPopStyles.optionText}>Create new workout</Text>
+              </TouchableOpacity>
 
-            <View style={addPopStyles.divider} />
+              <View style={addPopStyles.divider} />
 
-            <TouchableOpacity
-              style={addPopStyles.option}
-              activeOpacity={0.7}
-              onPress={() => { setAddModal(false); router.push(`/(trainer)/client/${id}/add-workout?date=${localDateStr(new Date())}` as any); }}
-            >
-              <SymbolView name="plus.rectangle.on.rectangle" size={18} tintColor="#244e43" />
-              <Text style={addPopStyles.optionText}>Add workout to this day</Text>
-            </TouchableOpacity>
+              <TouchableOpacity
+                style={addPopStyles.option}
+                activeOpacity={0.7}
+                onPress={() => close(() => router.push(`/(trainer)/client/${id}/add-workout?date=${localDateStr(new Date())}` as any))}
+              >
+                <SymbolView name="plus.rectangle.on.rectangle" size={18} tintColor="#244e43" />
+                <Text style={addPopStyles.optionText}>Add workout to this day</Text>
+              </TouchableOpacity>
 
-            <View style={addPopStyles.divider} />
+              <View style={addPopStyles.divider} />
 
-            <TouchableOpacity
-              style={addPopStyles.option}
-              activeOpacity={0.7}
-              onPress={() => { setAddModal(false); setHeaderPlanOpen(true); }}
-            >
-              <SymbolView name="calendar" size={18} tintColor="#244e43" />
-              <Text style={addPopStyles.optionText}>Plan a workout</Text>
-            </TouchableOpacity>
+              <TouchableOpacity
+                style={addPopStyles.option}
+                activeOpacity={0.7}
+                onPress={() => close(() => setHeaderPlanOpen(true))}
+              >
+                <SymbolView name="calendar" size={18} tintColor="#244e43" />
+                <Text style={addPopStyles.optionText}>Plan a workout</Text>
+              </TouchableOpacity>
 
-            {training?.activeRoutine && (
-              <>
-                <View style={addPopStyles.divider} />
-                <TouchableOpacity
-                  style={addPopStyles.option}
-                  activeOpacity={0.7}
-                  onPress={() => { setAddModal(false); router.push(`/(trainer)/client/${id}/routine/${training.activeRoutine!.id}` as any); }}
-                >
-                  <SymbolView name="arrow.triangle.2.circlepath" size={18} tintColor="#244e43" />
-                  <Text style={addPopStyles.optionText}>Continue routine</Text>
-                </TouchableOpacity>
-              </>
-            )}
+              {training?.activeRoutine && (
+                <>
+                  <View style={addPopStyles.divider} />
+                  <TouchableOpacity
+                    style={addPopStyles.option}
+                    activeOpacity={0.7}
+                    onPress={() => close(() => router.push(`/(trainer)/client/${id}/routine/${training.activeRoutine!.id}` as any))}
+                  >
+                    <SymbolView name="arrow.triangle.2.circlepath" size={18} tintColor="#244e43" />
+                    <Text style={addPopStyles.optionText}>Continue routine</Text>
+                  </TouchableOpacity>
+                </>
+              )}
 
-            <View style={addPopStyles.divider} />
+              <View style={addPopStyles.divider} />
 
-            <TouchableOpacity
-              style={addPopStyles.option}
-              activeOpacity={0.7}
-              onPress={() => { setAddModal(false); router.push(`/(trainer)/client/${id}/workout/free` as any); }}
-            >
-              <SymbolView name="timer" size={18} tintColor="#24ac88" />
-              <Text style={[addPopStyles.optionText, { color: '#24ac88' }]}>Start Free Session</Text>
-            </TouchableOpacity>
+              <TouchableOpacity
+                style={addPopStyles.option}
+                activeOpacity={0.7}
+                onPress={() => close(() => router.push(`/(trainer)/client/${id}/workout/free` as any))}
+              >
+                <SymbolView name="timer" size={18} tintColor="#24ac88" />
+                <Text style={[addPopStyles.optionText, { color: '#24ac88' }]}>Start Free Session</Text>
+              </TouchableOpacity>
 
-            <TouchableOpacity style={addPopStyles.cancelBtn} onPress={() => setAddModal(false)}>
-              <Text style={addPopStyles.cancelText}>Cancel</Text>
-            </TouchableOpacity>
-          </Pressable>
-        </Pressable>
-      </Modal>
+              <TouchableOpacity style={addPopStyles.cancelBtn} onPress={() => close()}>
+                <Text style={addPopStyles.cancelText}>Cancel</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+        </BottomSheet>
+      )}
 
       {/* Header Plan-a-workout — shared flow (pick → schedule), scheduled to today */}
       {headerPlanOpen && (
@@ -533,40 +536,42 @@ export default function ClientProfileScreen() {
       )}
 
       {/* ── Template picker modal ────────────────────────────────────────────── */}
-      <Modal visible={templateModal} transparent animationType="fade" onRequestClose={() => { if (!applyingTemplate) setTemplateModal(false); }}>
-        <Pressable style={addPopStyles.overlay} onPress={() => { if (!applyingTemplate) setTemplateModal(false); }}>
-          <Pressable style={addPopStyles.card} onPress={() => {}}>
-            <Text style={addPopStyles.heading}>Pick a Template</Text>
-            {loadingTemplates ? (
-              <ActivityIndicator color="#24ac88" style={{ marginVertical: 20 }} />
-            ) : templates.length === 0 ? (
-              <View style={addPopStyles.emptyWrap}>
-                <Text style={addPopStyles.emptyText}>No templates yet</Text>
-                <Text style={addPopStyles.emptySub}>Build templates in the Library tab</Text>
-              </View>
-            ) : (
-              templates.map((t, i) => (
-                <View key={t.id} style={{ width: '100%' }}>
-                  {i > 0 && <View style={addPopStyles.divider} />}
-                  <TouchableOpacity
-                    style={addPopStyles.option}
-                    activeOpacity={0.7}
-                    onPress={() => handleApplyTemplate(t)}
-                    disabled={applyingTemplate}
-                  >
-                    <SymbolView name="doc.on.doc" size={18} tintColor="#244e43" />
-                    <Text style={addPopStyles.optionText}>{t.name}</Text>
-                    {applyingTemplate && <ActivityIndicator size="small" color="#24ac88" />}
-                  </TouchableOpacity>
+      {templateModal && (
+        <BottomSheet onClose={() => { if (!applyingTemplate) setTemplateModal(false); }}>
+          {close => (
+            <View style={addPopStyles.sheetContent}>
+              <Text style={addPopStyles.heading}>Pick a Template</Text>
+              {loadingTemplates ? (
+                <ActivityIndicator color="#24ac88" style={{ marginVertical: 20 }} />
+              ) : templates.length === 0 ? (
+                <View style={addPopStyles.emptyWrap}>
+                  <Text style={addPopStyles.emptyText}>No templates yet</Text>
+                  <Text style={addPopStyles.emptySub}>Build templates in the Library tab</Text>
                 </View>
-              ))
-            )}
-            <TouchableOpacity style={addPopStyles.cancelBtn} onPress={() => { if (!applyingTemplate) setTemplateModal(false); }}>
-              <Text style={addPopStyles.cancelText}>Cancel</Text>
-            </TouchableOpacity>
-          </Pressable>
-        </Pressable>
-      </Modal>
+              ) : (
+                templates.map((t, i) => (
+                  <View key={t.id} style={{ width: '100%' }}>
+                    {i > 0 && <View style={addPopStyles.divider} />}
+                    <TouchableOpacity
+                      style={addPopStyles.option}
+                      activeOpacity={0.7}
+                      onPress={() => handleApplyTemplate(t)}
+                      disabled={applyingTemplate}
+                    >
+                      <SymbolView name="doc.on.doc" size={18} tintColor="#244e43" />
+                      <Text style={addPopStyles.optionText}>{t.name}</Text>
+                      {applyingTemplate && <ActivityIndicator size="small" color="#24ac88" />}
+                    </TouchableOpacity>
+                  </View>
+                ))
+              )}
+              <TouchableOpacity style={addPopStyles.cancelBtn} onPress={() => { if (!applyingTemplate) close(); }}>
+                <Text style={addPopStyles.cancelText}>Cancel</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+        </BottomSheet>
+      )}
     </View>
   );
 }
@@ -1680,10 +1685,9 @@ function TrainingTab({
 
           {/* Move training — calendar picker modal */}
           {moveDateModal && (
-            <Modal visible transparent animationType="fade" onRequestClose={() => { setMoveDateModal(false); setScheduledMenu(null); setMoveConfirmDate(null); }} statusBarTranslucent>
-              <View style={moveCalStyles.overlay}>
-                <Pressable style={StyleSheet.absoluteFill} onPress={() => { setMoveDateModal(false); setScheduledMenu(null); setMoveConfirmDate(null); }} />
-                <View style={moveCalStyles.card}>
+            <BottomSheet onClose={() => { setMoveDateModal(false); setScheduledMenu(null); setMoveConfirmDate(null); }}>
+              {close => (
+                <View style={moveCalStyles.sheetContent}>
                   <Text style={moveCalStyles.title}>Move Training</Text>
                   <Text style={moveCalStyles.sub}>Pick a new date</Text>
                   {/* Month navigation */}
@@ -1761,18 +1765,18 @@ function TrainingTab({
                       <Text style={moveCalStyles.confirmMsg}>
                         Move to {new Date(moveConfirmDate + 'T12:00:00').toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'short' })}?
                       </Text>
-                      <TouchableOpacity style={moveCalStyles.confirmBtn} onPress={moveSessionDate} activeOpacity={0.85}>
+                      <TouchableOpacity style={moveCalStyles.confirmBtn} onPress={() => close(() => moveSessionDate())} activeOpacity={0.85}>
                         <Text style={moveCalStyles.confirmBtnText}>Move</Text>
                       </TouchableOpacity>
                     </View>
                   )}
                   {movingDate && <ActivityIndicator color={ACCENT} style={{ marginTop: 12 }} />}
-                  <TouchableOpacity onPress={() => { setMoveDateModal(false); setScheduledMenu(null); setMoveConfirmDate(null); }} hitSlop={8} style={{ marginTop: 12 }}>
+                  <TouchableOpacity onPress={() => close()} hitSlop={8} style={{ marginTop: 12 }}>
                     <Text style={moveCalStyles.cancelText}>Cancel</Text>
                   </TouchableOpacity>
                 </View>
-              </View>
-            </Modal>
+              )}
+            </BottomSheet>
           )}
 
           {/* Delete session confirm modal */}
@@ -2280,10 +2284,9 @@ function WeekStripCard({
 
       {/* Month calendar — jump the week strip to any day */}
       {calOpen && (
-        <Modal visible transparent animationType="fade" onRequestClose={() => setCalOpen(false)} statusBarTranslucent>
-          <View style={moveCalStyles.overlay}>
-            <Pressable style={StyleSheet.absoluteFill} onPress={() => setCalOpen(false)} />
-            <View style={moveCalStyles.card}>
+        <BottomSheet onClose={() => setCalOpen(false)}>
+          {close => (
+            <View style={moveCalStyles.sheetContent}>
               <Text style={moveCalStyles.title}>Jump to date</Text>
               <Text style={moveCalStyles.sub}>Pick a day</Text>
               {/* Month navigation */}
@@ -2321,11 +2324,10 @@ function WeekStripCard({
                       <TouchableOpacity
                         key={di}
                         style={moveCalStyles.dayCell}
-                        onPress={() => {
+                        onPress={() => close(() => {
                           onWeekChange(getWeekOffsetForDate(dateStr));
                           onDaySelect(dateStr);
-                          setCalOpen(false);
-                        }}
+                        })}
                         activeOpacity={0.7}
                       >
                         <View style={[
@@ -2354,8 +2356,8 @@ function WeekStripCard({
                 <Text style={moveCalStyles.legendText}>Workout logged</Text>
               </View>
             </View>
-          </View>
-        </Modal>
+          )}
+        </BottomSheet>
       )}
     </>
   );
@@ -3329,10 +3331,9 @@ function NewPackageModal({
     : t.clientProfile.sessions.validUntilPlaceholder;
 
   return (
-    <Modal visible transparent animationType="fade" onRequestClose={onClose} statusBarTranslucent>
-      <View style={cmStyles.overlay}>
-        <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
-        <View style={[cmStyles.box, { gap: 16, paddingHorizontal: 24 }]}>
+    <>
+    <BottomSheet onClose={onClose} avoidKeyboard>
+        <View style={{ paddingHorizontal: 24, paddingBottom: 8, gap: 16, alignItems: 'center' }}>
           <Text style={cmStyles.title}>{t.clientProfile.sessions.assignPackageTitle}</Text>
 
           {/* Type selector */}
@@ -3415,7 +3416,7 @@ function NewPackageModal({
             <Text style={cmStyles.cancelText}>{t.common.cancel}</Text>
           </TouchableOpacity>
         </View>
-      </View>
+    </BottomSheet>
 
       {/* Date edit modal */}
       {dateModalOpen && (
@@ -3453,7 +3454,7 @@ function NewPackageModal({
           )}
         </Modal>
       )}
-    </Modal>
+    </>
   );
 }
 
@@ -4319,9 +4320,9 @@ function RoutinePickerModal({
   }, [clientId]);
 
   return (
-    <Modal visible transparent animationType="fade" onRequestClose={onClose} statusBarTranslucent>
-      <Pressable style={menuStyles.overlay} onPress={onClose}>
-        <Pressable style={menuStyles.sheet}>
+    <BottomSheet onClose={onClose}>
+      {close => (
+        <View style={menuStyles.sheetContent}>
           <Text style={menuStyles.sheetTitle}>Add to Routine</Text>
           <View style={menuStyles.sheetDivider} />
           {loading ? (
@@ -4331,16 +4332,16 @@ function RoutinePickerModal({
           ) : (
             routines.map((r, i) => (
               <View key={r.id}>
-                <TouchableOpacity style={menuStyles.option} onPress={() => onPick(r.id)} activeOpacity={0.7}>
+                <TouchableOpacity style={menuStyles.option} onPress={() => close(() => onPick(r.id))} activeOpacity={0.7}>
                   <Text style={menuStyles.optionText}>{r.name}</Text>
                 </TouchableOpacity>
                 {i < routines.length - 1 && <View style={menuStyles.optionDivider} />}
               </View>
             ))
           )}
-        </Pressable>
-      </Pressable>
-    </Modal>
+        </View>
+      )}
+    </BottomSheet>
   );
 }
 
@@ -4533,6 +4534,7 @@ const infoFieldStyles = StyleSheet.create({
 });
 
 const menuStyles = StyleSheet.create({
+  sheetContent: { paddingBottom: 4 },
   overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'center', paddingHorizontal: 40 },
   sheet: { backgroundColor: CARD, borderRadius: 16, overflow: 'hidden' },
   sheetTitle: {
@@ -4712,6 +4714,7 @@ const pkgModalStyles = StyleSheet.create({
 });
 
 const addPopStyles = StyleSheet.create({
+  sheetContent: { alignItems: 'center', paddingTop: 4, paddingBottom: 4 },
   overlay: {
     flex: 1, backgroundColor: 'rgba(0,0,0,0.45)',
     alignItems: 'center', justifyContent: 'center', padding: 32,
@@ -4890,6 +4893,7 @@ const wsStyles = StyleSheet.create({
 const moveCalStyles = StyleSheet.create({
   overlay:        { flex: 1, backgroundColor: 'rgba(0,0,0,0.52)', justifyContent: 'center', paddingHorizontal: 24 },
   card:           { backgroundColor: CARD, borderRadius: 16, padding: 20, alignItems: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.15, shadowRadius: 20, elevation: 10 },
+  sheetContent:   { paddingHorizontal: 20, paddingBottom: 12, alignItems: 'center' },
   title:          { fontSize: 16, fontWeight: '700', color: TEXT, marginBottom: 2 },
   sub:            { fontSize: 13, color: MUTED, marginBottom: 16 },
   monthRow:       { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', alignSelf: 'stretch', marginBottom: 12 },

@@ -9,14 +9,13 @@ import {
   StatusBar,
   ActivityIndicator,
   RefreshControl,
-  Modal,
-  Pressable,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { smartBack } from '@/lib/navHistory';
 import { SymbolView } from 'expo-symbols';
 import { VFIcon } from '@/components/VFIcon';
+import { BottomSheet } from '@/components/BottomSheet';
 import Svg, { Circle as SvgCircle } from 'react-native-svg';
 import { LinearGradient } from 'expo-linear-gradient';
 import { supabase } from '@/lib/supabase';
@@ -620,9 +619,9 @@ function RoutineQuickLookModal({
   if (!routineId) return null;
 
   return (
-    <Modal visible transparent animationType="fade" onRequestClose={onClose} statusBarTranslucent>
-      <Pressable style={qlStyles.overlay} onPress={onClose}>
-        <Pressable style={qlStyles.card} onPress={() => {}}>
+    <BottomSheet onClose={onClose}>
+      {close => (
+        <View style={{ paddingHorizontal: 20 }}>
           <Text style={qlStyles.title} numberOfLines={2}>{routineName}</Text>
           <View style={qlStyles.divider} />
           {loading ? (
@@ -639,12 +638,12 @@ function RoutineQuickLookModal({
               ))}
             </ScrollView>
           )}
-          <TouchableOpacity style={qlStyles.doneBtn} onPress={onClose} activeOpacity={0.8}>
+          <TouchableOpacity style={qlStyles.doneBtn} onPress={() => close()} activeOpacity={0.8}>
             <Text style={qlStyles.doneBtnText}>Done</Text>
           </TouchableOpacity>
-        </Pressable>
-      </Pressable>
-    </Modal>
+        </View>
+      )}
+    </BottomSheet>
   );
 }
 

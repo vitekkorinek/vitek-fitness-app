@@ -1,13 +1,13 @@
 import { useCallback, useState } from 'react';
 import {
-  View, Text, ScrollView, TouchableOpacity, Modal, TextInput,
+  View, Text, ScrollView, TouchableOpacity, TextInput,
   StyleSheet, StatusBar, ActivityIndicator, RefreshControl,
-  KeyboardAvoidingView, Platform,
 } from 'react-native';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { SymbolView } from 'expo-symbols';
 import { useAuth } from '@/context/AuthContext';
 import { supabase } from '@/lib/supabase';
+import { BottomSheet } from '@/components/BottomSheet';
 import type { SessionPackage } from '@/types/database';
 
 const BG       = '#faf9f7';
@@ -575,10 +575,9 @@ export default function ScheduleTabScreen() {
 
       {/* ── Edit appointment window ───────────────────────────────── */}
       {editAppt && (
-        <Modal transparent animationType="fade" onRequestClose={() => setEditAppt(null)}>
-          <TouchableOpacity style={mr.overlay} activeOpacity={1} onPress={() => setEditAppt(null)} />
-          <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={mr.kvWrap}>
-            <View style={mr.modal}>
+        <BottomSheet avoidKeyboard onClose={() => setEditAppt(null)}>
+          {close => (
+            <View style={{ paddingHorizontal: 20, paddingBottom: 4 }}>
               <Text style={mr.title}>{TYPE_LABELS[editAppt.type] ?? editAppt.type}</Text>
               <Text style={mr.subtitle}>
                 {formatDate(editAppt.date)} · {formatTime(editAppt.start_time)} · {editAppt.duration_minutes} min
@@ -587,7 +586,7 @@ export default function ScheduleTabScreen() {
               {editSent ? (
                 <>
                   <Text style={mr.sentText}>Request sent. Vitek will get back to you.</Text>
-                  <TouchableOpacity style={mr.doneBtn} onPress={() => setEditAppt(null)} activeOpacity={0.85}>
+                  <TouchableOpacity style={mr.doneBtn} onPress={() => close()} activeOpacity={0.85}>
                     <Text style={mr.doneBtnText}>Close</Text>
                   </TouchableOpacity>
                 </>
@@ -603,7 +602,7 @@ export default function ScheduleTabScreen() {
                     <Text style={[mr.optionText, { color: RED }]}>Request cancellation</Text>
                     <SymbolView name="chevron.right" size={13} tintColor={MUTED} />
                   </TouchableOpacity>
-                  <TouchableOpacity onPress={() => setEditAppt(null)} style={mr.cancelLink}>
+                  <TouchableOpacity onPress={() => close()} style={mr.cancelLink}>
                     <Text style={mr.cancelLinkText}>Close</Text>
                   </TouchableOpacity>
                 </>
@@ -649,8 +648,8 @@ export default function ScheduleTabScreen() {
                 </>
               )}
             </View>
-          </KeyboardAvoidingView>
-        </Modal>
+          )}
+        </BottomSheet>
       )}
     </View>
   );

@@ -18,6 +18,7 @@ import { SymbolView } from 'expo-symbols';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/context/AuthContext';
 import { TrainerLogoButton } from '@/components/TrainerLogoButton';
+import { BottomSheet } from '@/components/BottomSheet';
 import { relativeTime, isInactiveClient, nameInitial } from '@/lib/utils';
 import t from '@/i18n/en';
 import type { User } from '@/types/database';
@@ -287,48 +288,41 @@ export default function ClientsScreen() {
       </View>
 
       {/* Week appointments modal */}
-      <Modal
-        visible={apptModal !== null}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setApptModal(null)}
-      >
-        <TouchableOpacity
-          style={styles.modalOverlay}
-          activeOpacity={1}
-          onPress={() => setApptModal(null)}
-        >
-          <TouchableOpacity activeOpacity={1} style={styles.modalCard} onPress={() => {}}>
-            <Text style={styles.modalTitle}>{apptModal?.name}</Text>
-            <Text style={styles.modalSub}>
-              {apptModal?.weekLabel} · {apptModal?.appts.length}{' '}
-              {apptModal?.appts.length === 1 ? 'appointment' : 'appointments'}
-            </Text>
+      {apptModal !== null && (
+        <BottomSheet onClose={() => setApptModal(null)}>
+          {close => (
+            <View style={styles.modalCard}>
+              <Text style={styles.modalTitle}>{apptModal?.name}</Text>
+              <Text style={styles.modalSub}>
+                {apptModal?.weekLabel} · {apptModal?.appts.length}{' '}
+                {apptModal?.appts.length === 1 ? 'appointment' : 'appointments'}
+              </Text>
 
-            <ScrollView style={styles.modalList} showsVerticalScrollIndicator={false}>
-              {apptModal?.appts.map((a, i) => (
-                <View key={`${a.date}-${a.time ?? ''}-${i}`} style={styles.modalApptRow}>
-                  <View style={styles.modalApptStripe} />
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.modalApptDay}>{fmtApptFull(a.date)}</Text>
-                    <Text style={styles.modalApptMeta}>
-                      {a.time ? a.time.slice(0, 5) : '—'} · {apptTypeLabel(a.type)}
-                    </Text>
+              <ScrollView style={styles.modalList} showsVerticalScrollIndicator={false}>
+                {apptModal?.appts.map((a, i) => (
+                  <View key={`${a.date}-${a.time ?? ''}-${i}`} style={styles.modalApptRow}>
+                    <View style={styles.modalApptStripe} />
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.modalApptDay}>{fmtApptFull(a.date)}</Text>
+                      <Text style={styles.modalApptMeta}>
+                        {a.time ? a.time.slice(0, 5) : '—'} · {apptTypeLabel(a.type)}
+                      </Text>
+                    </View>
                   </View>
-                </View>
-              ))}
-            </ScrollView>
+                ))}
+              </ScrollView>
 
-            <TouchableOpacity
-              style={styles.modalDoneBtn}
-              activeOpacity={0.85}
-              onPress={() => setApptModal(null)}
-            >
-              <Text style={styles.modalDoneText}>Done</Text>
-            </TouchableOpacity>
-          </TouchableOpacity>
-        </TouchableOpacity>
-      </Modal>
+              <TouchableOpacity
+                style={styles.modalDoneBtn}
+                activeOpacity={0.85}
+                onPress={() => close()}
+              >
+                <Text style={styles.modalDoneText}>Done</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+        </BottomSheet>
+      )}
     </View>
   );
 }

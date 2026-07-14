@@ -1,7 +1,5 @@
 import {
   ActivityIndicator,
-  Modal,
-  Pressable,
   ScrollView,
   StyleSheet,
   Text,
@@ -9,6 +7,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import { BottomSheet } from '@/components/BottomSheet';
 import { useCallback, useState } from 'react';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect, useRouter } from 'expo-router';
@@ -136,29 +135,31 @@ export default function RecommendationsScreen() {
         </ScrollView>
       )}
 
-      {/* Detail modal */}
-      <Modal visible={!!selected} transparent animationType="fade" onRequestClose={() => setSelected(null)}>
-        <Pressable style={s.overlay} onPress={() => setSelected(null)}>
-          <Pressable style={s.modal} onPress={() => {}}>
-            <LinearGradient colors={['#c87820', '#e89840']} style={s.modalTop}>
-              <SymbolView name="pills.fill" size={28} tintColor="rgba(255,255,255,0.9)" />
-            </LinearGradient>
-            <View style={{ height: 4, backgroundColor: AMBER }} />
-            <View style={s.modalBody}>
-              <Text style={s.modalTitle}>{selected?.title}</Text>
-              {!!selected?.link_url && (
-                <Text style={s.modalLink} numberOfLines={1}>{selected.link_url}</Text>
-              )}
-              {!!selected?.body && (
-                <Text style={s.modalText}>{selected.body}</Text>
-              )}
-            </View>
-            <TouchableOpacity style={s.modalClose} onPress={() => setSelected(null)}>
-              <Text style={s.modalCloseText}>Close</Text>
-            </TouchableOpacity>
-          </Pressable>
-        </Pressable>
-      </Modal>
+      {/* Detail sheet */}
+      {selected && (
+        <BottomSheet onClose={() => setSelected(null)}>
+          {close => (
+            <>
+              <LinearGradient colors={['#c87820', '#e89840']} style={s.modalTop}>
+                <SymbolView name="pills.fill" size={28} tintColor="rgba(255,255,255,0.9)" />
+              </LinearGradient>
+              <View style={{ height: 4, backgroundColor: AMBER }} />
+              <View style={s.modalBody}>
+                <Text style={s.modalTitle}>{selected?.title}</Text>
+                {!!selected?.link_url && (
+                  <Text style={s.modalLink} numberOfLines={1}>{selected.link_url}</Text>
+                )}
+                {!!selected?.body && (
+                  <Text style={s.modalText}>{selected.body}</Text>
+                )}
+              </View>
+              <TouchableOpacity style={s.modalClose} onPress={() => close()}>
+                <Text style={s.modalCloseText}>Close</Text>
+              </TouchableOpacity>
+            </>
+          )}
+        </BottomSheet>
+      )}
     </View>
   );
 }

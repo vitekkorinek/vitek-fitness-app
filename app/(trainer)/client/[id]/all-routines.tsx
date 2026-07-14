@@ -19,6 +19,7 @@ import { SymbolView } from 'expo-symbols';
 import Svg, { Circle as SvgCircle } from 'react-native-svg';
 import { LinearGradient } from 'expo-linear-gradient';
 import { supabase } from '@/lib/supabase';
+import { BottomSheet } from '@/components/BottomSheet';
 import { CATEGORY_COLORS } from '@/lib/workoutCategories';
 import type { WorkoutCategory } from '@/lib/workoutCategories';
 
@@ -566,45 +567,43 @@ function RoutineMenuModal({
   onChangeCover: () => void; onClose: () => void;
 }) {
   return (
-    <Modal visible transparent animationType="fade" onRequestClose={onClose} statusBarTranslucent>
-      <Pressable style={menuStyles.overlay} onPress={onClose}>
-        <Pressable style={menuStyles.sheet}>
-          <Text style={menuStyles.sheetTitle} numberOfLines={1}>{routineName}</Text>
-          <View style={menuStyles.sheetDivider} />
-          <TouchableOpacity style={menuStyles.option} onPress={onRename} activeOpacity={0.7}>
-            <SymbolView name="pencil" size={16} tintColor={TEXT} />
-            <Text style={menuStyles.optionText}>Rename</Text>
-          </TouchableOpacity>
-          <View style={menuStyles.optionDivider} />
-          <TouchableOpacity style={menuStyles.option} onPress={onChangeCover} activeOpacity={0.7}>
-            <SymbolView name="photo" size={16} tintColor={TEXT} />
-            <Text style={menuStyles.optionText}>Change Photo</Text>
-          </TouchableOpacity>
-          {isActive ? (
-            <>
-              <View style={menuStyles.optionDivider} />
-              <TouchableOpacity style={menuStyles.option} onPress={onDeactivate} activeOpacity={0.7}>
-                <SymbolView name="archivebox" size={16} tintColor="#f5a623" />
-                <Text style={[menuStyles.optionText, { color: '#c07800' }]}>Deactivate</Text>
-              </TouchableOpacity>
-            </>
-          ) : (
-            <>
-              <View style={menuStyles.optionDivider} />
-              <TouchableOpacity style={menuStyles.option} onPress={onReactivate} activeOpacity={0.7}>
-                <SymbolView name="arrow.counterclockwise" size={16} tintColor={ACCENT} />
-                <Text style={[menuStyles.optionText, { color: ACCENT }]}>Reactivate</Text>
-              </TouchableOpacity>
-            </>
-          )}
-          <View style={menuStyles.optionDivider} />
-          <TouchableOpacity style={menuStyles.option} onPress={onDelete} activeOpacity={0.7}>
-            <SymbolView name="trash" size={16} tintColor="#ef4444" />
-            <Text style={[menuStyles.optionText, menuStyles.deleteText]}>Delete</Text>
-          </TouchableOpacity>
-        </Pressable>
-      </Pressable>
-    </Modal>
+    <BottomSheet onClose={onClose}>{close => (
+      <>
+        <Text style={menuStyles.sheetTitle} numberOfLines={1}>{routineName}</Text>
+        <View style={menuStyles.sheetDivider} />
+        <TouchableOpacity style={menuStyles.option} onPress={() => close(onRename)} activeOpacity={0.7}>
+          <SymbolView name="pencil" size={16} tintColor={TEXT} />
+          <Text style={menuStyles.optionText}>Rename</Text>
+        </TouchableOpacity>
+        <View style={menuStyles.optionDivider} />
+        <TouchableOpacity style={menuStyles.option} onPress={() => close(onChangeCover)} activeOpacity={0.7}>
+          <SymbolView name="photo" size={16} tintColor={TEXT} />
+          <Text style={menuStyles.optionText}>Change Photo</Text>
+        </TouchableOpacity>
+        {isActive ? (
+          <>
+            <View style={menuStyles.optionDivider} />
+            <TouchableOpacity style={menuStyles.option} onPress={() => close(onDeactivate)} activeOpacity={0.7}>
+              <SymbolView name="archivebox" size={16} tintColor="#f5a623" />
+              <Text style={[menuStyles.optionText, { color: '#c07800' }]}>Deactivate</Text>
+            </TouchableOpacity>
+          </>
+        ) : (
+          <>
+            <View style={menuStyles.optionDivider} />
+            <TouchableOpacity style={menuStyles.option} onPress={() => close(onReactivate)} activeOpacity={0.7}>
+              <SymbolView name="arrow.counterclockwise" size={16} tintColor={ACCENT} />
+              <Text style={[menuStyles.optionText, { color: ACCENT }]}>Reactivate</Text>
+            </TouchableOpacity>
+          </>
+        )}
+        <View style={menuStyles.optionDivider} />
+        <TouchableOpacity style={menuStyles.option} onPress={() => close(onDelete)} activeOpacity={0.7}>
+          <SymbolView name="trash" size={16} tintColor="#ef4444" />
+          <Text style={[menuStyles.optionText, menuStyles.deleteText]}>Delete</Text>
+        </TouchableOpacity>
+      </>
+    )}</BottomSheet>
   );
 }
 

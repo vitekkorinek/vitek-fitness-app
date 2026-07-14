@@ -25,6 +25,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/context/AuthContext';
 import { registerPickHandler } from '@/lib/exercisePicker';
+import { BottomSheet } from '@/components/BottomSheet';
 import { CATEGORY_OPTIONS, CATEGORY_COLORS, STRETCHING_CATEGORIES, STRETCHING_CATEGORY_TO_STRETCH_TYPE } from '@/lib/workoutCategories';
 import type { WorkoutCategory } from '@/lib/workoutCategories';
 import type { Exercise, Routine } from '@/types/database';
@@ -1067,15 +1068,15 @@ export default function WorkoutBuilderScreen() {
               </View>}
             </View>
 
-            {/* Category picker modal */}
+            {/* Category picker sheet */}
             {categoryPickerOpen && (
-              <Modal visible transparent animationType="fade" onRequestClose={() => setCategoryPickerOpen(false)} statusBarTranslucent>
-                <Pressable style={catPickerStyles.overlay} onPress={() => setCategoryPickerOpen(false)}>
-                  <Pressable style={catPickerStyles.box}>
+              <BottomSheet onClose={() => setCategoryPickerOpen(false)}>
+                {close => (
+                  <View style={catPickerStyles.sheetContent}>
                     <Text style={catPickerStyles.title}>Category</Text>
                     <TouchableOpacity
                       style={[catPickerStyles.option, !workoutCategory && catPickerStyles.optionActive]}
-                      onPress={() => { setWorkoutCategory(null); setStretchType(null); setCategoryPickerOpen(false); }}
+                      onPress={() => close(() => { setWorkoutCategory(null); setStretchType(null); })}
                       activeOpacity={0.7}
                     >
                       <Text style={[catPickerStyles.optionText, !workoutCategory && catPickerStyles.optionTextActive]}>None</Text>
@@ -1087,7 +1088,7 @@ export default function WorkoutBuilderScreen() {
                         <TouchableOpacity
                           key={cat}
                           style={[catPickerStyles.option, isSelected && { backgroundColor: colors.pillBg }]}
-                          onPress={() => { setWorkoutCategory(cat); setStretchType(null); setCategoryPickerOpen(false); }}
+                          onPress={() => close(() => { setWorkoutCategory(cat); setStretchType(null); })}
                           activeOpacity={0.7}
                         >
                           <View style={[catPickerStyles.optionDot, { backgroundColor: colors.border }]} />
@@ -1107,11 +1108,10 @@ export default function WorkoutBuilderScreen() {
                         <TouchableOpacity
                           key={cat}
                           style={[catPickerStyles.option, isSelected && { backgroundColor: colors.pillBg }]}
-                          onPress={() => {
+                          onPress={() => close(() => {
                             setWorkoutCategory(cat);
                             setStretchType(STRETCHING_CATEGORY_TO_STRETCH_TYPE[cat]);
-                            setCategoryPickerOpen(false);
-                          }}
+                          })}
                           activeOpacity={0.7}
                         >
                           <View style={[catPickerStyles.optionDot, { backgroundColor: colors.border }]} />
@@ -1122,12 +1122,12 @@ export default function WorkoutBuilderScreen() {
                         </TouchableOpacity>
                       );
                     })}
-                    <TouchableOpacity onPress={() => setCategoryPickerOpen(false)} style={catPickerStyles.cancelBtn}>
+                    <TouchableOpacity onPress={() => close()} style={catPickerStyles.cancelBtn}>
                       <Text style={catPickerStyles.cancelText}>Cancel</Text>
                     </TouchableOpacity>
-                  </Pressable>
-                </Pressable>
-              </Modal>
+                  </View>
+                )}
+              </BottomSheet>
             )}
 
             {/* Exercise rows */}
@@ -1749,19 +1749,18 @@ const TEXT   = '#1a1a1a';
 const MUTED  = '#999';
 
 const catPickerStyles = StyleSheet.create({
-  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', paddingHorizontal: 32 },
-  box: { backgroundColor: '#fff', borderRadius: 16, overflow: 'hidden', paddingBottom: 8 },
+  sheetContent: { paddingHorizontal: 20, paddingBottom: 8 },
   title: { fontSize: 15, fontWeight: '700', color: TEXT, textAlign: 'center', paddingVertical: 16 },
   option: {
     flexDirection: 'row', alignItems: 'center', gap: 12,
-    paddingHorizontal: 18, paddingVertical: 13,
+    paddingVertical: 13,
   },
   optionActive: { backgroundColor: '#f5f5f3' },
   optionDot: { width: 10, height: 10, borderRadius: 5 },
   optionText: { flex: 1, fontSize: 15, color: TEXT },
   optionTextActive: { color: ACCENT, fontWeight: '600' },
   separator: { height: 1, backgroundColor: '#f0f0ee', marginVertical: 4 },
-  sectionLabel: { fontSize: 10, fontWeight: '700', color: MUTED, letterSpacing: 0.8, paddingHorizontal: 18, paddingTop: 8, paddingBottom: 4 },
+  sectionLabel: { fontSize: 10, fontWeight: '700', color: MUTED, letterSpacing: 0.8, paddingTop: 8, paddingBottom: 4 },
   cancelBtn: { alignItems: 'center', paddingVertical: 14, marginTop: 4 },
   cancelText: { fontSize: 14, color: MUTED },
 });

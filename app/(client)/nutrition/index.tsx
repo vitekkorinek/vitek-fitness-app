@@ -1,5 +1,7 @@
 import {
   ActivityIndicator,
+  Animated,
+  Dimensions,
   Image,
   InputAccessoryView,
   KeyboardAvoidingView,
@@ -18,6 +20,8 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect, useNavigation, useRouter } from 'expo-router';
+import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
+import { BottomSheet } from '@/components/BottomSheet';
 import { SymbolView } from 'expo-symbols';
 import Svg, { Defs, LinearGradient as SvgLinearGradient, Path as SvgPath, Stop } from 'react-native-svg';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -41,6 +45,8 @@ const HEADER = '#244e43';
 const ACCENT = '#24ac88';
 const TEXT   = '#1a1a1a';
 const MUTED  = '#999';
+const POP_W  = 300; // add-picker popover width
+const SCREEN_H = Dimensions.get('window').height;
 const AMBER  = '#EF9F27';
 const CORAL  = '#D85A30';
 const BLUE   = '#378ADD';
@@ -417,15 +423,15 @@ function CalendarPicker({ current, onSelect, onClose, calTarget, calData, favDat
           })}
         </View>
       ))}
-      <TouchableOpacity onPress={onClose} style={cp.cancelBtn}>
-        <Text style={cp.cancelText}>Cancel</Text>
+      <TouchableOpacity onPress={onClose} style={cp.doneBtn} activeOpacity={0.85}>
+        <Text style={cp.doneBtnText}>Done</Text>
       </TouchableOpacity>
     </View>
   );
 }
 
 const cp = StyleSheet.create({
-  card:       { backgroundColor: CARD, borderRadius: 16, padding: 16 },
+  card:       { backgroundColor: CARD, borderRadius: 16, paddingHorizontal: 16, paddingTop: 12, paddingBottom: 0 },
   monthRow:   { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 },
   monthLabel: { fontSize: 15, fontWeight: '700', color: TEXT },
   daysHeader: { flexDirection: 'row', marginBottom: 4 },
@@ -439,8 +445,8 @@ const cp = StyleSheet.create({
   dayNumToday: { color: ACCENT, fontWeight: '700' },
   indicator:  { position: 'absolute', bottom: 3, width: 16, height: 2.5, borderRadius: 2 },
   heartDot:   { position: 'absolute', bottom: 2, right: 4 },
-  cancelBtn:  { marginTop: 12, alignSelf: 'center' },
-  cancelText: { fontSize: 14, color: MUTED },
+  doneBtn:    { backgroundColor: ACCENT, borderRadius: 100, paddingVertical: 13, alignItems: 'center', marginTop: 14 },
+  doneBtnText: { fontSize: 15, fontWeight: '700', color: '#fff' },
 });
 
 // ─── Food log row ─────────────────────────────────────────────────────────────
@@ -566,6 +572,7 @@ export default function NutritionDailyScreen() {
   const router       = useRouter();
   const navigation   = useNavigation();
   const insets       = useSafeAreaInsets();
+  const tabBarH      = useBottomTabBarHeight();
 
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [weekStart, setWeekStart]       = useState<Date>(() => mondayOf(new Date()));
@@ -583,6 +590,23 @@ export default function NutritionDailyScreen() {
   const [mealPickerVisible, setMealPickerVisible] = useState(false);
   const [pickerSnackOpen, setPickerSnackOpen]     = useState(false);
   const [pickerWaterOpen, setPickerWaterOpen]     = useState(false);
+  // Add-picker popover: grows from the + FAB (bottom-right). popAnim 0→1 drives
+  // scale/opacity + the FAB's +→✕ rotation; popH is the measured card height,
+  // used to pin the scale origin to the card's bottom-right corner.
+  const popAnim = useRef(new Animated.Value(0)).current;
+  const [popH, setPopH] = useState(320);
+  const openPicker = () => {
+    setPickerSnackOpen(false); setPickerWaterOpen(false);
+    popAnim.setValue(0);
+    setMealPickerVisible(true);
+    Animated.spring(popAnim, { toValue: 1, useNativeDriver: true, tension: 120, friction: 14 }).start();
+  };
+  const closePicker = () => {
+    Animated.timing(popAnim, { toValue: 0, duration: 150, useNativeDriver: true }).start(() => setMealPickerVisible(false));
+  };
+  // Reset the FAB rotation (+←✕) whenever the picker is closed — including the
+  // instant closes from selecting a meal (which navigate away without animating).
+  useEffect(() => { if (!mealPickerVisible) popAnim.setValue(0); }, [mealPickerVisible]);
   const [microExpanded, setMicroExpanded]         = useState(false);
 
   // Save this day
@@ -1074,7 +1098,9 @@ export default function NutritionDailyScreen() {
     if (editEntry) setEditAmount(String(editEntry.portion_amount ?? ''));
   }, [editEntry?.id]);
 
-  // Hide/show nutrition tab bar while in selection mode
+  // Hide/show nutrition tab bar while in selection mode. (The add-picker popover
+  // does NOT hide it — it dims it via a full-screen Modal backdrop instead, so the
+  // FAB stays put; hiding the bar expands the screen and drops the FAB.)
   const defaultTabBarStyle = { backgroundColor: SCREEN_BG, borderTopColor: '#e8e8e4', borderTopWidth: 1 };
   useEffect(() => {
     navigation.setOptions({
@@ -1418,99 +1444,135 @@ export default function NutritionDailyScreen() {
         </ScrollView>
       )}
 
-      {/* ── Floating add button ──────────────────────────────────────────── */}
-      {!loading && selectedIds.size === 0 && (
+      {/* ── Add-picker popover (grows from the + FAB) ────────────────────── */}
+      {/* Rendered in a Modal so the dim backdrop covers the bottom tab bar too
+          (the tab bar is drawn by the navigator, outside this screen). The card +
+          ✕ are offset by the tab-bar height so they sit exactly where the resting
+          + is — nothing jumps, the tab bar stays in place (just dimmed). */}
+      <Modal visible={mealPickerVisible} transparent animationType="none" onRequestClose={closePicker} statusBarTranslucent>
+          <Animated.View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.22)', opacity: popAnim }]}>
+            <Pressable style={StyleSheet.absoluteFill} onPress={closePicker} />
+          </Animated.View>
+          <Animated.View
+            onLayout={e => setPopH(e.nativeEvent.layout.height)}
+            style={[
+              styles.popCard,
+              {
+                // Bottom-right corner tucks right into the FAB so the card reads
+                // as growing out of the + button (the ✕ sits at the corner).
+                // +tabBarH: inside the full-screen Modal, bottom is measured from the
+                // physical screen bottom, so add the tab-bar height to land above it.
+                bottom: tabBarH + insets.bottom + 42,
+                opacity: popAnim,
+                transform: [
+                  { translateX: POP_W / 2 },
+                  { translateY: popH / 2 },
+                  { scale: popAnim.interpolate({ inputRange: [0, 1], outputRange: [0.35, 1] }) },
+                  { translateX: -POP_W / 2 },
+                  { translateY: -popH / 2 },
+                ],
+              },
+            ]}
+          >
+            <Text style={styles.modalTitle}>Add to your log</Text>
+            <ScrollView bounces={false} showsVerticalScrollIndicator={false} style={{ maxHeight: SCREEN_H * 0.5 }}>
+              {(['breakfast', 'lunch', 'dinner'] as Meal[]).map(m => (
+                <TouchableOpacity
+                  key={m}
+                  style={styles.pickerRow}
+                  onPress={() => { setMealPickerVisible(false); setAddingToMeal(m); }}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.pickerEmoji}>{MEAL_EMOJI[m]}</Text>
+                  <Text style={styles.pickerLabel}>{MEAL_LABELS[m]}</Text>
+                  <SymbolView name="chevron.right" size={14} tintColor="#ccc" />
+                </TouchableOpacity>
+              ))}
+              <TouchableOpacity
+                style={styles.pickerRow}
+                onPress={() => setPickerSnackOpen(o => !o)}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.pickerEmoji}>🍿</Text>
+                <Text style={styles.pickerLabel}>Snack</Text>
+                <SymbolView name={pickerSnackOpen ? 'chevron.up' : 'chevron.down'} size={14} tintColor="#ccc" />
+              </TouchableOpacity>
+              {pickerSnackOpen && SNACK_SUBTYPES.map(({ key, label, emoji }) => (
+                <TouchableOpacity
+                  key={key}
+                  style={[styles.pickerRow, styles.pickerSubRow]}
+                  onPress={() => { setMealPickerVisible(false); setAddingToMeal(key as Meal); }}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.pickerEmoji}>{emoji}</Text>
+                  <Text style={styles.pickerSubLabel}>{label}</Text>
+                  <SymbolView name="chevron.right" size={14} tintColor="#ccc" />
+                </TouchableOpacity>
+              ))}
+              <View style={styles.pickerDivider} />
+              <TouchableOpacity
+                style={styles.pickerRow}
+                onPress={() => setPickerWaterOpen(o => !o)}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.pickerEmoji}>💧</Text>
+                <Text style={styles.pickerLabel}>Water</Text>
+                <Text style={styles.pickerWaterCount}>{waterMl >= 1000 ? `${(waterMl / 1000).toFixed(1).replace(/\.0$/, '')}L` : `${waterMl}ml`}</Text>
+                <SymbolView name={pickerWaterOpen ? 'chevron.up' : 'chevron.down'} size={14} tintColor="#ccc" />
+              </TouchableOpacity>
+              {pickerWaterOpen && (
+                <View style={styles.pickerWaterGlasses}>
+                  {Array.from({ length: totalWaterGlasses }, (_, i) => (
+                    <TouchableOpacity
+                      key={i}
+                      onPress={() => saveWater(i < waterGlasses ? i : i + 1)}
+                      hitSlop={{ top: 6, bottom: 6, left: 4, right: 4 }}
+                    >
+                      <SymbolView
+                        name={i < waterGlasses ? 'drop.fill' : 'drop'}
+                        size={26}
+                        tintColor={i < waterGlasses ? '#5a9fd8' : '#cfd6dd'}
+                      />
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              )}
+              <View style={styles.pickerDivider} />
+              <TouchableOpacity
+                style={styles.pickerRow}
+                onPress={() => { setMealPickerVisible(false); handleInsertDay(); }}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.pickerEmoji}>📅</Text>
+                <Text style={styles.pickerLabel}>Add a day from Favourites</Text>
+                <SymbolView name="chevron.right" size={14} tintColor="#ccc" />
+              </TouchableOpacity>
+            </ScrollView>
+          </Animated.View>
+
+          {/* ✕ button — lives in the Modal (above the dimmed tab bar), at the same
+              spot as the resting +, morphing via the same rotation. */}
+          <TouchableOpacity
+            style={[styles.fab, { bottom: tabBarH + insets.bottom + 2 }]}
+            onPress={closePicker}
+            activeOpacity={0.85}
+          >
+            <Animated.View style={{ transform: [{ rotate: popAnim.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '45deg'] }) }] }}>
+              <SymbolView name="plus" size={28} tintColor="#fff" weight="semibold" />
+            </Animated.View>
+          </TouchableOpacity>
+      </Modal>
+
+      {/* ── Floating add button (+) — closed state; the ✕ lives in the Modal ── */}
+      {!loading && selectedIds.size === 0 && !mealPickerVisible && (
         <TouchableOpacity
-          style={[styles.fab, { bottom: insets.bottom + 10 }]}
-          onPress={() => { setPickerSnackOpen(false); setPickerWaterOpen(false); setMealPickerVisible(true); }}
+          style={[styles.fab, { bottom: insets.bottom + 2 }]}
+          onPress={openPicker}
           activeOpacity={0.85}
         >
           <SymbolView name="plus" size={28} tintColor="#fff" weight="semibold" />
         </TouchableOpacity>
       )}
-
-      {/* ── Meal picker (from FAB) ────────────────────────────────────────── */}
-      <Modal visible={mealPickerVisible} transparent animationType="fade">
-        <TouchableOpacity style={styles.modalOverlay} onPress={() => setMealPickerVisible(false)} activeOpacity={1}>
-          <TouchableOpacity activeOpacity={1} style={styles.pickerCard}>
-            <Text style={styles.modalTitle}>Add to your log</Text>
-            {(['breakfast', 'lunch', 'dinner'] as Meal[]).map(m => (
-              <TouchableOpacity
-                key={m}
-                style={styles.pickerRow}
-                onPress={() => { setMealPickerVisible(false); setAddingToMeal(m); }}
-                activeOpacity={0.7}
-              >
-                <Text style={styles.pickerEmoji}>{MEAL_EMOJI[m]}</Text>
-                <Text style={styles.pickerLabel}>{MEAL_LABELS[m]}</Text>
-                <SymbolView name="chevron.right" size={14} tintColor="#ccc" />
-              </TouchableOpacity>
-            ))}
-            <TouchableOpacity
-              style={styles.pickerRow}
-              onPress={() => setPickerSnackOpen(o => !o)}
-              activeOpacity={0.7}
-            >
-              <Text style={styles.pickerEmoji}>🍿</Text>
-              <Text style={styles.pickerLabel}>Snack</Text>
-              <SymbolView name={pickerSnackOpen ? 'chevron.up' : 'chevron.down'} size={14} tintColor="#ccc" />
-            </TouchableOpacity>
-            {pickerSnackOpen && SNACK_SUBTYPES.map(({ key, label, emoji }) => (
-              <TouchableOpacity
-                key={key}
-                style={[styles.pickerRow, styles.pickerSubRow]}
-                onPress={() => { setMealPickerVisible(false); setAddingToMeal(key as Meal); }}
-                activeOpacity={0.7}
-              >
-                <Text style={styles.pickerEmoji}>{emoji}</Text>
-                <Text style={styles.pickerSubLabel}>{label}</Text>
-                <SymbolView name="chevron.right" size={14} tintColor="#ccc" />
-              </TouchableOpacity>
-            ))}
-            <View style={styles.pickerDivider} />
-            <TouchableOpacity
-              style={styles.pickerRow}
-              onPress={() => setPickerWaterOpen(o => !o)}
-              activeOpacity={0.7}
-            >
-              <Text style={styles.pickerEmoji}>💧</Text>
-              <Text style={styles.pickerLabel}>Water</Text>
-              <Text style={styles.pickerWaterCount}>{waterMl >= 1000 ? `${(waterMl / 1000).toFixed(1).replace(/\.0$/, '')}L` : `${waterMl}ml`}</Text>
-              <SymbolView name={pickerWaterOpen ? 'chevron.up' : 'chevron.down'} size={14} tintColor="#ccc" />
-            </TouchableOpacity>
-            {pickerWaterOpen && (
-              <View style={styles.pickerWaterGlasses}>
-                {Array.from({ length: totalWaterGlasses }, (_, i) => (
-                  <TouchableOpacity
-                    key={i}
-                    onPress={() => saveWater(i < waterGlasses ? i : i + 1)}
-                    hitSlop={{ top: 6, bottom: 6, left: 4, right: 4 }}
-                  >
-                    <SymbolView
-                      name={i < waterGlasses ? 'drop.fill' : 'drop'}
-                      size={26}
-                      tintColor={i < waterGlasses ? '#5a9fd8' : '#cfd6dd'}
-                    />
-                  </TouchableOpacity>
-                ))}
-              </View>
-            )}
-            <View style={styles.pickerDivider} />
-            <TouchableOpacity
-              style={styles.pickerRow}
-              onPress={() => { setMealPickerVisible(false); handleInsertDay(); }}
-              activeOpacity={0.7}
-            >
-              <Text style={styles.pickerEmoji}>📅</Text>
-              <Text style={styles.pickerLabel}>Add a day from Favourites</Text>
-              <SymbolView name="chevron.right" size={14} tintColor="#ccc" />
-            </TouchableOpacity>
-            <TouchableOpacity onPress={() => setMealPickerVisible(false)} style={styles.cancelLink}>
-              <Text style={styles.cancelText}>Cancel</Text>
-            </TouchableOpacity>
-          </TouchableOpacity>
-        </TouchableOpacity>
-      </Modal>
 
       {/* ── Toasts ───────────────────────────────────────────────────────── */}
       {undoEntry && (
@@ -1551,40 +1613,42 @@ export default function NutritionDailyScreen() {
       />
 
       {/* ── Calendar picker modal ─────────────────────────────────────── */}
-      <Modal visible={datePickerVisible} transparent animationType="fade">
-        <TouchableOpacity style={styles.modalOverlay} onPress={() => setDatePickerVisible(false)} activeOpacity={1}>
-          <View style={styles.modalInner}>
+      {datePickerVisible && (
+        <BottomSheet onClose={() => setDatePickerVisible(false)}>
+          {close => (
             <CalendarPicker
               current={selectedDate}
               onSelect={d => { setSelectedDate(d); setWeekStart(mondayOf(d)); load(); }}
-              onClose={() => setDatePickerVisible(false)}
+              onClose={close}
               calTarget={targets?.calories ?? null}
               calData={calData}
               favDates={favDates}
             />
-          </View>
-        </TouchableOpacity>
-      </Modal>
+          )}
+        </BottomSheet>
+      )}
 
       {/* ── Macro / micro pip detail modal ────────────────────────────── */}
-      <Modal visible={pipModal !== null} transparent animationType="fade">
-        <TouchableOpacity style={styles.modalOverlay} onPress={() => setPipModal(null)} activeOpacity={1}>
-          <TouchableOpacity activeOpacity={1} style={styles.modalCard}>
-            <Text style={styles.modalTitle}>{pipModal?.name}</Text>
-            <View style={styles.pipModalRow}>
-              <Text style={styles.pipModalLabel}>Current intake</Text>
-              <Text style={styles.pipModalValue}>{pipModal ? pipModal.consumed.toFixed(pipModal.decimals ?? 1) : ''}{pipModal?.unit}</Text>
+      {pipModal !== null && (
+        <BottomSheet onClose={() => setPipModal(null)}>
+          {close => (
+            <View style={{ paddingHorizontal: 20 }}>
+              <Text style={styles.modalTitle}>{pipModal?.name}</Text>
+              <View style={styles.pipModalRow}>
+                <Text style={styles.pipModalLabel}>Current intake</Text>
+                <Text style={styles.pipModalValue}>{pipModal ? pipModal.consumed.toFixed(pipModal.decimals ?? 1) : ''}{pipModal?.unit}</Text>
+              </View>
+              <View style={[styles.pipModalRow, { borderBottomWidth: 0 }]}>
+                <Text style={styles.pipModalLabel}>Goal</Text>
+                <Text style={styles.pipModalValue}>{pipModal?.goal != null ? `${pipModal.goal}${pipModal.unit}` : '—'}</Text>
+              </View>
+              <TouchableOpacity style={[styles.confirmBtn, { marginTop: 16 }]} onPress={() => close()} activeOpacity={0.85}>
+                <Text style={styles.confirmBtnText}>Done</Text>
+              </TouchableOpacity>
             </View>
-            <View style={styles.pipModalRow}>
-              <Text style={styles.pipModalLabel}>Goal</Text>
-              <Text style={styles.pipModalValue}>{pipModal?.goal != null ? `${pipModal.goal}${pipModal.unit}` : '—'}</Text>
-            </View>
-            <TouchableOpacity style={styles.confirmBtn} onPress={() => setPipModal(null)}>
-              <Text style={styles.confirmBtnText}>Done</Text>
-            </TouchableOpacity>
-          </TouchableOpacity>
-        </TouchableOpacity>
-      </Modal>
+          )}
+        </BottomSheet>
+      )}
 
       {/* Save-as-meal is handled via selection mode (select items → Meal) */}
 
@@ -1876,18 +1940,23 @@ const styles = StyleSheet.create({
   snackGroupLabel:  { flex: 1, fontSize: 12, fontWeight: '700', color: MUTED, textTransform: 'uppercase', letterSpacing: 0.4 },
 
   // Floating add button (FAB)
-  fab: { position: 'absolute', right: 20, width: 56, height: 56, borderRadius: 28, backgroundColor: ACCENT, alignItems: 'center', justifyContent: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.25, shadowRadius: 8, elevation: 8 },
+  fab: { position: 'absolute', right: 20, width: 56, height: 56, borderRadius: 28, backgroundColor: ACCENT, alignItems: 'center', justifyContent: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.25, shadowRadius: 8, elevation: 12, zIndex: 42 },
+  popBackdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.18)', zIndex: 40 },
+  // right:46 (vs the FAB's right:20) shifts the card left so the FAB straddles
+  // its bottom-right corner — the corner tucks behind the button, which pokes out
+  // to the bottom-right, so the card reads as rising out of the +.
+  popCard: { position: 'absolute', right: 46, width: POP_W, backgroundColor: CARD, borderRadius: 20, paddingTop: 18, paddingBottom: 26, paddingHorizontal: 12, zIndex: 41, shadowColor: '#000', shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.22, shadowRadius: 16, elevation: 14 },
 
   // FAB meal picker
   pickerCard:     { width: '82%', backgroundColor: CARD, borderRadius: 16, paddingTop: 18, paddingBottom: 8, paddingHorizontal: 8 },
-  pickerRow:      { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 14, paddingHorizontal: 12, borderRadius: 12 },
-  pickerSubRow:   { paddingLeft: 24, backgroundColor: BG },
+  pickerRow:      { flexDirection: 'row', alignItems: 'center', gap: 14, paddingVertical: 15, paddingHorizontal: 14, borderRadius: 12 },
+  pickerSubRow:   { paddingLeft: 24, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: '#eee' },
   pickerDivider:  { height: 1, backgroundColor: BORDER, marginVertical: 6, marginHorizontal: 12 },
   pickerEmoji:    { fontSize: 22, width: 28, textAlign: 'center' },
   pickerLabel:    { flex: 1, fontSize: 16, fontWeight: '600', color: TEXT },
   pickerSubLabel: { flex: 1, fontSize: 15, fontWeight: '500', color: TEXT },
   pickerWaterCount:  { fontSize: 13, fontWeight: '600', color: '#5a9fd8', marginRight: 8 },
-  pickerWaterGlasses:{ flexDirection: 'row', flexWrap: 'wrap', gap: 10, paddingHorizontal: 24, paddingTop: 2, paddingBottom: 10 },
+  pickerWaterGlasses:{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', rowGap: 14, paddingHorizontal: 18, paddingTop: 6, paddingBottom: 12 },
 
   // Snack add row (in empty-types standalone card)
   snackAddRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingVertical: 14 },
@@ -1936,6 +2005,8 @@ const styles = StyleSheet.create({
   modalInput:   { backgroundColor: BG, borderRadius: 10, paddingHorizontal: 14, paddingVertical: 11, fontSize: 15, color: TEXT, marginBottom: 14 },
   confirmBtn:   { backgroundColor: ACCENT, borderRadius: 100, paddingVertical: 13, alignItems: 'center' },
   confirmBtnText: { fontSize: 15, fontWeight: '700', color: '#fff' },
+  // Smaller, centered Done for slide-up info sheets (e.g. the pip detail).
+  sheetDoneBtn: { backgroundColor: ACCENT, borderRadius: 100, paddingVertical: 10, paddingHorizontal: 44, alignSelf: 'center', alignItems: 'center', marginTop: 14 },
   cancelLink:   { alignSelf: 'center', marginTop: 12 },
   cancelText:   { fontSize: 14, color: MUTED },
 });

@@ -1,6 +1,6 @@
 import { useCallback, useState } from 'react';
 import {
-  View, Text, ScrollView, TouchableOpacity, Modal, Pressable,
+  View, Text, ScrollView, TouchableOpacity,
   StyleSheet, StatusBar, ActivityIndicator, RefreshControl,
 } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
@@ -8,6 +8,7 @@ import { smartBack } from '@/lib/navHistory';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { SymbolView } from 'expo-symbols';
 import { VFIcon } from '@/components/VFIcon';
+import { BottomSheet } from '@/components/BottomSheet';
 import { useAuth } from '@/context/AuthContext';
 import { supabase } from '@/lib/supabase';
 import { ApptDetailRow, type Appointment } from './(tabs)/schedule';
@@ -246,85 +247,89 @@ export default function PastSessionsScreen() {
         </ScrollView>
       )}
 
-      {/* ── Year picker modal ─────────────────────────────────────── */}
-      <Modal visible={yearModalOpen} transparent animationType="fade">
-        <Pressable style={s.overlay} onPress={() => setYearModalOpen(false)}>
-          <Pressable style={s.pickerModal}>
-            <Text style={s.pickerTitle}>Select Year</Text>
-            <View style={s.pickerDivider} />
-            <TouchableOpacity
-              style={s.pickerOption}
-              onPress={() => handleYearSelect(null)}
-              activeOpacity={0.7}
-            >
-              <Text style={[s.pickerOptionText, yearFilter === null && s.pickerOptionTextActive]}>
-                All years
-              </Text>
-              {yearFilter === null && <Text style={s.pickerCheck}>✓</Text>}
-            </TouchableOpacity>
-            {allYears.map(y => (
+      {/* ── Year picker sheet ─────────────────────────────────────── */}
+      {yearModalOpen && (
+        <BottomSheet onClose={() => setYearModalOpen(false)}>
+          {close => (
+            <View style={{ paddingHorizontal: 20 }}>
+              <Text style={s.pickerTitle}>Select Year</Text>
+              <View style={s.pickerDivider} />
               <TouchableOpacity
-                key={y}
                 style={s.pickerOption}
-                onPress={() => handleYearSelect(y)}
+                onPress={() => close(() => handleYearSelect(null))}
                 activeOpacity={0.7}
               >
-                <Text style={[s.pickerOptionText, yearFilter === y && s.pickerOptionTextActive]}>
-                  {y}
+                <Text style={[s.pickerOptionText, yearFilter === null && s.pickerOptionTextActive]}>
+                  All years
                 </Text>
-                <View style={s.pickerRight}>
-                  <Text style={s.pickerCount}>{yearTotalMap[y] ?? 0}</Text>
-                  {yearFilter === y && <Text style={s.pickerCheck}>✓</Text>}
-                </View>
+                {yearFilter === null && <Text style={s.pickerCheck}>✓</Text>}
               </TouchableOpacity>
-            ))}
-            <View style={s.pickerDivider} />
-            <TouchableOpacity style={s.pickerCancel} onPress={() => setYearModalOpen(false)} activeOpacity={0.7}>
-              <Text style={s.pickerCancelText}>Cancel</Text>
-            </TouchableOpacity>
-          </Pressable>
-        </Pressable>
-      </Modal>
+              {allYears.map(y => (
+                <TouchableOpacity
+                  key={y}
+                  style={s.pickerOption}
+                  onPress={() => close(() => handleYearSelect(y))}
+                  activeOpacity={0.7}
+                >
+                  <Text style={[s.pickerOptionText, yearFilter === y && s.pickerOptionTextActive]}>
+                    {y}
+                  </Text>
+                  <View style={s.pickerRight}>
+                    <Text style={s.pickerCount}>{yearTotalMap[y] ?? 0}</Text>
+                    {yearFilter === y && <Text style={s.pickerCheck}>✓</Text>}
+                  </View>
+                </TouchableOpacity>
+              ))}
+              <View style={s.pickerDivider} />
+              <TouchableOpacity style={s.pickerCancel} onPress={() => close()} activeOpacity={0.7}>
+                <Text style={s.pickerCancelText}>Cancel</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+        </BottomSheet>
+      )}
 
-      {/* ── Month picker modal ────────────────────────────────────── */}
-      <Modal visible={monthModalOpen} transparent animationType="fade">
-        <Pressable style={s.overlay} onPress={() => setMonthModalOpen(false)}>
-          <Pressable style={s.pickerModal}>
-            <Text style={s.pickerTitle}>Select Month</Text>
-            <View style={s.pickerDivider} />
-            <TouchableOpacity
-              style={s.pickerOption}
-              onPress={() => handleMonthSelect(null)}
-              activeOpacity={0.7}
-            >
-              <Text style={[s.pickerOptionText, monthFilter === null && s.pickerOptionTextActive]}>
-                All months
-              </Text>
-              {monthFilter === null && <Text style={s.pickerCheck}>✓</Text>}
-            </TouchableOpacity>
-            {availableMonths.map(({ month: m, count }) => (
+      {/* ── Month picker sheet ────────────────────────────────────── */}
+      {monthModalOpen && (
+        <BottomSheet onClose={() => setMonthModalOpen(false)}>
+          {close => (
+            <View style={{ paddingHorizontal: 20 }}>
+              <Text style={s.pickerTitle}>Select Month</Text>
+              <View style={s.pickerDivider} />
               <TouchableOpacity
-                key={m}
                 style={s.pickerOption}
-                onPress={() => handleMonthSelect(m)}
+                onPress={() => close(() => handleMonthSelect(null))}
                 activeOpacity={0.7}
               >
-                <Text style={[s.pickerOptionText, monthFilter === m && s.pickerOptionTextActive]}>
-                  {MONTHS_FULL[m]}
+                <Text style={[s.pickerOptionText, monthFilter === null && s.pickerOptionTextActive]}>
+                  All months
                 </Text>
-                <View style={s.pickerRight}>
-                  <Text style={s.pickerCount}>{count}</Text>
-                  {monthFilter === m && <Text style={s.pickerCheck}>✓</Text>}
-                </View>
+                {monthFilter === null && <Text style={s.pickerCheck}>✓</Text>}
               </TouchableOpacity>
-            ))}
-            <View style={s.pickerDivider} />
-            <TouchableOpacity style={s.pickerCancel} onPress={() => setMonthModalOpen(false)} activeOpacity={0.7}>
-              <Text style={s.pickerCancelText}>Cancel</Text>
-            </TouchableOpacity>
-          </Pressable>
-        </Pressable>
-      </Modal>
+              {availableMonths.map(({ month: m, count }) => (
+                <TouchableOpacity
+                  key={m}
+                  style={s.pickerOption}
+                  onPress={() => close(() => handleMonthSelect(m))}
+                  activeOpacity={0.7}
+                >
+                  <Text style={[s.pickerOptionText, monthFilter === m && s.pickerOptionTextActive]}>
+                    {MONTHS_FULL[m]}
+                  </Text>
+                  <View style={s.pickerRight}>
+                    <Text style={s.pickerCount}>{count}</Text>
+                    {monthFilter === m && <Text style={s.pickerCheck}>✓</Text>}
+                  </View>
+                </TouchableOpacity>
+              ))}
+              <View style={s.pickerDivider} />
+              <TouchableOpacity style={s.pickerCancel} onPress={() => close()} activeOpacity={0.7}>
+                <Text style={s.pickerCancelText}>Cancel</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+        </BottomSheet>
+      )}
 
     </View>
   );

@@ -47,6 +47,7 @@ The app has two roles: **Trainer** (Vitek) and **Client**. The trainer controls 
 - `trainer.jpg` — primary banner photo
 
 ### Design principles
+- **Popup presentation (July 2026):** menus, option/list pickers, and read-only info panels **slide up from the bottom** as white sheets (shared `components/BottomSheet.tsx`); **binary confirm/abort dialogs and single-value text-entry modals stay centered** (and centered text-entry must keyboard-avoid so the field isn't covered). Dark-glass sheets are never used. See CLAUDE.md "Modals — presentation convention" for the full rule. One deliberate exception: the client nutrition `+` add-picker opens as an anchored **popover that grows from the FAB's bottom-right corner** (Virtuagym-style, `+`→`✕`), not a sheet — see CLAUDE-nutrition.md.
 - Client **and** trainer screens: `#faf9f7` background (unified July 2026; trainer was previously `#edede9`). **Exceptions (both sides):** Do Mode and Exercise Detail use white (`#fff`) background.
 - White cards on the respective background color — **exceptions:** Do Mode and Exercise Detail both use fully white (`#fff`) background.
 - In Exercise Detail, expanded/section cards still need a two-layer pattern (`shadowOpacity:0.10, shadowRadius:8` outer + `borderWidth:1.5, borderColor:'#d0d0cc', overflow:'hidden'` inner) because `overflow:'hidden'` clips iOS shadows regardless of background color. Do Mode uses its own card system (see §5).

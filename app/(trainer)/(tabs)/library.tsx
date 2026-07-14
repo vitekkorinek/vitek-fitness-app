@@ -30,6 +30,7 @@ import { loadTrainerFoods, type TrainerFoodRow } from '@/lib/foodApi';
 import { VFIcon } from '@/components/VFIcon';
 import { TrainerLogoButton } from '@/components/TrainerLogoButton';
 import { ExerciseFilterSheet } from '@/components/ExerciseFilterSheet';
+import { BottomSheet } from '@/components/BottomSheet';
 import {
   MUSCLE_FILTER_OPTIONS,
   EQUIPMENT_FILTER_OPTIONS,
@@ -885,9 +886,9 @@ function NutritionTipsTab({
 
       {/* Recommendation detail sheet */}
       {recDetail && (
-        <Modal visible transparent animationType="fade" onRequestClose={() => setRecDetail(null)} statusBarTranslucent>
-          <Pressable style={menuStyles.overlay} onPress={() => setRecDetail(null)}>
-            <Pressable style={recStyles.detailSheet} onPress={() => {}}>
+        <BottomSheet onClose={() => setRecDetail(null)}>
+          {close => (
+            <>
               {recDetail.cover_photo_url ? (
                 <Image source={{ uri: recDetail.cover_photo_url }} style={recStyles.detailCover} resizeMode="cover" />
               ) : (
@@ -895,7 +896,7 @@ function NutritionTipsTab({
                   <SymbolView name={'leaf.fill' as any} size={40} tintColor="rgba(255,255,255,0.6)" />
                 </LinearGradient>
               )}
-              <ScrollView style={recStyles.detailBody} showsVerticalScrollIndicator={false}>
+              <ScrollView style={[recStyles.detailBody, { maxHeight: 420 }]} showsVerticalScrollIndicator={false}>
                 <Text style={recStyles.detailName}>{recDetail.title}</Text>
                 {recDetail.link_url ? (
                   <Text style={recStyles.detailLink} numberOfLines={2}>{recDetail.link_url}</Text>
@@ -905,23 +906,23 @@ function NutritionTipsTab({
                 ) : null}
                 <TouchableOpacity
                   style={recStyles.editBtn}
-                  onPress={() => { setRecDetail(null); openEdit(recDetail!); }}
+                  onPress={() => { const t = recDetail; close(() => openEdit(t)); }}
                   activeOpacity={0.8}
                 >
                   <Text style={recStyles.editBtnText}>Edit Recommendation</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
                   style={[recStyles.editBtn, recStyles.deleteBtn]}
-                  onPress={() => { setRecDetail(null); setConfirmDelete(recDetail!); }}
+                  onPress={() => { const t = recDetail; close(() => setConfirmDelete(t)); }}
                   activeOpacity={0.8}
                 >
                   <Text style={recStyles.deleteBtnText}>Delete</Text>
                 </TouchableOpacity>
                 <View style={{ height: 24 }} />
               </ScrollView>
-            </Pressable>
-          </Pressable>
-        </Modal>
+            </>
+          )}
+        </BottomSheet>
       )}
     </View>
   );
@@ -1217,7 +1218,7 @@ function RecipesTab({
   const [detail, setDetail] = useState<Recipe | null>(null);
   const [detailIngredients, setDetailIngredients] = useState<RecipeIngredient[]>([]);
   const [detailLoading, setDetailLoading] = useState(false);
-  const [confirmDeleteRecipe, setConfirmDeleteRecipe] = useState(false);
+  const [confirmDeleteRecipe, setConfirmDeleteRecipe] = useState<Recipe | null>(null);
 
   const load = useCallback(async () => {
     if (!trainerId) return;
@@ -1268,10 +1269,10 @@ function RecipesTab({
   };
 
   const deleteRecipe = async () => {
-    if (!detail) return;
-    const id = detail.id;
+    if (!confirmDeleteRecipe) return;
+    const id = confirmDeleteRecipe.id;
     setDetail(null);
-    setConfirmDeleteRecipe(false);
+    setConfirmDeleteRecipe(null);
     setRecipes(prev => prev.filter(r => r.id !== id));
     await supabase.from('recipe_ingredients').delete().eq('recipe_id', id);
     await supabase.from('recipes').delete().eq('id', id);
@@ -1323,9 +1324,9 @@ function RecipesTab({
 
       {/* Detail modal */}
       {detail && (
-        <Modal visible transparent animationType="fade" onRequestClose={() => setDetail(null)} statusBarTranslucent>
-          <Pressable style={menuStyles.overlay} onPress={() => setDetail(null)}>
-            <Pressable style={recStyles.detailSheet}>
+        <BottomSheet onClose={() => setDetail(null)}>
+          {close => (
+            <>
               {/* Cover */}
               {detail.cover_photo_url ? (
                 <Image
@@ -1344,7 +1345,7 @@ function RecipesTab({
                 </LinearGradient>
               )}
 
-              <ScrollView style={recStyles.detailBody} showsVerticalScrollIndicator={false}>
+              <ScrollView style={[recStyles.detailBody, { maxHeight: 420 }]} showsVerticalScrollIndicator={false}>
                 {/* Name + portions */}
                 <Text style={recStyles.detailName}>{detail.name}</Text>
                 <Text style={recStyles.detailPortions}>{detail.portions} {detail.portions === 1 ? 'portion' : 'portions'}</Text>
@@ -1406,17 +1407,14 @@ function RecipesTab({
                   <>
                     <TouchableOpacity
                       style={recStyles.editBtn}
-                      onPress={() => {
-                        setDetail(null);
-                        router.push(`/(trainer)/recipe-create?editId=${detail.id}` as any);
-                      }}
+                      onPress={() => close(() => router.push(`/(trainer)/recipe-create?editId=${detail.id}` as any))}
                       activeOpacity={0.8}
                     >
                       <Text style={recStyles.editBtnText}>Edit Recipe</Text>
                     </TouchableOpacity>
                     <TouchableOpacity
                       style={[recStyles.editBtn, recStyles.deleteBtn]}
-                      onPress={() => setConfirmDeleteRecipe(true)}
+                      onPress={() => { const r = detail; close(() => setConfirmDeleteRecipe(r)); }}
                       activeOpacity={0.8}
                     >
                       <Text style={recStyles.deleteBtnText}>Delete Recipe</Text>
@@ -1425,21 +1423,21 @@ function RecipesTab({
                 )}
                 <View style={{ height: 24 }} />
               </ScrollView>
-            </Pressable>
-          </Pressable>
-        </Modal>
+            </>
+          )}
+        </BottomSheet>
       )}
 
       {/* Confirm delete recipe modal */}
-      <Modal visible={confirmDeleteRecipe} transparent animationType="fade" onRequestClose={() => setConfirmDeleteRecipe(false)}>
-        <Pressable style={menuStyles.overlay} onPress={() => setConfirmDeleteRecipe(false)}>
+      <Modal visible={!!confirmDeleteRecipe} transparent animationType="fade" onRequestClose={() => setConfirmDeleteRecipe(null)}>
+        <Pressable style={menuStyles.overlay} onPress={() => setConfirmDeleteRecipe(null)}>
           <Pressable style={nutStyles.editModal} onPress={() => {}}>
             <Text style={nutStyles.editModalTitle}>Delete this recipe?</Text>
             <Text style={nutStyles.confirmSub}>This cannot be undone.</Text>
             <TouchableOpacity style={[nutStyles.saveBtn, { backgroundColor: CORAL }]} onPress={deleteRecipe} activeOpacity={0.8}>
               <Text style={nutStyles.saveBtnText}>Delete</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={{ alignSelf: 'center', marginTop: 10 }} onPress={() => setConfirmDeleteRecipe(false)}>
+            <TouchableOpacity style={{ alignSelf: 'center', marginTop: 10 }} onPress={() => setConfirmDeleteRecipe(null)}>
               <Text style={{ fontSize: 14, color: MUTED }}>Cancel</Text>
             </TouchableOpacity>
           </Pressable>
@@ -2234,54 +2232,54 @@ function WorkoutMenuModal({
   onClose: () => void;
 }) {
   return (
-    <Modal visible transparent animationType="fade" onRequestClose={onClose} statusBarTranslucent>
-      <Pressable style={menuStyles.overlay} onPress={onClose}>
-        <Pressable style={menuStyles.sheet}>
+    <BottomSheet onClose={onClose}>
+      {close => (
+        <>
           <Text style={menuStyles.sheetTitle} numberOfLines={1}>{workoutName}</Text>
           <View style={menuStyles.sheetDivider} />
-          <TouchableOpacity style={menuStyles.option} onPress={onRename} activeOpacity={0.7}>
+          <TouchableOpacity style={menuStyles.option} onPress={() => close(onRename)} activeOpacity={0.7}>
             <SymbolView name="pencil" size={16} tintColor={TEXT} />
             <Text style={menuStyles.optionText}>Rename</Text>
           </TouchableOpacity>
           <View style={menuStyles.optionDivider} />
-          <TouchableOpacity style={menuStyles.option} onPress={onChangeCover} activeOpacity={0.7}>
+          <TouchableOpacity style={menuStyles.option} onPress={() => close(onChangeCover)} activeOpacity={0.7}>
             <SymbolView name="photo" size={16} tintColor={TEXT} />
             <Text style={menuStyles.optionText}>Change Photo</Text>
           </TouchableOpacity>
           <View style={menuStyles.optionDivider} />
-          <TouchableOpacity style={menuStyles.option} onPress={onAddToRoutine} activeOpacity={0.7}>
+          <TouchableOpacity style={menuStyles.option} onPress={() => close(onAddToRoutine)} activeOpacity={0.7}>
             <SymbolView name="plus.circle" size={16} tintColor={TEXT} />
             <Text style={menuStyles.optionText}>Add to Routine</Text>
           </TouchableOpacity>
           <View style={menuStyles.optionDivider} />
-          <TouchableOpacity style={menuStyles.option} onPress={onSetCategory} activeOpacity={0.7}>
+          <TouchableOpacity style={menuStyles.option} onPress={() => close(onSetCategory)} activeOpacity={0.7}>
             <SymbolView name="tag" size={16} tintColor={TEXT} />
             <Text style={menuStyles.optionText}>Set Category</Text>
           </TouchableOpacity>
           {onSetStretch && (
             <>
               <View style={menuStyles.optionDivider} />
-              <TouchableOpacity style={menuStyles.option} onPress={onSetStretch} activeOpacity={0.7}>
+              <TouchableOpacity style={menuStyles.option} onPress={() => close(onSetStretch)} activeOpacity={0.7}>
                 <SymbolView name="figure.cooldown" size={16} tintColor={TEXT} />
                 <Text style={menuStyles.optionText}>Post-workout Stretch</Text>
               </TouchableOpacity>
             </>
           )}
           <View style={menuStyles.optionDivider} />
-          <TouchableOpacity style={menuStyles.option} onPress={onToggleStatus} activeOpacity={0.7}>
+          <TouchableOpacity style={menuStyles.option} onPress={() => close(onToggleStatus)} activeOpacity={0.7}>
             <SymbolView name={workoutStatus === 'completed' ? 'arrow.uturn.left' : 'checkmark.circle'} size={16} tintColor={workoutStatus === 'completed' ? ACCENT : TEXT} />
             <Text style={[menuStyles.optionText, workoutStatus === 'completed' && { color: ACCENT }]}>
               {workoutStatus === 'completed' ? 'Reactivate' : 'Mark as done'}
             </Text>
           </TouchableOpacity>
           <View style={menuStyles.optionDivider} />
-          <TouchableOpacity style={menuStyles.option} onPress={onDelete} activeOpacity={0.7}>
+          <TouchableOpacity style={menuStyles.option} onPress={() => close(onDelete)} activeOpacity={0.7}>
             <SymbolView name="trash" size={16} tintColor="#ef4444" />
             <Text style={[menuStyles.optionText, menuStyles.deleteText]}>Delete</Text>
           </TouchableOpacity>
-        </Pressable>
-      </Pressable>
-    </Modal>
+        </>
+      )}
+    </BottomSheet>
   );
 }
 
@@ -2305,38 +2303,38 @@ function TemplateMenuModal({
   onClose: () => void;
 }) {
   return (
-    <Modal visible transparent animationType="fade" onRequestClose={onClose} statusBarTranslucent>
-      <Pressable style={menuStyles.overlay} onPress={onClose}>
-        <Pressable style={menuStyles.sheet}>
+    <BottomSheet onClose={onClose}>
+      {close => (
+        <>
           <Text style={menuStyles.sheetTitle} numberOfLines={1}>{templateName}</Text>
           <View style={menuStyles.sheetDivider} />
-          <TouchableOpacity style={menuStyles.option} onPress={onUse} activeOpacity={0.7}>
+          <TouchableOpacity style={menuStyles.option} onPress={() => close(onUse)} activeOpacity={0.7}>
             <SymbolView name="square.and.arrow.down.on.square" size={16} tintColor={ACCENT} />
             <Text style={[menuStyles.optionText, { color: ACCENT }]}>Use template</Text>
           </TouchableOpacity>
           <View style={menuStyles.optionDivider} />
-          <TouchableOpacity style={menuStyles.option} onPress={onRename} activeOpacity={0.7}>
+          <TouchableOpacity style={menuStyles.option} onPress={() => close(onRename)} activeOpacity={0.7}>
             <SymbolView name="pencil" size={16} tintColor={TEXT} />
             <Text style={menuStyles.optionText}>Rename</Text>
           </TouchableOpacity>
           <View style={menuStyles.optionDivider} />
-          <TouchableOpacity style={menuStyles.option} onPress={onChangeCover} activeOpacity={0.7}>
+          <TouchableOpacity style={menuStyles.option} onPress={() => close(onChangeCover)} activeOpacity={0.7}>
             <SymbolView name="photo" size={16} tintColor={TEXT} />
             <Text style={menuStyles.optionText}>Change Photo</Text>
           </TouchableOpacity>
           <View style={menuStyles.optionDivider} />
-          <TouchableOpacity style={menuStyles.option} onPress={onSetCategory} activeOpacity={0.7}>
+          <TouchableOpacity style={menuStyles.option} onPress={() => close(onSetCategory)} activeOpacity={0.7}>
             <SymbolView name="tag" size={16} tintColor={TEXT} />
             <Text style={menuStyles.optionText}>Set Category</Text>
           </TouchableOpacity>
           <View style={menuStyles.optionDivider} />
-          <TouchableOpacity style={menuStyles.option} onPress={onDelete} activeOpacity={0.7}>
+          <TouchableOpacity style={menuStyles.option} onPress={() => close(onDelete)} activeOpacity={0.7}>
             <SymbolView name="trash" size={16} tintColor="#ef4444" />
             <Text style={[menuStyles.optionText, menuStyles.deleteText]}>Delete</Text>
           </TouchableOpacity>
-        </Pressable>
-      </Pressable>
-    </Modal>
+        </>
+      )}
+    </BottomSheet>
   );
 }
 
@@ -2352,12 +2350,12 @@ function CategoryPickerModal({
   onClose: () => void;
 }) {
   return (
-    <Modal visible transparent animationType="fade" onRequestClose={onClose} statusBarTranslucent>
-      <Pressable style={menuStyles.overlay} onPress={onClose}>
-        <Pressable style={menuStyles.sheet}>
+    <BottomSheet onClose={onClose}>
+      {close => (
+        <>
           <Text style={menuStyles.sheetTitle}>Set Category</Text>
           <View style={menuStyles.sheetDivider} />
-          <TouchableOpacity style={menuStyles.option} onPress={() => onPick(null)} activeOpacity={0.7}>
+          <TouchableOpacity style={menuStyles.option} onPress={() => close(() => onPick(null))} activeOpacity={0.7}>
             <View style={catPickStyles.dot} />
             <Text style={menuStyles.optionText}>None</Text>
             {currentCategory === null && <SymbolView name="checkmark" size={14} tintColor={ACCENT} style={{ marginLeft: 'auto' }} />}
@@ -2368,7 +2366,7 @@ function CategoryPickerModal({
             return (
               <View key={cat}>
                 <View style={menuStyles.optionDivider} />
-                <TouchableOpacity style={menuStyles.option} onPress={() => onPick(cat)} activeOpacity={0.7}>
+                <TouchableOpacity style={menuStyles.option} onPress={() => close(() => onPick(cat))} activeOpacity={0.7}>
                   <View style={[catPickStyles.dot, { backgroundColor: colors.border }]} />
                   <Text style={menuStyles.optionText}>{cat}</Text>
                   {isSelected && <SymbolView name="checkmark" size={14} tintColor={ACCENT} style={{ marginLeft: 'auto' }} />}
@@ -2376,9 +2374,9 @@ function CategoryPickerModal({
               </View>
             );
           })}
-        </Pressable>
-      </Pressable>
-    </Modal>
+        </>
+      )}
+    </BottomSheet>
   );
 }
 
@@ -2401,9 +2399,9 @@ function StretchPickerModal({
   onClose: () => void;
 }) {
   return (
-    <Modal visible transparent animationType="fade" onRequestClose={onClose} statusBarTranslucent>
-      <Pressable style={menuStyles.overlay} onPress={onClose}>
-        <Pressable style={menuStyles.sheet}>
+    <BottomSheet onClose={onClose}>
+      {close => (
+        <>
           <Text style={menuStyles.sheetTitle}>Post-workout Stretch</Text>
           <View style={menuStyles.sheetDivider} />
           {STRETCH_OPTIONS.map((opt, i) => {
@@ -2415,7 +2413,7 @@ function StretchPickerModal({
             return (
               <View key={opt.value ?? 'none'}>
                 {i > 0 && <View style={menuStyles.optionDivider} />}
-                <TouchableOpacity style={menuStyles.option} onPress={() => onPick(opt.value)} activeOpacity={0.7}>
+                <TouchableOpacity style={menuStyles.option} onPress={() => close(() => onPick(opt.value))} activeOpacity={0.7}>
                   <View style={[catPickStyles.dot, dotColor ? { backgroundColor: dotColor } : undefined]} />
                   <Text style={menuStyles.optionText}>{opt.label}</Text>
                   {isSelected && <SymbolView name="checkmark" size={14} tintColor={ACCENT} style={{ marginLeft: 'auto' }} />}
@@ -2423,9 +2421,9 @@ function StretchPickerModal({
               </View>
             );
           })}
-        </Pressable>
-      </Pressable>
-    </Modal>
+        </>
+      )}
+    </BottomSheet>
   );
 }
 

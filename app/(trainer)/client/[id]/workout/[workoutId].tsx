@@ -117,6 +117,7 @@ import { useAuth } from '@/context/AuthContext';
 import type { Workout } from '@/types/database';
 import en from '@/i18n/en';
 import MuscleThumb from '@/components/MuscleThumb';
+import { BottomSheet } from '@/components/BottomSheet';
 
 // ─── Types ──────────────────────────────────────────────────────────────────────
 
@@ -377,9 +378,14 @@ function useSheetDismissGesture(onClose: () => void) {
     Animated.spring(translateY, { toValue: 0, useNativeDriver: true, tension: 70, friction: 12 }).start();
   }, []);
 
-  const dismiss = useCallback(() => {
+  // dismiss(cb?) animates the sheet down, then calls `cb` if it's a function,
+  // else the default onClose. Passing a callback lets a "Done" button step back
+  // to a parent menu while swipe-down / overlay-tap still run the default close.
+  // Guarded so `onPress={dismiss}` (which passes a press event) hits the default.
+  const dismiss = useCallback((cb?: unknown) => {
+    const then = typeof cb === 'function' ? (cb as () => void) : undefined;
     Animated.timing(translateY, { toValue: SHEET_OFF_SCREEN, duration: 220, useNativeDriver: true }).start(() => {
-      onCloseRef.current();
+      (then ?? onCloseRef.current)();
     });
   }, []);
 
@@ -3591,21 +3597,26 @@ export default function TrainerWorkoutSessionScreen() {
       </Modal>
 
       {/* ── Trainer info sheets ───────────────────────────────────────── */}
-      <InfoSheet visible={muscleSheetOpen} title="Muscle Groups" onClose={() => setMuscleSheetOpen(false)}>
+      {muscleSheetOpen && (
+      <InfoSheet title="Muscle Groups" onClose={() => setMuscleSheetOpen(false)} onBack={() => { setMuscleSheetOpen(false); setDotsMenuOpen(true); }}>
         {muscleGroups.length === 0
           ? <Text style={styles.infoSheetEmpty}>No muscle groups listed</Text>
           : muscleGroups.map(m => <View key={m} style={styles.infoRow}><Text style={styles.infoRowText}>{m}</Text></View>)
         }
       </InfoSheet>
+      )}
 
-      <InfoSheet visible={equipSheetOpen} title="Equipment" onClose={() => setEquipSheetOpen(false)}>
+      {equipSheetOpen && (
+      <InfoSheet title="Equipment" onClose={() => setEquipSheetOpen(false)} onBack={() => { setEquipSheetOpen(false); setDotsMenuOpen(true); }}>
         {equipmentList.length === 0
           ? <Text style={styles.infoSheetEmpty}>No equipment listed</Text>
           : equipmentList.map(e => <View key={e} style={styles.infoRow}><Text style={styles.infoRowText}>{e}</Text></View>)
         }
       </InfoSheet>
+      )}
 
-      <InfoSheet visible={historySheetOpen} title="Session History" onClose={() => setHistorySheetOpen(false)}>
+      {historySheetOpen && (
+      <InfoSheet title="Session History" onClose={() => setHistorySheetOpen(false)} onBack={() => { setHistorySheetOpen(false); setDotsMenuOpen(true); }}>
         {historyLoading ? (
           <ActivityIndicator color={ACCENT} style={{ marginVertical: 24 }} />
         ) : sessionHistory.length === 0 ? (
@@ -3641,67 +3652,69 @@ export default function TrainerWorkoutSessionScreen() {
           })
         )}
       </InfoSheet>
+      )}
 
-      {/* ── ⋯ dots menu modal ─────────────────────────────────────── */}
-      <Modal visible={dotsMenuOpen} transparent animationType="fade" onRequestClose={() => setDotsMenuOpen(false)} statusBarTranslucent>
-        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.centeredRoot}>
-          <Pressable style={StyleSheet.absoluteFill} onPress={() => setDotsMenuOpen(false)} />
-          <View style={styles.centeredModal}>
-            <Text style={styles.centeredModalTitle}>{isFreeSession ? freeSessionName : (workout?.name ?? 'Workout')}</Text>
+      {/* ── ⋯ dots menu (bottom sheet) ─────────────────────────────── */}
+      {dotsMenuOpen && (
+        <BottomSheet onClose={() => setDotsMenuOpen(false)}>
+          {close => (
+            <View style={styles.sheetContent}>
+              <Text style={styles.centeredModalTitle}>{isFreeSession ? freeSessionName : (workout?.name ?? 'Workout')}</Text>
 
-            <TouchableOpacity style={styles.dotsMenuItem} onPress={() => { setDotsMenuOpen(false); setTrainingNotesOpen(true); setTrainingNotesViewed(true); }} activeOpacity={0.7}>
-              <View style={styles.floatIconBtn}>
-                <SymbolView name="note.text" size={18} tintColor="#fff" />
-              </View>
-              <Text style={styles.dotsMenuItemText}>Training Notes</Text>
-              {hasTrainingNotes && !trainingNotesViewed && <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: '#24ac88', marginRight: 6 }} />}
-              <SymbolView name="chevron.right" size={13} tintColor="#ccc" />
-            </TouchableOpacity>
+              <TouchableOpacity style={styles.dotsMenuItem} onPress={() => close(() => { setTrainingNotesOpen(true); setTrainingNotesViewed(true); })} activeOpacity={0.7}>
+                <View style={styles.floatIconBtn}>
+                  <SymbolView name="note.text" size={18} tintColor="#fff" />
+                </View>
+                <Text style={styles.dotsMenuItemText}>Training Notes</Text>
+                {hasTrainingNotes && !trainingNotesViewed && <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: '#24ac88', marginRight: 6 }} />}
+                <SymbolView name="chevron.right" size={13} tintColor="#ccc" />
+              </TouchableOpacity>
 
-            <TouchableOpacity style={styles.dotsMenuItem} onPress={() => { setDotsMenuOpen(false); setMuscleSheetOpen(true); }} activeOpacity={0.7}>
-              <View style={styles.floatIconBtn}>
-                <SymbolView name="figure.strengthtraining.traditional" size={18} tintColor="#fff" />
-              </View>
-              <Text style={styles.dotsMenuItemText}>Muscle Groups</Text>
-              <SymbolView name="chevron.right" size={13} tintColor="#ccc" />
-            </TouchableOpacity>
+              <TouchableOpacity style={styles.dotsMenuItem} onPress={() => close(() => setMuscleSheetOpen(true))} activeOpacity={0.7}>
+                <View style={styles.floatIconBtn}>
+                  <SymbolView name="figure.strengthtraining.traditional" size={18} tintColor="#fff" />
+                </View>
+                <Text style={styles.dotsMenuItemText}>Muscle Groups</Text>
+                <SymbolView name="chevron.right" size={13} tintColor="#ccc" />
+              </TouchableOpacity>
 
-            <TouchableOpacity style={styles.dotsMenuItem} onPress={() => { setDotsMenuOpen(false); setEquipSheetOpen(true); }} activeOpacity={0.7}>
-              <View style={styles.floatIconBtn}>
-                <SymbolView name="dumbbell" size={18} tintColor="#fff" />
-              </View>
-              <Text style={styles.dotsMenuItemText}>Equipment</Text>
-              <SymbolView name="chevron.right" size={13} tintColor="#ccc" />
-            </TouchableOpacity>
+              <TouchableOpacity style={styles.dotsMenuItem} onPress={() => close(() => setEquipSheetOpen(true))} activeOpacity={0.7}>
+                <View style={styles.floatIconBtn}>
+                  <SymbolView name="dumbbell" size={18} tintColor="#fff" />
+                </View>
+                <Text style={styles.dotsMenuItemText}>Equipment</Text>
+                <SymbolView name="chevron.right" size={13} tintColor="#ccc" />
+              </TouchableOpacity>
 
-            <TouchableOpacity style={styles.dotsMenuItem} onPress={() => { setDotsMenuOpen(false); setHistorySheetOpen(true); }} activeOpacity={0.7}>
-              <View style={styles.floatIconBtn}>
-                <SymbolView name="clock.arrow.circlepath" size={18} tintColor="#fff" />
-              </View>
-              <Text style={styles.dotsMenuItemText}>Session History</Text>
-              <SymbolView name="chevron.right" size={13} tintColor="#ccc" />
-            </TouchableOpacity>
+              <TouchableOpacity style={styles.dotsMenuItem} onPress={() => close(() => setHistorySheetOpen(true))} activeOpacity={0.7}>
+                <View style={styles.floatIconBtn}>
+                  <SymbolView name="clock.arrow.circlepath" size={18} tintColor="#fff" />
+                </View>
+                <Text style={styles.dotsMenuItemText}>Session History</Text>
+                <SymbolView name="chevron.right" size={13} tintColor="#ccc" />
+              </TouchableOpacity>
 
-            {workout?.category && (
-              <View style={styles.dotsMenuCategoryRow}>
-                <Text style={styles.dotsMenuCategoryLabel}>Category</Text>
-                {(() => {
-                  const catColor = CATEGORY_COLORS[workout.category as WorkoutCategory]?.border;
-                  return catColor ? (
-                    <View style={[styles.headerCatPill, { backgroundColor: hexToRgba(catColor, 0.15), borderColor: hexToRgba(catColor, 0.5), borderWidth: 1 }]}>
-                      <Text style={[styles.headerCatPillText, { color: catColor, fontSize: 12 }]}>{workout.category}</Text>
-                    </View>
-                  ) : <Text style={styles.dotsMenuItemText}>{workout.category}</Text>;
-                })()}
-              </View>
-            )}
+              {workout?.category && (
+                <View style={styles.dotsMenuCategoryRow}>
+                  <Text style={styles.dotsMenuCategoryLabel}>Category</Text>
+                  {(() => {
+                    const catColor = CATEGORY_COLORS[workout.category as WorkoutCategory]?.border;
+                    return catColor ? (
+                      <View style={[styles.headerCatPill, { backgroundColor: hexToRgba(catColor, 0.15), borderColor: hexToRgba(catColor, 0.5), borderWidth: 1 }]}>
+                        <Text style={[styles.headerCatPillText, { color: catColor, fontSize: 12 }]}>{workout.category}</Text>
+                      </View>
+                    ) : <Text style={styles.dotsMenuItemText}>{workout.category}</Text>;
+                  })()}
+                </View>
+              )}
 
-            <TouchableOpacity style={[styles.centeredModalDoneBtn, { marginTop: 6 }]} onPress={() => setDotsMenuOpen(false)} activeOpacity={0.85}>
-              <Text style={styles.centeredModalDoneBtnText}>Done</Text>
-            </TouchableOpacity>
-          </View>
-        </KeyboardAvoidingView>
-      </Modal>
+              <TouchableOpacity style={[styles.centeredModalDoneBtn, { marginTop: 6 }]} onPress={() => close()} activeOpacity={0.85}>
+                <Text style={styles.centeredModalDoneBtnText}>Done</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+        </BottomSheet>
+      )}
 
 
 
@@ -3872,6 +3885,7 @@ export default function TrainerWorkoutSessionScreen() {
           onAddNote={addTrainingNote}
           onDeleteNote={deleteTrainingNote}
           onClose={() => setTrainingNotesOpen(false)}
+          onBack={() => { setTrainingNotesOpen(false); setDotsMenuOpen(true); }}
         />
       )}
 
@@ -4684,46 +4698,47 @@ function MachineBrandModal({
   const [customText, setCustomText] = useState(isCustom ? currentBrand! : '');
 
   return (
-    <Modal visible transparent animationType="fade" onRequestClose={onClose} statusBarTranslucent>
-      <Pressable style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.52)' }]} onPress={onClose} />
-      <View style={styles.brandModal}>
-        <Text style={styles.centeredModalTitle}>{en.machineSelector.moreBrandsTitle}</Text>
-        <ScrollView bounces={false} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} style={{ marginBottom: 12 }} contentContainerStyle={{ gap: 8 }}>
-          {PRESET_BRANDS.map(brand => (
+    <BottomSheet onClose={onClose}>
+      {close => (
+        <View style={styles.sheetContent}>
+          <Text style={styles.centeredModalTitle}>{en.machineSelector.moreBrandsTitle}</Text>
+          <ScrollView bounces={false} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} style={{ marginBottom: 12 }} contentContainerStyle={{ gap: 8 }}>
+            {PRESET_BRANDS.map(brand => (
+              <TouchableOpacity
+                key={brand}
+                onPress={() => close(() => onSelect(brand))}
+                style={[styles.brandPickerRow, currentBrand === brand && styles.brandPickerRowActive]}
+                activeOpacity={0.7}
+              >
+                <Text style={[styles.brandPickerText, currentBrand === brand && styles.brandPickerTextActive]}>{brand}</Text>
+                {currentBrand === brand && <SymbolView name="checkmark" size={14} tintColor="#fff" />}
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+          <View style={styles.brandCustomRow}>
+            <TextInput
+              style={styles.brandCustomInput}
+              value={customText}
+              onChangeText={setCustomText}
+              placeholder={en.machineSelector.customPlaceholder}
+              placeholderTextColor="#bbb"
+              returnKeyType="done"
+              onSubmitEditing={() => { if (customText.trim()) { const v = customText.trim(); close(() => onSelect(v)); } }}
+            />
             <TouchableOpacity
-              key={brand}
-              onPress={() => onSelect(brand)}
-              style={[styles.brandPickerRow, currentBrand === brand && styles.brandPickerRowActive]}
+              onPress={() => { if (customText.trim()) { const v = customText.trim(); close(() => onSelect(v)); } }}
+              style={[styles.brandCustomSetBtn, !customText.trim() && styles.brandCustomSetBtnDisabled]}
               activeOpacity={0.7}
             >
-              <Text style={[styles.brandPickerText, currentBrand === brand && styles.brandPickerTextActive]}>{brand}</Text>
-              {currentBrand === brand && <SymbolView name="checkmark" size={14} tintColor="#fff" />}
+              <Text style={styles.brandCustomSetBtnText}>{en.machineSelector.set}</Text>
             </TouchableOpacity>
-          ))}
-        </ScrollView>
-        <View style={styles.brandCustomRow}>
-          <TextInput
-            style={styles.brandCustomInput}
-            value={customText}
-            onChangeText={setCustomText}
-            placeholder={en.machineSelector.customPlaceholder}
-            placeholderTextColor="#bbb"
-            returnKeyType="done"
-            onSubmitEditing={() => { if (customText.trim()) onSelect(customText.trim()); }}
-          />
-          <TouchableOpacity
-            onPress={() => { if (customText.trim()) onSelect(customText.trim()); }}
-            style={[styles.brandCustomSetBtn, !customText.trim() && styles.brandCustomSetBtnDisabled]}
-            activeOpacity={0.7}
-          >
-            <Text style={styles.brandCustomSetBtnText}>{en.machineSelector.set}</Text>
+          </View>
+          <TouchableOpacity style={[styles.centeredModalDoneBtn, { marginTop: 8 }]} onPress={() => close()} activeOpacity={0.85}>
+            <Text style={styles.centeredModalDoneBtnText}>{en.common.cancel}</Text>
           </TouchableOpacity>
         </View>
-        <TouchableOpacity style={[styles.centeredModalDoneBtn, { marginTop: 8 }]} onPress={onClose} activeOpacity={0.85}>
-          <Text style={styles.centeredModalDoneBtnText}>{en.common.cancel}</Text>
-        </TouchableOpacity>
-      </View>
-    </Modal>
+      )}
+    </BottomSheet>
   );
 }
 
@@ -5692,27 +5707,29 @@ function GraphStats({ points, onStatPress }: { points: GraphPoint[]; onStatPress
 
 // ─── InfoSheet ───────────────────────────────────────────────────────────────────
 
-function InfoSheet({ visible, title, onClose, children }: {
-  visible: boolean;
+function InfoSheet({ title, onClose, onBack, children }: {
   title: string;
   onClose: () => void;
+  onBack?: () => void;
   children: React.ReactNode;
 }) {
+  const { translateY: sheetY, panHandlers: sheetPan, dismiss } = useSheetDismissGesture(onClose);
   return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose} statusBarTranslucent>
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.centeredRoot}>
-        <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
-        <View style={styles.centeredModal}>
+    <Modal visible transparent animationType="none" onRequestClose={dismiss} statusBarTranslucent>
+      <View style={{ flex: 1, justifyContent: 'flex-end' }}>
+        <Pressable style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.3)' }]} onPress={dismiss} />
+        <Animated.View style={[styles.infoBottomSheet, { transform: [{ translateY: sheetY }] }]}>
+          <View style={styles.infoSheetHandleHitArea} {...sheetPan}><View style={styles.infoSheetHandle} /></View>
           <Text style={styles.centeredModalTitle}>{title}</Text>
           <ScrollView showsVerticalScrollIndicator={false} bounces={false} style={{ maxHeight: SCREEN_H * 0.5 }}>
             {children}
             <View style={{ height: 8 }} />
           </ScrollView>
-          <TouchableOpacity style={styles.centeredModalDoneBtn} onPress={onClose} activeOpacity={0.85}>
+          <TouchableOpacity style={styles.centeredModalDoneBtn} onPress={() => dismiss(onBack)} activeOpacity={0.85}>
             <Text style={styles.centeredModalDoneBtnText}>Done</Text>
           </TouchableOpacity>
-        </View>
-      </KeyboardAvoidingView>
+        </Animated.View>
+      </View>
     </Modal>
   );
 }
@@ -5875,6 +5892,7 @@ function TrainingNotesModal({
   onAddNote,
   onDeleteNote,
   onClose,
+  onBack,
 }: {
   trainerNotes: NoteEntry[];
   clientNotes: NoteEntry[];
@@ -5882,6 +5900,7 @@ function TrainingNotesModal({
   onAddNote: (role: 'trainer' | 'client', text: string) => Promise<boolean>;
   onDeleteNote: (role: 'trainer' | 'client', noteId: string) => void;
   onClose: () => void;
+  onBack?: () => void;
 }) {
   const { profile: trainingNotesProfile } = useAuth();
   const [newNote, setNewNote] = useState('');
@@ -5896,13 +5915,16 @@ function TrainingNotesModal({
     if (saved) setNewNote('');
   };
 
+  const { translateY: sheetY, panHandlers: sheetPan, dismiss } = useSheetDismissGesture(onClose);
+
   return (
-    <Modal visible transparent animationType="fade" onRequestClose={onClose} statusBarTranslucent>
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.centeredRoot}>
-        <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
-        <View style={styles.centeredModal}>
+    <Modal visible transparent animationType="none" onRequestClose={dismiss} statusBarTranslucent>
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1, justifyContent: 'flex-end' }}>
+        <Pressable style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.45)' }]} onPress={dismiss} />
+        <Animated.View style={[styles.infoBottomSheet, { transform: [{ translateY: sheetY }] }]}>
+          <View style={styles.infoSheetHandleHitArea} {...sheetPan}><View style={styles.infoSheetHandle} /></View>
           <Text style={styles.centeredModalTitle}>{en.doMode.sessionNotes.title}</Text>
-          <ScrollView bounces={false} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+          <ScrollView bounces={false} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} style={{ maxHeight: SCREEN_H * 0.55 }}>
 
             {/* ── Previous sessions history (read-only) ─────────────── */}
             {noteHistory.length > 0 && (
@@ -5999,10 +6021,10 @@ function TrainingNotesModal({
             )}
             <View style={{ height: 8 }} />
           </ScrollView>
-          <TouchableOpacity style={styles.centeredModalDoneBtn} onPress={onClose} activeOpacity={0.85}>
+          <TouchableOpacity style={styles.centeredModalDoneBtn} onPress={() => dismiss(onBack)} activeOpacity={0.85}>
             <Text style={styles.centeredModalDoneBtnText}>{en.doMode.sessionNotes.done}</Text>
           </TouchableOpacity>
-        </View>
+        </Animated.View>
       </KeyboardAvoidingView>
     </Modal>
   );
@@ -6242,6 +6264,7 @@ const styles = StyleSheet.create({
 
   centeredRoot: { flex: 1, backgroundColor: 'rgba(0,0,0,0.52)', justifyContent: 'center', paddingHorizontal: 24 },
   centeredModal: { backgroundColor: CARD, borderRadius: 20, padding: 20, maxHeight: SCREEN_H * 0.78 },
+  sheetContent: { paddingHorizontal: 20, paddingBottom: 8 },
   centeredModalTitle: { fontSize: 16, fontWeight: '700', color: TEXT, marginBottom: 14 },
   centeredModalDoneBtn: { backgroundColor: ACCENT, borderRadius: 100, paddingVertical: 13, alignItems: 'center', marginTop: 14 },
   centeredModalDoneBtnText: { color: '#fff', fontWeight: '700', fontSize: 15 },

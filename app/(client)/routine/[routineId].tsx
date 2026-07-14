@@ -9,8 +9,6 @@ import {
   ActivityIndicator,
   RefreshControl,
   Image,
-  Modal,
-  Pressable,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -18,6 +16,7 @@ import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { smartBack } from '@/lib/navHistory';
 import { SymbolView } from 'expo-symbols';
 import { VFIcon } from '@/components/VFIcon';
+import { BottomSheet } from '@/components/BottomSheet';
 import { WorkoutExercisesModal } from '@/components/WorkoutExercisesModal';
 import { useAuth } from '@/context/AuthContext';
 import { supabase } from '@/lib/supabase';
@@ -282,10 +281,10 @@ export default function ClientRoutineDetailScreen() {
         </ScrollView>
       )}
 
-      {routine && (
-        <Modal visible={historyModal} transparent animationType="fade" onRequestClose={() => setHistoryModal(false)}>
-          <Pressable style={histStyles.overlay} onPress={() => setHistoryModal(false)}>
-            <Pressable style={histStyles.sheet} onPress={() => {}}>
+      {routine && historyModal && (
+        <BottomSheet onClose={() => setHistoryModal(false)}>
+          {close => (
+            <View style={{ paddingHorizontal: 20 }}>
               <Text style={histStyles.title}>Routine History</Text>
               <View style={{ width: '100%' }}>
                 {buildPeriods(routine.created_at, routine.status_history ?? [], routine.closed_at).map((p, i) => (
@@ -297,12 +296,12 @@ export default function ClientRoutineDetailScreen() {
                   </View>
                 ))}
               </View>
-              <TouchableOpacity onPress={() => setHistoryModal(false)} style={histStyles.closeBtn}>
+              <TouchableOpacity onPress={() => close()} style={histStyles.closeBtn}>
                 <Text style={histStyles.closeBtnText}>Close</Text>
               </TouchableOpacity>
-            </Pressable>
-          </Pressable>
-        </Modal>
+            </View>
+          )}
+        </BottomSheet>
       )}
 
       <WorkoutExercisesModal

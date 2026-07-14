@@ -21,6 +21,7 @@ import { useAuth } from '@/context/AuthContext';
 import { nameInitial } from '@/lib/utils';
 import { VFIcon } from '@/components/VFIcon';
 import { TrainerLogoButton } from '@/components/TrainerLogoButton';
+import { BottomSheet } from '@/components/BottomSheet';
 import t from '@/i18n/en';
 import type { FinanceManualEntry, Invoice, InvoiceStatus } from '@/types/database';
 
@@ -714,33 +715,34 @@ export default function FinanceScreen() {
       )}
 
       {/* Year picker modal (invoice tab) */}
-      <Modal visible={invYearPickerOpen} transparent animationType="fade" onRequestClose={() => setInvYearPickerOpen(false)}>
-        <View style={st.pickerOverlay}>
-          <Pressable style={StyleSheet.absoluteFill} onPress={() => setInvYearPickerOpen(false)} />
-          <View style={st.pickerBox}>
-            <Text style={st.pickerTitle}>Filter by year</Text>
-            <TouchableOpacity
-              style={st.pickerOption}
-              onPress={() => { setInvYearFilter(null); setInvYearPickerOpen(false); }}
-              activeOpacity={0.7}
-            >
-              <Text style={[st.pickerOptionText, invYearFilter === null && st.pickerOptionTextActive]}>All years</Text>
-              {invYearFilter === null && <SymbolView name="checkmark" size={14} tintColor={ACCENT} />}
-            </TouchableOpacity>
-            {INV_YEAR_OPTIONS.map(y => (
+      {invYearPickerOpen && (
+        <BottomSheet onClose={() => setInvYearPickerOpen(false)}>
+          {close => (
+            <View style={st.pickerBox}>
+              <Text style={st.pickerTitle}>Filter by year</Text>
               <TouchableOpacity
-                key={y}
                 style={st.pickerOption}
-                onPress={() => { setInvYearFilter(y); setInvYearPickerOpen(false); }}
+                onPress={() => close(() => { setInvYearFilter(null); })}
                 activeOpacity={0.7}
               >
-                <Text style={[st.pickerOptionText, invYearFilter === y && st.pickerOptionTextActive]}>{y}</Text>
-                {invYearFilter === y && <SymbolView name="checkmark" size={14} tintColor={ACCENT} />}
+                <Text style={[st.pickerOptionText, invYearFilter === null && st.pickerOptionTextActive]}>All years</Text>
+                {invYearFilter === null && <SymbolView name="checkmark" size={14} tintColor={ACCENT} />}
               </TouchableOpacity>
-            ))}
-          </View>
-        </View>
-      </Modal>
+              {INV_YEAR_OPTIONS.map(y => (
+                <TouchableOpacity
+                  key={y}
+                  style={st.pickerOption}
+                  onPress={() => close(() => { setInvYearFilter(y); })}
+                  activeOpacity={0.7}
+                >
+                  <Text style={[st.pickerOptionText, invYearFilter === y && st.pickerOptionTextActive]}>{y}</Text>
+                  {invYearFilter === y && <SymbolView name="checkmark" size={14} tintColor={ACCENT} />}
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
+        </BottomSheet>
+      )}
 
       {/* Manual entry modal */}
       {manualModal && (

@@ -17,6 +17,7 @@ import Swipeable from 'react-native-gesture-handler/Swipeable';
 import { useAuth } from '@/context/AuthContext';
 import { supabase } from '@/lib/supabase';
 import { VFIcon } from '@/components/VFIcon';
+import { BottomSheet } from '@/components/BottomSheet';
 
 const BG     = '#faf9f7';
 const CARD   = '#ffffff';
@@ -341,42 +342,44 @@ export default function GroceryListScreen() {
       )}
 
       {/* ── Add item modal ──────────────────────────────────────────── */}
-      <Modal visible={addModal} transparent animationType="fade" onRequestClose={() => setAddModal(false)}>
-        <TouchableOpacity style={s.overlay} onPress={() => setAddModal(false)} activeOpacity={1}>
-          <TouchableOpacity style={s.modal} activeOpacity={1}>
-            <Text style={s.modalTitle}>Add item</Text>
-            <TextInput
-              style={s.input}
-              value={addName}
-              onChangeText={setAddName}
-              placeholder="Item name"
-              placeholderTextColor={MUTED}
-              autoFocus
-              returnKeyType="next"
-            />
-            <TextInput
-              style={[s.input, { marginTop: 10 }]}
-              value={addQuantity}
-              onChangeText={setAddQuantity}
-              placeholder="Quantity (optional) — e.g. 500g"
-              placeholderTextColor={MUTED}
-              returnKeyType="done"
-              onSubmitEditing={addItem}
-            />
-            <TouchableOpacity
-              style={[s.confirmBtn, (!addName.trim() || adding) && { opacity: 0.45 }]}
-              onPress={addItem}
-              disabled={!addName.trim() || adding}
-              activeOpacity={0.8}
-            >
-              <Text style={s.confirmBtnText}>Add to list</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={s.cancelLink} onPress={() => setAddModal(false)}>
-              <Text style={s.cancelText}>Cancel</Text>
-            </TouchableOpacity>
-          </TouchableOpacity>
-        </TouchableOpacity>
-      </Modal>
+      {addModal && (
+        <BottomSheet onClose={() => setAddModal(false)} avoidKeyboard>
+          {close => (
+            <View style={{ paddingHorizontal: 20 }}>
+              <Text style={s.modalTitle}>Add item</Text>
+              <TextInput
+                style={s.input}
+                value={addName}
+                onChangeText={setAddName}
+                placeholder="Item name"
+                placeholderTextColor={MUTED}
+                autoFocus
+                returnKeyType="next"
+              />
+              <TextInput
+                style={[s.input, { marginTop: 10 }]}
+                value={addQuantity}
+                onChangeText={setAddQuantity}
+                placeholder="Quantity (optional) — e.g. 500g"
+                placeholderTextColor={MUTED}
+                returnKeyType="done"
+                onSubmitEditing={addItem}
+              />
+              <TouchableOpacity
+                style={[s.confirmBtn, (!addName.trim() || adding) && { opacity: 0.45 }]}
+                onPress={addItem}
+                disabled={!addName.trim() || adding}
+                activeOpacity={0.8}
+              >
+                <Text style={s.confirmBtnText}>Add to list</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={s.cancelLink} onPress={() => close()}>
+                <Text style={s.cancelText}>Cancel</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+        </BottomSheet>
+      )}
 
       {/* ── Delete confirmation modal ───────────────────────────────── */}
       <Modal visible={deleteTarget !== null} transparent animationType="fade" onRequestClose={() => setDeleteTarget(null)}>

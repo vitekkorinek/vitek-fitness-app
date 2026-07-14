@@ -9,6 +9,7 @@ import { useRouter } from 'expo-router';
 import { SymbolView } from 'expo-symbols';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/context/AuthContext';
+import { BottomSheet } from '@/components/BottomSheet';
 import type { Invoice, InvoiceStatus } from '@/types/database';
 
 const BG     = '#faf9f7';
@@ -202,37 +203,38 @@ export default function AllInvoicesScreen() {
       )}
 
       {/* Year picker modal */}
-      <Modal visible={yearPickerOpen} transparent animationType="fade" onRequestClose={() => setYearPickerOpen(false)}>
-        <View style={styles.modalOverlay}>
-          <Pressable style={StyleSheet.absoluteFill} onPress={() => setYearPickerOpen(false)} />
-          <View style={styles.pickerBox}>
-            <Text style={styles.pickerTitle}>Filter by year</Text>
-            <TouchableOpacity
-              style={styles.pickerOption}
-              onPress={() => { setYearFilter(null); setYearPickerOpen(false); }}
-              activeOpacity={0.7}
-            >
-              <Text style={[styles.pickerOptionText, yearFilter === null && styles.pickerOptionTextActive]}>
-                All years
-              </Text>
-              {yearFilter === null && <SymbolView name="checkmark" size={14} tintColor={ACCENT} />}
-            </TouchableOpacity>
-            {YEAR_OPTIONS.map(y => (
+      {yearPickerOpen && (
+        <BottomSheet onClose={() => setYearPickerOpen(false)}>
+          {close => (
+            <View style={styles.pickerBox}>
+              <Text style={styles.pickerTitle}>Filter by year</Text>
               <TouchableOpacity
-                key={y}
                 style={styles.pickerOption}
-                onPress={() => { setYearFilter(y); setYearPickerOpen(false); }}
+                onPress={() => close(() => { setYearFilter(null); })}
                 activeOpacity={0.7}
               >
-                <Text style={[styles.pickerOptionText, yearFilter === y && styles.pickerOptionTextActive]}>
-                  {y}
+                <Text style={[styles.pickerOptionText, yearFilter === null && styles.pickerOptionTextActive]}>
+                  All years
                 </Text>
-                {yearFilter === y && <SymbolView name="checkmark" size={14} tintColor={ACCENT} />}
+                {yearFilter === null && <SymbolView name="checkmark" size={14} tintColor={ACCENT} />}
               </TouchableOpacity>
-            ))}
-          </View>
-        </View>
-      </Modal>
+              {YEAR_OPTIONS.map(y => (
+                <TouchableOpacity
+                  key={y}
+                  style={styles.pickerOption}
+                  onPress={() => close(() => { setYearFilter(y); })}
+                  activeOpacity={0.7}
+                >
+                  <Text style={[styles.pickerOptionText, yearFilter === y && styles.pickerOptionTextActive]}>
+                    {y}
+                  </Text>
+                  {yearFilter === y && <SymbolView name="checkmark" size={14} tintColor={ACCENT} />}
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
+        </BottomSheet>
+      )}
     </View>
   );
 }

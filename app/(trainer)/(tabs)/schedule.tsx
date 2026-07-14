@@ -12,6 +12,7 @@ import { SymbolView } from 'expo-symbols';
 import { useAuth } from '@/context/AuthContext';
 import { supabase } from '@/lib/supabase';
 import { TrainerLogoButton } from '@/components/TrainerLogoButton';
+import { BottomSheet } from '@/components/BottomSheet';
 
 const makeUUID = () => 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
   const r = Math.random() * 16 | 0; return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
@@ -985,25 +986,26 @@ export default function ScheduleScreen() {
 
       {/* Block view modal */}
       {viewBlock && (
-        <Modal transparent animationType="fade" onRequestClose={() => setViewBlock(null)}>
-          <TouchableOpacity style={pk.overlay} activeOpacity={1} onPress={() => setViewBlock(null)} />
-          <View style={pk.modal}>
-            <Text style={pk.title}>{viewBlock.label ?? 'Block'}</Text>
-            <Text style={{ color: MUTED, fontSize: 14, textAlign: 'center', marginBottom: 20 }}>
-              {viewBlock.date} · {viewBlock.start_time.slice(0,5)} – {viewBlock.end_time.slice(0,5)}
-            </Text>
-            <TouchableOpacity
-              style={[sh.saveBtn, { backgroundColor: '#e85d4a', marginTop: 0, marginBottom: 0 }]}
-              onPress={() => { setDeleteConfirmBlock(viewBlock); setViewBlock(null); }}
-              activeOpacity={0.85}
-            >
-              <Text style={sh.saveBtnText}>Delete</Text>
-            </TouchableOpacity>
-            <TouchableOpacity onPress={() => setViewBlock(null)} style={{ paddingTop: 14, alignItems: 'center' }}>
-              <Text style={{ color: MUTED, fontSize: 15 }}>Close</Text>
-            </TouchableOpacity>
-          </View>
-        </Modal>
+        <BottomSheet onClose={() => setViewBlock(null)}>
+          {close => (
+            <View style={{ paddingHorizontal: 20, paddingBottom: 8 }}>
+              <Text style={pk.title}>{viewBlock.label ?? 'Block'}</Text>
+              <Text style={{ color: MUTED, fontSize: 14, textAlign: 'center', marginBottom: 20 }}>
+                {viewBlock.date} · {viewBlock.start_time.slice(0,5)} – {viewBlock.end_time.slice(0,5)}
+              </Text>
+              <TouchableOpacity
+                style={[sh.saveBtn, { backgroundColor: '#e85d4a', marginTop: 0, marginBottom: 0 }]}
+                onPress={() => close(() => setDeleteConfirmBlock(viewBlock))}
+                activeOpacity={0.85}
+              >
+                <Text style={sh.saveBtnText}>Delete</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={() => close()} style={{ paddingTop: 14, alignItems: 'center' }}>
+                <Text style={{ color: MUTED, fontSize: 15 }}>Close</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+        </BottomSheet>
       )}
 
       {/* Block delete confirmation */}
@@ -1613,132 +1615,134 @@ function NewAppointmentSheet({
       </Animated.View>
 
       {showClientPicker && (
-        <Modal transparent animationType="fade" onRequestClose={() => setShowClientPicker(false)}>
-          <TouchableOpacity style={pk.overlay} activeOpacity={1} onPress={() => setShowClientPicker(false)} />
-          <View style={pk.modal}>
-            <Text style={pk.title}>Select client</Text>
-            <ScrollView style={{ maxHeight:320 }} showsVerticalScrollIndicator={false}>
-              {clients.map(c => (
-                <TouchableOpacity key={c.id} style={[pk.row, selectedClientId===c.id && pk.rowActive]} onPress={() => { setClientId(c.id); setShowClientPicker(false); }} activeOpacity={0.8}>
-                  <Text style={[pk.rowText, selectedClientId===c.id && pk.rowTextActive]}>{c.name}</Text>
-                  {selectedClientId === c.id && <SymbolView name="checkmark" size={14} tintColor={ACCENT} />}
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
-            <TouchableOpacity onPress={() => setShowClientPicker(false)} style={{ paddingTop:12, alignItems:'center' }}>
-              <Text style={{ color:MUTED, fontSize:15 }}>Cancel</Text>
-            </TouchableOpacity>
-          </View>
-        </Modal>
+        <BottomSheet onClose={() => setShowClientPicker(false)}>
+          {close => (
+            <View style={{ paddingHorizontal:20, paddingBottom:8 }}>
+              <Text style={pk.title}>Select client</Text>
+              <ScrollView style={{ maxHeight:320 }} showsVerticalScrollIndicator={false}>
+                {clients.map(c => (
+                  <TouchableOpacity key={c.id} style={[pk.row, selectedClientId===c.id && pk.rowActive]} onPress={() => close(() => setClientId(c.id))} activeOpacity={0.8}>
+                    <Text style={[pk.rowText, selectedClientId===c.id && pk.rowTextActive]}>{c.name}</Text>
+                    {selectedClientId === c.id && <SymbolView name="checkmark" size={14} tintColor={ACCENT} />}
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+              <TouchableOpacity onPress={() => close()} style={{ paddingTop:12, alignItems:'center' }}>
+                <Text style={{ color:MUTED, fontSize:15 }}>Cancel</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+        </BottomSheet>
       )}
 
       {showDateModal && (
-        <Modal transparent animationType="fade" onRequestClose={() => setShowDateModal(false)}>
-          <TouchableOpacity style={pk.overlay} activeOpacity={1} onPress={() => setShowDateModal(false)} />
-          <View style={pk.modal}>
-            <View style={dp.header}>
-              <TouchableOpacity onPress={() => setPickerMonth(m => new Date(m.getFullYear(), m.getMonth() - 1, 1))} hitSlop={12} activeOpacity={0.6}>
-                <Text style={dp.nav}>‹</Text>
+        <BottomSheet onClose={() => setShowDateModal(false)}>
+          {close => (
+            <View style={{ paddingHorizontal:20, paddingBottom:8 }}>
+              <View style={dp.header}>
+                <TouchableOpacity onPress={() => setPickerMonth(m => new Date(m.getFullYear(), m.getMonth() - 1, 1))} hitSlop={12} activeOpacity={0.6}>
+                  <Text style={dp.nav}>‹</Text>
+                </TouchableOpacity>
+                <Text style={dp.monthLabel}>{MONTHS[pickerMonth.getMonth()]} {pickerMonth.getFullYear()}</Text>
+                <TouchableOpacity onPress={() => setPickerMonth(m => new Date(m.getFullYear(), m.getMonth() + 1, 1))} hitSlop={12} activeOpacity={0.6}>
+                  <Text style={dp.nav}>›</Text>
+                </TouchableOpacity>
+              </View>
+              <View style={dp.dowRow}>
+                {DAY_LABELS.map(d => <Text key={d} style={dp.dow}>{d}</Text>)}
+              </View>
+              <View style={dp.grid}>
+                {monthGrid(pickerMonth).map((day, i) => {
+                  if (day === null) return <View key={i} style={dp.cell} />;
+                  const ds = `${pickerMonth.getFullYear()}-${String(pickerMonth.getMonth() + 1).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+                  const isSel = ds === dateStr;
+                  const isToday = ds === localDateStr(new Date());
+                  return (
+                    <TouchableOpacity key={i} style={dp.cell} onPress={() => close(() => setDateStr(ds))} activeOpacity={0.7}>
+                      <View style={[dp.dayCircle, isSel && dp.daySel]}>
+                        <Text style={[dp.dayText, isSel && dp.dayTextSel, !isSel && isToday && dp.dayToday]}>{day}</Text>
+                      </View>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+              <TouchableOpacity onPress={() => close()} style={{ paddingTop:14, alignItems:'center' }}>
+                <Text style={{ color:MUTED, fontSize:15 }}>Cancel</Text>
               </TouchableOpacity>
-              <Text style={dp.monthLabel}>{MONTHS[pickerMonth.getMonth()]} {pickerMonth.getFullYear()}</Text>
-              <TouchableOpacity onPress={() => setPickerMonth(m => new Date(m.getFullYear(), m.getMonth() + 1, 1))} hitSlop={12} activeOpacity={0.6}>
-                <Text style={dp.nav}>›</Text>
-              </TouchableOpacity>
             </View>
-            <View style={dp.dowRow}>
-              {DAY_LABELS.map(d => <Text key={d} style={dp.dow}>{d}</Text>)}
-            </View>
-            <View style={dp.grid}>
-              {monthGrid(pickerMonth).map((day, i) => {
-                if (day === null) return <View key={i} style={dp.cell} />;
-                const ds = `${pickerMonth.getFullYear()}-${String(pickerMonth.getMonth() + 1).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
-                const isSel = ds === dateStr;
-                const isToday = ds === localDateStr(new Date());
-                return (
-                  <TouchableOpacity key={i} style={dp.cell} onPress={() => { setDateStr(ds); setShowDateModal(false); }} activeOpacity={0.7}>
-                    <View style={[dp.dayCircle, isSel && dp.daySel]}>
-                      <Text style={[dp.dayText, isSel && dp.dayTextSel, !isSel && isToday && dp.dayToday]}>{day}</Text>
-                    </View>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-            <TouchableOpacity onPress={() => setShowDateModal(false)} style={{ paddingTop:14, alignItems:'center' }}>
-              <Text style={{ color:MUTED, fontSize:15 }}>Cancel</Text>
-            </TouchableOpacity>
-          </View>
-        </Modal>
+          )}
+        </BottomSheet>
       )}
 
       {showTimePicker && (
-        <Modal transparent animationType="fade" onRequestClose={() => setShowTimePicker(false)}>
-          <TouchableOpacity style={pk.overlay} activeOpacity={1} onPress={() => setShowTimePicker(false)} />
-          <View style={pk.modal}>
-            <Text style={pk.title}>Time</Text>
-            <View style={{ flexDirection:'row', gap:10, marginBottom:16 }}>
-              <View style={{ flex:1 }}>
-                <Text style={[sh.fieldLabel, { marginTop:0 }]}>START</Text>
-                <TextInput
-                  style={sh.textInput}
-                  value={tpStart}
-                  onChangeText={v => {
-                    setTpStart(v);
-                    if (!tpEndEdited && v.length === 5) setTpEnd(addMinutes(v, tpDur));
-                  }}
-                  placeholder="HH:MM"
-                  placeholderTextColor={MUTED}
-                  keyboardType="numbers-and-punctuation"
-                />
+        <BottomSheet onClose={() => setShowTimePicker(false)}>
+          {close => (
+            <View style={{ paddingHorizontal:20, paddingBottom:8 }}>
+              <Text style={pk.title}>Time</Text>
+              <View style={{ flexDirection:'row', gap:10, marginBottom:16 }}>
+                <View style={{ flex:1 }}>
+                  <Text style={[sh.fieldLabel, { marginTop:0 }]}>START</Text>
+                  <TextInput
+                    style={sh.textInput}
+                    value={tpStart}
+                    onChangeText={v => {
+                      setTpStart(v);
+                      if (!tpEndEdited && v.length === 5) setTpEnd(addMinutes(v, tpDur));
+                    }}
+                    placeholder="HH:MM"
+                    placeholderTextColor={MUTED}
+                    keyboardType="numbers-and-punctuation"
+                  />
+                </View>
+                <View style={{ flex:1 }}>
+                  <Text style={[sh.fieldLabel, { marginTop:0 }]}>END</Text>
+                  <TextInput
+                    style={sh.textInput}
+                    value={tpEnd}
+                    onChangeText={v => {
+                      setTpEnd(v); setTpEndEdited(true);
+                      if (v.length === 5) {
+                        const diff = minutesBetween(tpStart, v);
+                        if (diff > 0) setTpDur(diff);
+                      }
+                    }}
+                    placeholder="HH:MM"
+                    placeholderTextColor={MUTED}
+                    keyboardType="numbers-and-punctuation"
+                  />
+                </View>
               </View>
-              <View style={{ flex:1 }}>
-                <Text style={[sh.fieldLabel, { marginTop:0 }]}>END</Text>
-                <TextInput
-                  style={sh.textInput}
-                  value={tpEnd}
-                  onChangeText={v => {
-                    setTpEnd(v); setTpEndEdited(true);
-                    if (v.length === 5) {
-                      const diff = minutesBetween(tpStart, v);
-                      if (diff > 0) setTpDur(diff);
-                    }
-                  }}
-                  placeholder="HH:MM"
-                  placeholderTextColor={MUTED}
-                  keyboardType="numbers-and-punctuation"
-                />
+              <View style={dur.row}>
+                {DURATIONS.map(d => (
+                  <TouchableOpacity
+                    key={d}
+                    style={[dur.pill, tpDur===d && dur.pillActive]}
+                    onPress={() => { setTpDur(d); setTpEnd(addMinutes(tpStart, d)); setTpEndEdited(false); }}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={[dur.pillText, tpDur===d && dur.pillTextActive]}>
+                      {d < 60 ? `${d}m` : d % 60 === 0 ? `${d/60}h` : `${Math.floor(d/60)}h${d%60}`}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
               </View>
+              <TouchableOpacity
+                style={[sh.saveBtn, { marginTop:16 }]}
+                onPress={() => close(() => {
+                  const finalDur = tpEndEdited ? Math.max(15, minutesBetween(tpStart, tpEnd)) : tpDur;
+                  setTimeStr(tpStart.slice(0,5));
+                  setDuration(finalDur);
+                })}
+                activeOpacity={0.85}
+              >
+                <Text style={sh.saveBtnText}>Confirm</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={() => close()} style={{ paddingTop:14, alignItems:'center' }}>
+                <Text style={{ color:MUTED, fontSize:15 }}>Cancel</Text>
+              </TouchableOpacity>
             </View>
-            <View style={dur.row}>
-              {DURATIONS.map(d => (
-                <TouchableOpacity
-                  key={d}
-                  style={[dur.pill, tpDur===d && dur.pillActive]}
-                  onPress={() => { setTpDur(d); setTpEnd(addMinutes(tpStart, d)); setTpEndEdited(false); }}
-                  activeOpacity={0.8}
-                >
-                  <Text style={[dur.pillText, tpDur===d && dur.pillTextActive]}>
-                    {d < 60 ? `${d}m` : d % 60 === 0 ? `${d/60}h` : `${Math.floor(d/60)}h${d%60}`}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-            <TouchableOpacity
-              style={[sh.saveBtn, { marginTop:16 }]}
-              onPress={() => {
-                const finalDur = tpEndEdited ? Math.max(15, minutesBetween(tpStart, tpEnd)) : tpDur;
-                setTimeStr(tpStart.slice(0,5));
-                setDuration(finalDur);
-                setShowTimePicker(false);
-              }}
-              activeOpacity={0.85}
-            >
-              <Text style={sh.saveBtnText}>Confirm</Text>
-            </TouchableOpacity>
-            <TouchableOpacity onPress={() => setShowTimePicker(false)} style={{ paddingTop:14, alignItems:'center' }}>
-              <Text style={{ color:MUTED, fontSize:15 }}>Cancel</Text>
-            </TouchableOpacity>
-          </View>
-        </Modal>
+          )}
+        </BottomSheet>
       )}
 
       {showNotesModal && (

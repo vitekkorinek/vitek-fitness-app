@@ -24,6 +24,7 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/context/AuthContext';
 const makeUUID = () => 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => { const r = Math.random() * 16 | 0; return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16); });
 import t from '@/i18n/en';
+import { BottomSheet } from '@/components/BottomSheet';
 import type { Invoice, LineItem } from '@/types/database';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -885,7 +886,7 @@ export default function InvoiceScreen() {
       {/* Mark as Paid modal */}
       {markPaidOpen && (
         <Modal visible transparent animationType="fade" onRequestClose={() => setMarkPaidOpen(false)} statusBarTranslucent>
-          <View style={m.overlay}>
+          <KeyboardAvoidingView style={m.overlay} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
             <Pressable style={StyleSheet.absoluteFill} onPress={() => setMarkPaidOpen(false)} />
             <View style={m.box}>
               <Text style={m.title}>{t.invoice.confirmPayment}</Text>
@@ -915,7 +916,7 @@ export default function InvoiceScreen() {
                 <Text style={m.cancelText}>{t.common.cancel}</Text>
               </TouchableOpacity>
             </View>
-          </View>
+          </KeyboardAvoidingView>
           {Platform.OS === 'ios' && (
             <InputAccessoryView nativeID="mark-paid-date-input">
               <View style={{ height: 0 }} />
@@ -924,12 +925,11 @@ export default function InvoiceScreen() {
         </Modal>
       )}
 
-      {/* Date edit modal */}
+      {/* Date edit sheet */}
       {dateModalVisible && (
-        <Modal visible transparent animationType="fade" onRequestClose={() => setDateModalVisible(false)} statusBarTranslucent>
-          <View style={m.overlay}>
-            <Pressable style={StyleSheet.absoluteFill} onPress={() => setDateModalVisible(false)} />
-            <View style={m.box}>
+        <BottomSheet onClose={() => setDateModalVisible(false)}>
+          {close => (
+            <View style={m.sheetContent}>
               <Text style={m.title}>{t.invoice.issueDate}</Text>
               <TextInput
                 style={m.input}
@@ -943,22 +943,22 @@ export default function InvoiceScreen() {
               />
               <TouchableOpacity
                 style={m.confirmBtn}
-                onPress={() => { setIssueDate(dateDraft); setDateModalVisible(false); }}
+                onPress={() => close(() => setIssueDate(dateDraft))}
                 activeOpacity={0.85}
               >
                 <Text style={m.confirmBtnText}>{t.common.confirm}</Text>
               </TouchableOpacity>
-              <TouchableOpacity onPress={() => setDateModalVisible(false)} hitSlop={8}>
+              <TouchableOpacity onPress={() => close()} hitSlop={8}>
                 <Text style={m.cancelText}>{t.common.cancel}</Text>
               </TouchableOpacity>
+              {Platform.OS === 'ios' && (
+                <InputAccessoryView nativeID="inv-date-input">
+                  <View style={{ height: 0 }} />
+                </InputAccessoryView>
+              )}
             </View>
-          </View>
-          {Platform.OS === 'ios' && (
-            <InputAccessoryView nativeID="inv-date-input">
-              <View style={{ height: 0 }} />
-            </InputAccessoryView>
           )}
-        </Modal>
+        </BottomSheet>
       )}
     </View>
   );
@@ -1073,16 +1073,16 @@ function ClientPickerModal({
   onSelect: (c: ClientRow) => void;
   onClose: () => void;
 }) {
+  if (!visible) return null;
   return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose} statusBarTranslucent>
-      <View style={cpSt.overlay}>
-        <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
-        <View style={cpSt.box}>
+    <BottomSheet onClose={onClose}>
+      {close => (
+        <View style={cpSt.sheetContent}>
           <Text style={cpSt.title}>{t.invoice.clientPickerTitle}</Text>
           <ScrollView style={cpSt.list} showsVerticalScrollIndicator={false}>
             {clients.map((c, i) => (
               <View key={c.id}>
-                <TouchableOpacity style={cpSt.row} onPress={() => onSelect(c)} activeOpacity={0.7}>
+                <TouchableOpacity style={cpSt.row} onPress={() => close(() => onSelect(c))} activeOpacity={0.7}>
                   <Text style={cpSt.name}>{c.name}</Text>
                   <Text style={cpSt.addr} numberOfLines={1}>
                     {c.address_street
@@ -1094,12 +1094,12 @@ function ClientPickerModal({
               </View>
             ))}
           </ScrollView>
-          <TouchableOpacity onPress={onClose} hitSlop={8} style={{ paddingTop: 12 }}>
+          <TouchableOpacity onPress={() => close()} hitSlop={8} style={{ paddingTop: 12 }}>
             <Text style={cpSt.cancelText}>{t.common.cancel}</Text>
           </TouchableOpacity>
         </View>
-      </View>
-    </Modal>
+      )}
+    </BottomSheet>
   );
 }
 
@@ -1114,24 +1114,24 @@ function PresetPickerModal({
 }) {
   const presets = GENERIC_PRESETS;
 
+  if (!visible) return null;
   return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose} statusBarTranslucent>
-      <View style={ppSt.overlay}>
-        <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
-        <View style={ppSt.box}>
+    <BottomSheet onClose={onClose}>
+      {close => (
+        <View style={ppSt.sheetContent}>
           <Text style={ppSt.title}>{t.invoice.presetPickerTitle}</Text>
           <ScrollView style={ppSt.list} showsVerticalScrollIndicator={false}>
             {presets.map((p, i) => (
               <View key={i}>
                 <TouchableOpacity
                   style={ppSt.row}
-                  onPress={() => onSelect({
+                  onPress={() => close(() => onSelect({
                     description: p.label,
                     additional_info: p.description,
                     quantity: 1,
                     unit_price_eur: p.price,
                     total_eur: p.price,
-                  })}
+                  }))}
                   activeOpacity={0.7}
                 >
                   <Text style={ppSt.name}>{p.label}</Text>
@@ -1142,12 +1142,12 @@ function PresetPickerModal({
               </View>
             ))}
           </ScrollView>
-          <TouchableOpacity onPress={onClose} hitSlop={8} style={{ paddingTop: 12 }}>
+          <TouchableOpacity onPress={() => close()} hitSlop={8} style={{ paddingTop: 12 }}>
             <Text style={ppSt.cancelText}>{t.common.cancel}</Text>
           </TouchableOpacity>
         </View>
-      </View>
-    </Modal>
+      )}
+    </BottomSheet>
   );
 }
 
@@ -1429,6 +1429,7 @@ const totSt = StyleSheet.create({
 const m = StyleSheet.create({
   overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.52)', justifyContent: 'center', paddingHorizontal: 28 },
   box: { backgroundColor: CARD, borderRadius: 16, padding: 24, alignItems: 'center', gap: 14 },
+  sheetContent: { paddingHorizontal: 24, paddingTop: 8, paddingBottom: 12, alignItems: 'center', gap: 14 },
   title: { fontSize: 16, fontWeight: '700', color: TEXT },
   input: {
     alignSelf: 'stretch', backgroundColor: '#f5f5f3', borderRadius: 10,
@@ -1443,6 +1444,7 @@ const m = StyleSheet.create({
 });
 
 const cpSt = StyleSheet.create({
+  sheetContent: { paddingHorizontal: 20 },
   overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.52)', justifyContent: 'center', paddingHorizontal: 28 },
   box: { backgroundColor: CARD, borderRadius: 16, padding: 20, maxHeight: '70%' },
   title: { fontSize: 16, fontWeight: '700', color: TEXT, marginBottom: 16, textAlign: 'center' },
@@ -1455,6 +1457,7 @@ const cpSt = StyleSheet.create({
 });
 
 const ppSt = StyleSheet.create({
+  sheetContent: { paddingHorizontal: 20 },
   overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.52)', justifyContent: 'center', paddingHorizontal: 28 },
   box: { backgroundColor: CARD, borderRadius: 16, padding: 20, maxHeight: '75%' },
   title: { fontSize: 16, fontWeight: '700', color: TEXT, marginBottom: 16, textAlign: 'center' },

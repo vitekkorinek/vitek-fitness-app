@@ -9,6 +9,7 @@ import { SymbolView } from 'expo-symbols';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useAuth } from '@/context/AuthContext';
 import { supabase } from '@/lib/supabase';
+import { BottomSheet } from '@/components/BottomSheet';
 
 const BG     = '#faf9f7';
 const CARD   = '#ffffff';
@@ -1249,9 +1250,9 @@ export default function PlanWeekScreen() {
         const dObj = new Date(whoFree.date + 'T00:00:00');
         const WD = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
         return (
-          <Modal transparent animationType="fade" onRequestClose={() => setWhoFree(null)}>
-            <TouchableOpacity style={m.overlay} activeOpacity={1} onPress={() => setWhoFree(null)} />
-            <View style={m.modal}>
+          <BottomSheet onClose={() => setWhoFree(null)}>
+            {close => (
+            <View style={{ paddingHorizontal: 20 }}>
               <Text style={m.title}>Who&apos;s free</Text>
               <Text style={m.sub}>{WD[dObj.getDay()]} {dObj.getDate()} {MONTHS[dObj.getMonth()]} · around {minsToLabel(whoFree.startMin)}</Text>
               <ScrollView style={{ maxHeight: 340 }} showsVerticalScrollIndicator={false}>
@@ -1272,13 +1273,12 @@ export default function PlanWeekScreen() {
                       </View>
                       <TouchableOpacity
                         style={wf.bookBtn}
-                        onPress={() => {
+                        onPress={() => close(() => {
                           setPrefillDate(whoFree.date);
                           setPrefillTime(minsToLabel(whoFree.startMin));
                           setPrefillClientId(b.clientId);
-                          setWhoFree(null);
                           setShowNew(true);
-                        }}
+                        })}
                         activeOpacity={0.85}
                       >
                         <Text style={wf.bookBtnText}>Book</Text>
@@ -1287,11 +1287,12 @@ export default function PlanWeekScreen() {
                   );
                 })}
               </ScrollView>
-              <TouchableOpacity onPress={() => setWhoFree(null)} style={{ paddingTop: 12, alignItems: 'center' }}>
+              <TouchableOpacity onPress={() => close()} style={{ paddingTop: 12, alignItems: 'center' }}>
                 <Text style={{ color: MUTED, fontSize: 15 }}>Close</Text>
               </TouchableOpacity>
             </View>
-          </Modal>
+            )}
+          </BottomSheet>
         );
       })()}
 
@@ -1303,9 +1304,9 @@ export default function PlanWeekScreen() {
         const cname = a.client_id ? getClientName(a.client_id) : 'Guest';
         const draft = !a.sent_to_client;
         return (
-          <Modal transparent animationType="fade" onRequestClose={() => setApptAction(null)}>
-            <TouchableOpacity style={m.overlay} activeOpacity={1} onPress={() => setApptAction(null)} />
-            <View style={m.modal}>
+          <BottomSheet onClose={() => setApptAction(null)}>
+            {close => (
+            <View style={{ paddingHorizontal: 20 }}>
               <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginBottom: 4 }}>
                 {!!a.client_id && <View style={[wf.dot, { backgroundColor: getClientColor(a.client_id) }]} />}
                 <Text style={m.title}>{cname}</Text>
@@ -1320,12 +1321,12 @@ export default function PlanWeekScreen() {
                     <Text style={aa.draftNoteText}>Not sent to the client yet.</Text>
                   </View>
                   {!!a.client_id && (
-                    <TouchableOpacity style={aa.sendBtn} onPress={() => sendAppt(a)} activeOpacity={0.85}>
+                    <TouchableOpacity style={aa.sendBtn} onPress={() => close(() => sendAppt(a))} activeOpacity={0.85}>
                       <SymbolView name="paperplane.fill" size={14} tintColor="#fff" />
                       <Text style={aa.sendBtnText}>Send to client</Text>
                     </TouchableOpacity>
                   )}
-                  <TouchableOpacity style={aa.deleteRow} onPress={() => deleteDraftAppt(a)} activeOpacity={0.7}>
+                  <TouchableOpacity style={aa.deleteRow} onPress={() => close(() => deleteDraftAppt(a))} activeOpacity={0.7}>
                     <SymbolView name="trash" size={13} tintColor="#e85d4a" />
                     <Text style={aa.deleteText}>Delete</Text>
                   </TouchableOpacity>
@@ -1336,24 +1337,25 @@ export default function PlanWeekScreen() {
                   <Text style={aa.sentNoteText}>Sent to client</Text>
                 </View>
               )}
-              <TouchableOpacity onPress={() => setApptAction(null)} style={{ paddingTop: 12, alignItems: 'center' }}>
+              <TouchableOpacity onPress={() => close()} style={{ paddingTop: 12, alignItems: 'center' }}>
                 <Text style={{ color: MUTED, fontSize: 15 }}>Close</Text>
               </TouchableOpacity>
             </View>
-          </Modal>
+            )}
+          </BottomSheet>
         );
       })()}
 
       {/* Client menu (burger) — per-client booked/requested + tap to filter to one */}
       {clientMenu && (
-        <Modal transparent animationType="fade" onRequestClose={() => setClientMenu(false)}>
-          <TouchableOpacity style={m.overlay} activeOpacity={1} onPress={() => setClientMenu(false)} />
-          <View style={m.modal}>
+        <BottomSheet onClose={() => setClientMenu(false)}>
+          {close => (
+          <View style={{ paddingHorizontal: 20 }}>
             <Text style={m.title}>Clients</Text>
             <Text style={m.sub}>Booked / requested this week · tap to filter</Text>
             <ScrollView style={{ maxHeight: 380 }} showsVerticalScrollIndicator={false}>
               {filterClientId && (
-                <TouchableOpacity style={cmm.allRow} onPress={() => { setFilterClientId(null); setClientMenu(false); }} activeOpacity={0.8}>
+                <TouchableOpacity style={cmm.allRow} onPress={() => close(() => setFilterClientId(null))} activeOpacity={0.8}>
                   <SymbolView name="person.2.fill" size={15} tintColor={ACCENT} />
                   <Text style={cmm.allText}>Show all clients</Text>
                 </TouchableOpacity>
@@ -1371,7 +1373,7 @@ export default function PlanWeekScreen() {
                   <TouchableOpacity
                     key={c.id}
                     style={[cmm.row, active && cmm.rowActive]}
-                    onPress={() => { setFilterClientId(active ? null : c.id); setClientMenu(false); }}
+                    onPress={() => close(() => setFilterClientId(active ? null : c.id))}
                     activeOpacity={0.8}
                   >
                     <View style={[cmm.dot, { backgroundColor: color }, !c.submitted && cmm.dotEmpty]} />
@@ -1404,11 +1406,12 @@ export default function PlanWeekScreen() {
                 );
               })}
             </ScrollView>
-            <TouchableOpacity onPress={() => setClientMenu(false)} style={{ paddingTop: 12, alignItems: 'center' }}>
+            <TouchableOpacity onPress={() => close()} style={{ paddingTop: 12, alignItems: 'center' }}>
               <Text style={{ color: MUTED, fontSize: 15 }}>Close</Text>
             </TouchableOpacity>
           </View>
-        </Modal>
+          )}
+        </BottomSheet>
       )}
 
       {/* New appointment sheet */}
@@ -1648,29 +1651,30 @@ function NewAppointmentSheet({
       </Animated.View>
 
       {showClientPicker && (
-        <Modal transparent animationType="fade" onRequestClose={() => setShowClientPicker(false)}>
-          <TouchableOpacity style={m.overlay} activeOpacity={1} onPress={() => setShowClientPicker(false)} />
-          <View style={m.modal}>
+        <BottomSheet onClose={() => setShowClientPicker(false)}>
+          {close => (
+          <View style={{ paddingHorizontal:20 }}>
             <Text style={m.title}>Select client</Text>
             <ScrollView style={{ maxHeight:320 }} showsVerticalScrollIndicator={false}>
               {clients.map(c => (
-                <TouchableOpacity key={c.id} style={[m.row, selectedClientId===c.id && m.rowActive]} onPress={() => { setClientId(c.id); setShowClientPicker(false); }} activeOpacity={0.8}>
+                <TouchableOpacity key={c.id} style={[m.row, selectedClientId===c.id && m.rowActive]} onPress={() => close(() => setClientId(c.id))} activeOpacity={0.8}>
                   <Text style={[m.rowText, selectedClientId===c.id && m.rowTextActive]}>{c.name}</Text>
                   {selectedClientId === c.id && <SymbolView name="checkmark" size={14} tintColor={ACCENT} />}
                 </TouchableOpacity>
               ))}
             </ScrollView>
-            <TouchableOpacity onPress={() => setShowClientPicker(false)} style={{ paddingTop:12, alignItems:'center' }}>
+            <TouchableOpacity onPress={() => close()} style={{ paddingTop:12, alignItems:'center' }}>
               <Text style={{ color:MUTED, fontSize:15 }}>Cancel</Text>
             </TouchableOpacity>
           </View>
-        </Modal>
+          )}
+        </BottomSheet>
       )}
 
       {showDateModal && (
-        <Modal transparent animationType="fade" onRequestClose={() => setShowDateModal(false)}>
-          <TouchableOpacity style={m.overlay} activeOpacity={1} onPress={() => setShowDateModal(false)} />
-          <View style={m.modal}>
+        <BottomSheet onClose={() => setShowDateModal(false)}>
+          {close => (
+          <View style={{ paddingHorizontal:20 }}>
             <View style={dp.header}>
               <TouchableOpacity onPress={() => setPickerMonth(mo => new Date(mo.getFullYear(), mo.getMonth() - 1, 1))} hitSlop={12} activeOpacity={0.6}>
                 <Text style={dp.nav}>‹</Text>
@@ -1690,7 +1694,7 @@ function NewAppointmentSheet({
                 const isSel = ds === dateStr;
                 const isToday = ds === localDateStr(new Date());
                 return (
-                  <TouchableOpacity key={i} style={dp.cell} onPress={() => { setDateStr(ds); setShowDateModal(false); }} activeOpacity={0.7}>
+                  <TouchableOpacity key={i} style={dp.cell} onPress={() => close(() => setDateStr(ds))} activeOpacity={0.7}>
                     <View style={[dp.dayCircle, isSel && dp.daySel]}>
                       <Text style={[dp.dayText, isSel && dp.dayTextSel, !isSel && isToday && dp.dayToday]}>{day}</Text>
                     </View>
@@ -1698,17 +1702,18 @@ function NewAppointmentSheet({
                 );
               })}
             </View>
-            <TouchableOpacity onPress={() => setShowDateModal(false)} style={{ paddingTop:14, alignItems:'center' }}>
+            <TouchableOpacity onPress={() => close()} style={{ paddingTop:14, alignItems:'center' }}>
               <Text style={{ color:MUTED, fontSize:15 }}>Cancel</Text>
             </TouchableOpacity>
           </View>
-        </Modal>
+          )}
+        </BottomSheet>
       )}
 
       {showTimePicker && (
-        <Modal transparent animationType="fade" onRequestClose={() => setShowTimePicker(false)}>
-          <TouchableOpacity style={m.overlay} activeOpacity={1} onPress={() => setShowTimePicker(false)} />
-          <View style={m.modal}>
+        <BottomSheet onClose={() => setShowTimePicker(false)}>
+          {close => (
+          <View style={{ paddingHorizontal:20 }}>
             <Text style={m.title}>Time</Text>
             <View style={{ flexDirection:'row', gap:10, marginBottom:14 }}>
               <View style={{ flex:1 }}>
@@ -1759,21 +1764,21 @@ function NewAppointmentSheet({
             </View>
             <TouchableOpacity
               style={[sh2.saveBtn, { marginTop:16 }]}
-              onPress={() => {
+              onPress={() => close(() => {
                 const finalDur = tpEndEdited ? Math.max(15, pwMinutesBetween(tpStart, tpEnd)) : tpDur;
                 setTimeStr(tpStart.slice(0,5));
                 setDuration(finalDur);
-                setShowTimePicker(false);
-              }}
+              })}
               activeOpacity={0.85}
             >
               <Text style={sh2.saveBtnText}>Confirm</Text>
             </TouchableOpacity>
-            <TouchableOpacity onPress={() => setShowTimePicker(false)} style={{ paddingTop:14, alignItems:'center' }}>
+            <TouchableOpacity onPress={() => close()} style={{ paddingTop:14, alignItems:'center' }}>
               <Text style={{ color:MUTED, fontSize:15 }}>Cancel</Text>
             </TouchableOpacity>
           </View>
-        </Modal>
+          )}
+        </BottomSheet>
       )}
 
       {showNotesModal && (

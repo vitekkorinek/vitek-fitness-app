@@ -22,6 +22,7 @@ import { useFocusEffect } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/context/AuthContext';
+import { BottomSheet } from '@/components/BottomSheet';
 import t from '@/i18n/en';
 import type { SessionPackage, Invoice } from '@/types/database';
 
@@ -564,36 +565,37 @@ export default function MeScreen() {
         )}
       </Modal>
 
-      {/* ── Sex picker modal ─────────────────────────────────────────── */}
-      <Modal visible={sexModalOpen} transparent animationType="fade" onRequestClose={() => setSexModalOpen(false)} statusBarTranslucent>
-        <View style={modal.overlay}>
-          <Pressable style={StyleSheet.absoluteFill} onPress={() => setSexModalOpen(false)} />
-          <View style={[modal.box, { alignItems: 'stretch' }]}>
-            <Text style={[modal.title, { textAlign: 'center' }]}>{t.clientMe.sex}</Text>
-            <TouchableOpacity
-              style={[modal.sexOption, profileFields.sex === 'male' && modal.sexOptionActive]}
-              onPress={() => saveSex('male')}
-              activeOpacity={0.85}
-            >
-              <Text style={[modal.sexOptionText, profileFields.sex === 'male' && modal.sexOptionTextActive]}>
-                {t.clientMe.male}
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[modal.sexOption, profileFields.sex === 'female' && modal.sexOptionActive]}
-              onPress={() => saveSex('female')}
-              activeOpacity={0.85}
-            >
-              <Text style={[modal.sexOptionText, profileFields.sex === 'female' && modal.sexOptionTextActive]}>
-                {t.clientMe.female}
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity onPress={() => setSexModalOpen(false)} hitSlop={8} style={{ alignSelf: 'center' }}>
-              <Text style={modal.cancel}>{t.common.cancel}</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
+      {/* ── Sex picker sheet ─────────────────────────────────────────── */}
+      {sexModalOpen && (
+        <BottomSheet onClose={() => setSexModalOpen(false)}>
+          {close => (
+            <View style={{ paddingHorizontal: 20, paddingBottom: 4, gap: 14, alignItems: 'stretch' }}>
+              <Text style={[modal.title, { textAlign: 'center' }]}>{t.clientMe.sex}</Text>
+              <TouchableOpacity
+                style={[modal.sexOption, profileFields.sex === 'male' && modal.sexOptionActive]}
+                onPress={() => close(() => saveSex('male'))}
+                activeOpacity={0.85}
+              >
+                <Text style={[modal.sexOptionText, profileFields.sex === 'male' && modal.sexOptionTextActive]}>
+                  {t.clientMe.male}
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[modal.sexOption, profileFields.sex === 'female' && modal.sexOptionActive]}
+                onPress={() => close(() => saveSex('female'))}
+                activeOpacity={0.85}
+              >
+                <Text style={[modal.sexOptionText, profileFields.sex === 'female' && modal.sexOptionTextActive]}>
+                  {t.clientMe.female}
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={() => close()} hitSlop={8} style={{ alignSelf: 'center', paddingTop: 4 }}>
+                <Text style={modal.cancel}>{t.common.cancel}</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+        </BottomSheet>
+      )}
 
       {/* ── Change password modal ─────────────────────────────────── */}
       <Modal visible={changePwdOpen} transparent animationType="fade" onRequestClose={() => setChangePwdOpen(false)} statusBarTranslucent>

@@ -17,6 +17,7 @@ import { fetchClientTraining } from '@/lib/clientTraining';
 import { CATEGORY_COLORS } from '@/lib/workoutCategories';
 import type { WorkoutCategory } from '@/lib/workoutCategories';
 import type { ClientTrainingData } from '@/lib/clientTraining';
+import { BottomSheet } from '@/components/BottomSheet';
 import { SessionDetailsSheet } from '@/components/SessionDetailsSheet';
 import { RoutineDetailsSheet } from '@/components/RoutineDetailsSheet';
 import type { RoutineWorkoutPick } from '@/components/RoutineDetailsSheet';
@@ -880,15 +881,15 @@ export default function TrainTabScreen() {
           <View style={{ height: 24 }} />
 
           {/* Add training modal — day-aware. Today = Log (train now). Other day = Plan (schedule). */}
-          {(() => {
+          {startModalOpen && (() => {
             const isToday = selectedDate === todayStr;
             const dayFull = new Date(selectedDate + 'T12:00:00').toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'short' });
             const hasWorkouts = (training?.standaloneWorkouts ?? []).length > 0 || (isToday ? false : workoutCards.length > 0);
             const routineNextUp = activeRoutineRow?.nextUpWorkoutId ?? null;
             return (
-              <Modal visible={startModalOpen} transparent animationType="fade" onRequestClose={() => { setStartModalOpen(false); setPlanPickerOpen(false); }}>
-                <Pressable style={startModalStyles.backdrop} onPress={() => { setStartModalOpen(false); setPlanPickerOpen(false); }}>
-                  <Pressable style={startModalStyles.card} onPress={() => {}}>
+              <BottomSheet onClose={() => { setStartModalOpen(false); setPlanPickerOpen(false); }}>
+                {close => (
+                  <View style={{ paddingHorizontal: 20 }}>
                     {planPickerOpen ? (
                       <>
                         <Text style={startModalStyles.title}>Plan a workout</Text>
@@ -930,7 +931,7 @@ export default function TrainTabScreen() {
                           style={[startModalStyles.option, !hasWorkouts && { opacity: 0.4 }]}
                           activeOpacity={hasWorkouts ? 0.8 : 1}
                           onPress={!hasWorkouts ? undefined : isToday
-                            ? () => { useSessionStore.getState().setPendingLogDate(null); setStartModalOpen(false); router.push('/(client)/all-workouts' as any); }
+                            ? () => { useSessionStore.getState().setPendingLogDate(null); close(() => router.push('/(client)/all-workouts' as any)); }
                             : () => setPlanPickerOpen(true)}
                         >
                           <Text style={startModalStyles.optionIcon}>🏋️</Text>
@@ -950,7 +951,7 @@ export default function TrainTabScreen() {
                           style={[startModalStyles.option, !routineEnabled && { opacity: 0.4 }]}
                           activeOpacity={routineEnabled ? 0.8 : 1}
                           onPress={!routineEnabled ? undefined : isToday
-                            ? () => { useSessionStore.getState().setPendingLogDate(null); setStartModalOpen(false); router.push('/(client)/all-routines' as any); }
+                            ? () => { useSessionStore.getState().setPendingLogDate(null); close(() => router.push('/(client)/all-routines' as any)); }
                             : () => scheduleWorkout(routineNextUp!)}
                         >
                           <Text style={startModalStyles.optionIcon}>📋</Text>
@@ -965,21 +966,22 @@ export default function TrainTabScreen() {
                           );
                         })()}
 
-                        <TouchableOpacity style={startModalStyles.cancel} onPress={() => setStartModalOpen(false)}>
+                        <TouchableOpacity style={startModalStyles.cancel} onPress={() => close()}>
                           <Text style={startModalStyles.cancelText}>Cancel</Text>
                         </TouchableOpacity>
                       </>
                     )}
-                  </Pressable>
-                </Pressable>
-              </Modal>
+                  </View>
+                )}
+              </BottomSheet>
             );
           })()}
 
           {/* ── Training calendar modal ───────────────────────────── */}
-          <Modal visible={calModalOpen} transparent animationType="fade" onRequestClose={() => setCalModalOpen(false)}>
-            <Pressable style={calModalStyles.backdrop} onPress={() => setCalModalOpen(false)}>
-              <Pressable style={calModalStyles.card} onPress={() => {}}>
+          {calModalOpen && (
+            <BottomSheet onClose={() => setCalModalOpen(false)}>
+              {close => (
+              <View style={calModalStyles.sheetBody}>
                 {/* Month navigation */}
                 <View style={calModalStyles.monthRow}>
                   <TouchableOpacity onPress={calModalPrevMonth} hitSlop={8} activeOpacity={0.7}>
@@ -1018,7 +1020,7 @@ export default function TrainTabScreen() {
                             const dateStr = toDateStr(calModalYear, calModalMonth, day);
                             setWeekOffset(getWeekOffsetForDate(dateStr));
                             setSelectedDate(dateStr);
-                            setCalModalOpen(false);
+                            close();
                           }}
                         >
                           {day != null && (
@@ -1044,25 +1046,26 @@ export default function TrainTabScreen() {
                   <Text style={calModalStyles.legendText}>Workout completed</Text>
                 </View>
 
-                <TouchableOpacity style={calModalStyles.doneBtn} onPress={() => setCalModalOpen(false)} activeOpacity={0.8}>
+                <TouchableOpacity style={calModalStyles.doneBtn} onPress={() => close()} activeOpacity={0.8}>
                   <Text style={calModalStyles.doneBtnText}>Done</Text>
                 </TouchableOpacity>
-              </Pressable>
-            </Pressable>
-          </Modal>
+              </View>
+              )}
+            </BottomSheet>
+          )}
         </ScrollView>
       )}
 
       {/* Session ⋯ menu — Move training / Delete */}
-      <Modal visible={!!sessMenu} transparent animationType="fade" onRequestClose={() => setSessMenu(null)}>
-        <View style={sessMenuStyles.overlay}>
-          <Pressable style={StyleSheet.absoluteFill} onPress={() => setSessMenu(null)} />
-          <View style={sessMenuStyles.card}>
+      {!!sessMenu && (
+        <BottomSheet onClose={() => setSessMenu(null)}>
+          {close => (
+          <View style={sessMenuStyles.sheetBody}>
             <Text style={sessMenuStyles.title} numberOfLines={1}>{sessMenu?.workoutName ?? 'Session'}</Text>
             <TouchableOpacity
               style={sessMenuStyles.option}
               activeOpacity={0.7}
-              onPress={() => { const sess = sessMenu!; setSessMenu(null); openSessionDetails(sess); }}
+              onPress={() => { const sess = sessMenu!; close(() => openSessionDetails(sess)); }}
             >
               <SymbolView name="list.bullet.rectangle" size={18} tintColor={HEADER} />
               <Text style={sessMenuStyles.optionLabel}>View details</Text>
@@ -1076,8 +1079,7 @@ export default function TrainTabScreen() {
                 setMoveCalYear(y);
                 setMoveCalMonth(m - 1);
                 setMoveMenuSess(sess);
-                setSessMenu(null);
-                setMoveCalOpen(true);
+                close(() => setMoveCalOpen(true));
               }}
             >
               <SymbolView name="calendar" size={18} tintColor={HEADER} />
@@ -1086,17 +1088,18 @@ export default function TrainTabScreen() {
             <TouchableOpacity
               style={sessMenuStyles.option}
               activeOpacity={0.7}
-              onPress={() => { setDeleteConfirmSess(sessMenu); setSessMenu(null); }}
+              onPress={() => { const sess = sessMenu; close(() => setDeleteConfirmSess(sess)); }}
             >
               <SymbolView name="trash" size={18} tintColor="#e85d4a" />
               <Text style={[sessMenuStyles.optionLabel, { color: '#e85d4a' }]}>Delete</Text>
             </TouchableOpacity>
-            <TouchableOpacity onPress={() => setSessMenu(null)} hitSlop={8} style={{ marginTop: 8 }}>
+            <TouchableOpacity onPress={() => close()} hitSlop={8} style={{ marginTop: 8 }}>
               <Text style={sessMenuStyles.cancelText}>Cancel</Text>
             </TouchableOpacity>
           </View>
-        </View>
-      </Modal>
+          )}
+        </BottomSheet>
+      )}
 
       {/* Delete training — confirmation */}
       <Modal visible={!!deleteConfirmSess} transparent animationType="fade" onRequestClose={() => { if (!deletingSession) setDeleteConfirmSess(null); }}>
@@ -1123,10 +1126,10 @@ export default function TrainTabScreen() {
       </Modal>
 
       {/* Move training — calendar picker modal */}
-      <Modal visible={moveCalOpen} transparent animationType="fade" onRequestClose={() => { setMoveCalOpen(false); setMoveMenuSess(null); setMoveConfirmDate(null); }}>
-        <View style={moveCalStyles.overlay}>
-          <Pressable style={StyleSheet.absoluteFill} onPress={() => { setMoveCalOpen(false); setMoveMenuSess(null); setMoveConfirmDate(null); }} />
-          <View style={moveCalStyles.card}>
+      {moveCalOpen && (
+        <BottomSheet onClose={() => { setMoveCalOpen(false); setMoveMenuSess(null); setMoveConfirmDate(null); }}>
+          {close => (
+          <View style={moveCalStyles.sheetBody}>
             <Text style={moveCalStyles.title}>Move Training</Text>
             <Text style={moveCalStyles.sub}>Pick a new date</Text>
             {/* Month navigation */}
@@ -1210,12 +1213,13 @@ export default function TrainTabScreen() {
               </View>
             )}
             {movingDate && <ActivityIndicator color={ACCENT} style={{ marginTop: 12 }} />}
-            <TouchableOpacity onPress={() => { setMoveCalOpen(false); setMoveMenuSess(null); setMoveConfirmDate(null); }} hitSlop={8} style={{ marginTop: 12 }}>
+            <TouchableOpacity onPress={() => { setMoveMenuSess(null); setMoveConfirmDate(null); close(); }} hitSlop={8} style={{ marginTop: 12 }}>
               <Text style={moveCalStyles.cancelText}>Cancel</Text>
             </TouchableOpacity>
           </View>
-        </View>
-      </Modal>
+          )}
+        </BottomSheet>
+      )}
 
       <RoutineDetailsSheet
         visible={routineSheetVisible}
@@ -1633,10 +1637,10 @@ function WeeklyGaugeCard({
           ))}
 
       {/* Trainings-done overlay (opened by tapping the pips) */}
-      <Modal visible={sessionsListOpen} transparent animationType="fade" onRequestClose={() => setSessionsListOpen(false)}>
-        <View style={sessListStyles.overlay}>
-          <Pressable style={StyleSheet.absoluteFill} onPress={() => setSessionsListOpen(false)} />
-          <View style={sessListStyles.card}>
+      {sessionsListOpen && (
+        <BottomSheet onClose={() => setSessionsListOpen(false)}>
+          {close => (
+          <View style={sessListStyles.sheetBody}>
             <Text style={sessListStyles.title}>Trainings done</Text>
             <Text style={sessListStyles.sub}>{gaugeWeekLabel(weekOffset, weekDates)} · {weeklyCompleted} of {weeklyGoal}</Text>
             {completedSessions.length === 0 ? (
@@ -1657,18 +1661,19 @@ function WeeklyGaugeCard({
                 ))}
               </ScrollView>
             )}
-            <TouchableOpacity style={sessListStyles.doneBtn} onPress={() => setSessionsListOpen(false)} activeOpacity={0.85}>
+            <TouchableOpacity style={sessListStyles.doneBtn} onPress={() => close()} activeOpacity={0.85}>
               <Text style={sessListStyles.doneText}>Done</Text>
             </TouchableOpacity>
           </View>
-        </View>
-      </Modal>
+          )}
+        </BottomSheet>
+      )}
 
       {/* Single-pip overlay — shows just the one workout that produced the tapped pip */}
-      <Modal visible={!!singlePip} transparent animationType="fade" onRequestClose={() => setSinglePip(null)}>
-        <View style={sessListStyles.overlay}>
-          <Pressable style={StyleSheet.absoluteFill} onPress={() => setSinglePip(null)} />
-          <View style={sessListStyles.card}>
+      {!!singlePip && (
+        <BottomSheet onClose={() => setSinglePip(null)}>
+          {close => (
+          <View style={sessListStyles.sheetBody}>
             <Text style={sessListStyles.label}>WORKOUT DONE</Text>
             <View style={sessListStyles.singleCover}>
               {singlePip?.coverImageUrl
@@ -1684,12 +1689,13 @@ function WeeklyGaugeCard({
                 {new Date(singlePip.date + 'T12:00:00').toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })}
               </Text>
             )}
-            <TouchableOpacity style={sessListStyles.doneBtn} onPress={() => setSinglePip(null)} activeOpacity={0.85}>
+            <TouchableOpacity style={sessListStyles.doneBtn} onPress={() => close()} activeOpacity={0.85}>
               <Text style={sessListStyles.doneText}>Done</Text>
             </TouchableOpacity>
           </View>
-        </View>
-      </Modal>
+          )}
+        </BottomSheet>
+      )}
 
     </View>
   );
@@ -1757,6 +1763,7 @@ const gcStyles = StyleSheet.create({
 });
 
 const sessListStyles = StyleSheet.create({
+  sheetBody: { paddingHorizontal: 20, paddingBottom: 8, alignItems: 'center' },
   overlay:   { flex: 1, backgroundColor: 'rgba(0,0,0,0.52)', justifyContent: 'center', paddingHorizontal: 32 },
   card:      { backgroundColor: CARD, borderRadius: 16, paddingVertical: 20, paddingHorizontal: 20, alignItems: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.15, shadowRadius: 20, elevation: 10 },
   title:     { fontSize: 17, fontWeight: '700', color: TEXT },
@@ -1990,9 +1997,9 @@ function RoutineQuickLookModal({
   if (!routineId) return null;
 
   return (
-    <Modal visible transparent animationType="fade" onRequestClose={onClose} statusBarTranslucent>
-      <Pressable style={qlStyles.overlay} onPress={onClose}>
-        <Pressable style={qlStyles.card} onPress={() => {}}>
+    <BottomSheet onClose={onClose}>
+      {close => (
+        <View style={qlStyles.sheetBody}>
           <Text style={qlStyles.title} numberOfLines={2}>{routineName}</Text>
           <View style={qlStyles.divider} />
           {loading ? (
@@ -2009,16 +2016,17 @@ function RoutineQuickLookModal({
               ))}
             </ScrollView>
           )}
-          <TouchableOpacity style={qlStyles.doneBtn} onPress={onClose} activeOpacity={0.8}>
+          <TouchableOpacity style={qlStyles.doneBtn} onPress={() => close()} activeOpacity={0.8}>
             <Text style={qlStyles.doneBtnText}>Done</Text>
           </TouchableOpacity>
-        </Pressable>
-      </Pressable>
-    </Modal>
+        </View>
+      )}
+    </BottomSheet>
   );
 }
 
 const qlStyles = StyleSheet.create({
+  sheetBody: { paddingHorizontal: 20, paddingBottom: 8, maxHeight: '75%' },
   overlay: {
     flex: 1, backgroundColor: 'rgba(0,0,0,0.45)',
     alignItems: 'center', justifyContent: 'center',
@@ -2133,6 +2141,7 @@ const startModalStyles = StyleSheet.create({
 });
 
 const calModalStyles = StyleSheet.create({
+  sheetBody:   { paddingHorizontal: 20, paddingBottom: 8 },
   backdrop:    { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', alignItems: 'center', justifyContent: 'center', padding: 20 },
   card:        { backgroundColor: CARD, borderRadius: 16, padding: 20, width: '100%', shadowColor: '#000', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.15, shadowRadius: 20, elevation: 10 },
   monthRow:    { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 },
@@ -2152,6 +2161,7 @@ const calModalStyles = StyleSheet.create({
 });
 
 const sessMenuStyles = StyleSheet.create({
+  sheetBody:      { paddingHorizontal: 20, paddingBottom: 8 },
   overlay:        { flex: 1, backgroundColor: 'rgba(0,0,0,0.52)', justifyContent: 'center', paddingHorizontal: 40 },
   card:           { backgroundColor: CARD, borderRadius: 16, paddingVertical: 18, paddingHorizontal: 20, alignItems: 'stretch', shadowColor: '#000', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.15, shadowRadius: 20, elevation: 10 },
   title:          { fontSize: 16, fontWeight: '700', color: TEXT, textAlign: 'center', marginBottom: 12 },
@@ -2165,6 +2175,7 @@ const sessMenuStyles = StyleSheet.create({
 });
 
 const moveCalStyles = StyleSheet.create({
+  sheetBody:      { paddingHorizontal: 20, paddingBottom: 8, alignItems: 'center' },
   overlay:        { flex: 1, backgroundColor: 'rgba(0,0,0,0.52)', justifyContent: 'center', paddingHorizontal: 24 },
   card:           { backgroundColor: CARD, borderRadius: 16, padding: 20, alignItems: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.15, shadowRadius: 20, elevation: 10 },
   title:          { fontSize: 16, fontWeight: '700', color: TEXT, marginBottom: 2 },

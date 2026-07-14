@@ -22,6 +22,7 @@ import { SymbolView } from 'expo-symbols';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/context/AuthContext';
 import { SessionDetailsSheet } from '@/components/SessionDetailsSheet';
+import { BottomSheet } from '@/components/BottomSheet';
 import { CATEGORY_COLORS, CATEGORY_OPTIONS, STRETCHING_CATEGORIES } from '@/lib/workoutCategories';
 import type { WorkoutCategory } from '@/lib/workoutCategories';
 
@@ -611,45 +612,43 @@ function WorkoutMenuModal({
   onToggleStatus: () => void; onViewExercises: () => void; onClose: () => void;
 }) {
   return (
-    <Modal visible transparent animationType="fade" onRequestClose={onClose} statusBarTranslucent>
-      <Pressable style={menuStyles.overlay} onPress={onClose}>
-        <Pressable style={menuStyles.sheet}>
-          <Text style={menuStyles.sheetTitle} numberOfLines={1}>{workoutName}</Text>
-          <View style={menuStyles.sheetDivider} />
-          <TouchableOpacity style={menuStyles.option} onPress={onViewExercises} activeOpacity={0.7}>
-            <SymbolView name="list.bullet" size={16} tintColor={TEXT} />
-            <Text style={menuStyles.optionText}>View exercises</Text>
-          </TouchableOpacity>
-          <View style={menuStyles.optionDivider} />
-          <TouchableOpacity style={menuStyles.option} onPress={onRename} activeOpacity={0.7}>
-            <SymbolView name="pencil" size={16} tintColor={TEXT} />
-            <Text style={menuStyles.optionText}>Rename</Text>
-          </TouchableOpacity>
-          <View style={menuStyles.optionDivider} />
-          <TouchableOpacity style={menuStyles.option} onPress={onChangeCover} activeOpacity={0.7}>
-            <SymbolView name="photo" size={16} tintColor={TEXT} />
-            <Text style={menuStyles.optionText}>Change Photo</Text>
-          </TouchableOpacity>
-          <View style={menuStyles.optionDivider} />
-          <TouchableOpacity style={menuStyles.option} onPress={onAddToRoutine} activeOpacity={0.7}>
-            <SymbolView name="plus.circle" size={16} tintColor={TEXT} />
-            <Text style={menuStyles.optionText}>Add to Routine</Text>
-          </TouchableOpacity>
-          <View style={menuStyles.optionDivider} />
-          <TouchableOpacity style={menuStyles.option} onPress={onToggleStatus} activeOpacity={0.7}>
-            <SymbolView name={workoutStatus === 'completed' ? 'arrow.uturn.left' : 'checkmark.circle'} size={16} tintColor={workoutStatus === 'completed' ? ACCENT : TEXT} />
-            <Text style={[menuStyles.optionText, workoutStatus === 'completed' && { color: ACCENT }]}>
-              {workoutStatus === 'completed' ? 'Reactivate' : 'Mark as done'}
-            </Text>
-          </TouchableOpacity>
-          <View style={menuStyles.optionDivider} />
-          <TouchableOpacity style={menuStyles.option} onPress={onDelete} activeOpacity={0.7}>
-            <SymbolView name="trash" size={16} tintColor="#ef4444" />
-            <Text style={[menuStyles.optionText, menuStyles.deleteText]}>Delete</Text>
-          </TouchableOpacity>
-        </Pressable>
-      </Pressable>
-    </Modal>
+    <BottomSheet onClose={onClose}>{close => (
+      <>
+        <Text style={menuStyles.sheetTitle} numberOfLines={1}>{workoutName}</Text>
+        <View style={menuStyles.sheetDivider} />
+        <TouchableOpacity style={menuStyles.option} onPress={() => close(onViewExercises)} activeOpacity={0.7}>
+          <SymbolView name="list.bullet" size={16} tintColor={TEXT} />
+          <Text style={menuStyles.optionText}>View exercises</Text>
+        </TouchableOpacity>
+        <View style={menuStyles.optionDivider} />
+        <TouchableOpacity style={menuStyles.option} onPress={() => close(onRename)} activeOpacity={0.7}>
+          <SymbolView name="pencil" size={16} tintColor={TEXT} />
+          <Text style={menuStyles.optionText}>Rename</Text>
+        </TouchableOpacity>
+        <View style={menuStyles.optionDivider} />
+        <TouchableOpacity style={menuStyles.option} onPress={() => close(onChangeCover)} activeOpacity={0.7}>
+          <SymbolView name="photo" size={16} tintColor={TEXT} />
+          <Text style={menuStyles.optionText}>Change Photo</Text>
+        </TouchableOpacity>
+        <View style={menuStyles.optionDivider} />
+        <TouchableOpacity style={menuStyles.option} onPress={() => close(onAddToRoutine)} activeOpacity={0.7}>
+          <SymbolView name="plus.circle" size={16} tintColor={TEXT} />
+          <Text style={menuStyles.optionText}>Add to Routine</Text>
+        </TouchableOpacity>
+        <View style={menuStyles.optionDivider} />
+        <TouchableOpacity style={menuStyles.option} onPress={() => close(onToggleStatus)} activeOpacity={0.7}>
+          <SymbolView name={workoutStatus === 'completed' ? 'arrow.uturn.left' : 'checkmark.circle'} size={16} tintColor={workoutStatus === 'completed' ? ACCENT : TEXT} />
+          <Text style={[menuStyles.optionText, workoutStatus === 'completed' && { color: ACCENT }]}>
+            {workoutStatus === 'completed' ? 'Reactivate' : 'Mark as done'}
+          </Text>
+        </TouchableOpacity>
+        <View style={menuStyles.optionDivider} />
+        <TouchableOpacity style={menuStyles.option} onPress={() => close(onDelete)} activeOpacity={0.7}>
+          <SymbolView name="trash" size={16} tintColor="#ef4444" />
+          <Text style={[menuStyles.optionText, menuStyles.deleteText]}>Delete</Text>
+        </TouchableOpacity>
+      </>
+    )}</BottomSheet>
   );
 }
 
@@ -673,28 +672,26 @@ function RoutinePickerModal({
   }, [clientId]);
 
   return (
-    <Modal visible transparent animationType="fade" onRequestClose={onClose} statusBarTranslucent>
-      <Pressable style={menuStyles.overlay} onPress={onClose}>
-        <Pressable style={menuStyles.sheet}>
-          <Text style={menuStyles.sheetTitle}>Add to Routine</Text>
-          <View style={menuStyles.sheetDivider} />
-          {loading ? (
-            <ActivityIndicator color={ACCENT} style={{ paddingVertical: 20 }} />
-          ) : routines.length === 0 ? (
-            <Text style={menuStyles.emptyText}>No active routines</Text>
-          ) : (
-            routines.map((r, i) => (
-              <View key={r.id}>
-                <TouchableOpacity style={menuStyles.option} onPress={() => onPick(r.id)} activeOpacity={0.7}>
-                  <Text style={menuStyles.optionText}>{r.name}</Text>
-                </TouchableOpacity>
-                {i < routines.length - 1 && <View style={menuStyles.optionDivider} />}
-              </View>
-            ))
-          )}
-        </Pressable>
-      </Pressable>
-    </Modal>
+    <BottomSheet onClose={onClose}>{close => (
+      <>
+        <Text style={menuStyles.sheetTitle}>Add to Routine</Text>
+        <View style={menuStyles.sheetDivider} />
+        {loading ? (
+          <ActivityIndicator color={ACCENT} style={{ paddingVertical: 20 }} />
+        ) : routines.length === 0 ? (
+          <Text style={menuStyles.emptyText}>No active routines</Text>
+        ) : (
+          routines.map((r, i) => (
+            <View key={r.id}>
+              <TouchableOpacity style={menuStyles.option} onPress={() => close(() => onPick(r.id))} activeOpacity={0.7}>
+                <Text style={menuStyles.optionText}>{r.name}</Text>
+              </TouchableOpacity>
+              {i < routines.length - 1 && <View style={menuStyles.optionDivider} />}
+            </View>
+          ))
+        )}
+      </>
+    )}</BottomSheet>
   );
 }
 

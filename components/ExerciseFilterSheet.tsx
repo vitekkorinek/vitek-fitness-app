@@ -1,13 +1,15 @@
 import {
-  Modal,
   View,
   Text,
   TouchableOpacity,
   ScrollView,
-  Pressable,
   StyleSheet,
+  Dimensions,
 } from 'react-native';
 import { SymbolView } from 'expo-symbols';
+import { BottomSheet } from './BottomSheet';
+
+const SCREEN_H = Dimensions.get('window').height;
 
 const ACCENT = '#24ac88';
 const HEADER = '#244e43';
@@ -25,17 +27,11 @@ type Props = {
 export function ExerciseFilterSheet({
   visible, title, options, selected, onToggle, onClose,
 }: Props) {
+  if (!visible) return null;
   return (
-    <Modal
-      visible={visible}
-      transparent
-      animationType="fade"
-      onRequestClose={onClose}
-      statusBarTranslucent
-    >
-      <View style={styles.overlay}>
-        <Pressable style={StyleSheet.absoluteFillObject} onPress={onClose} />
-        <View style={styles.box}>
+    <BottomSheet onClose={onClose}>
+      {close => (
+        <>
           <View style={styles.titleRow}>
             <Text style={styles.title}>{title}</Text>
             {selected.size > 0 && (
@@ -66,13 +62,13 @@ export function ExerciseFilterSheet({
             })}
           </ScrollView>
           <View style={styles.footer}>
-            <TouchableOpacity style={styles.doneBtn} onPress={onClose} activeOpacity={0.85}>
+            <TouchableOpacity style={styles.doneBtn} onPress={() => close()} activeOpacity={0.85}>
               <Text style={styles.doneBtnText}>Done</Text>
             </TouchableOpacity>
           </View>
-        </View>
-      </View>
-    </Modal>
+        </>
+      )}
+    </BottomSheet>
   );
 }
 
@@ -101,7 +97,7 @@ const styles = StyleSheet.create({
   },
   title: { fontSize: 16, fontWeight: '700', color: TEXT },
   clearText: { fontSize: 13, fontWeight: '600', color: ACCENT },
-  scroll: { flexGrow: 0 },
+  scroll: { flexGrow: 0, maxHeight: SCREEN_H * 0.6 },
   row: {
     flexDirection: 'row',
     alignItems: 'center',
