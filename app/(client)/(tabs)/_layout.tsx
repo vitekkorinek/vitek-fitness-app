@@ -1,17 +1,17 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Modal, Pressable } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Modal, Pressable, Platform } from 'react-native';
 import { Tabs, useFocusEffect, useRouter } from 'expo-router';
 import { SymbolView } from 'expo-symbols';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { VFIcon } from '@/components/VFIcon';
 import { KettlebellIcon } from '@/components/icons/KettlebellIcon';
 import { NotificationOverlay } from '@/components/NotificationOverlay';
+import { LightHeader, HeaderChip, HEADER_ICON } from '@/components/LightHeader';
+import { FloatingTabBar } from '@/components/FloatingTabBar';
 import { useAuth } from '@/context/AuthContext';
 import { supabase } from '@/lib/supabase';
 import { useSessionStore } from '@/store/sessionStore';
 import { smartBack } from '@/lib/navHistory';
 
-const HEADER = '#244e43';
 const ACCENT = '#24ac88';
 const TEXT   = '#1a1a1a';
 const MUTED  = '#999';
@@ -33,56 +33,39 @@ function ClientTabHeader({
   hasSession: boolean; sessionElapsed: number; onSessionTap: () => void;
 }) {
   const router = useRouter();
-  const insets = useSafeAreaInsets();
 
-  return (
-    <View style={[hdrStyles.wrap, { paddingTop: insets.top }]}>
-      <View style={hdrStyles.row}>
-        {showBack ? (
-          <TouchableOpacity onPress={onBack} style={hdrStyles.side} hitSlop={8} activeOpacity={0.6}>
-            <SymbolView name="chevron.left" size={22} tintColor="rgba(255,255,255,0.85)" />
-          </TouchableOpacity>
-        ) : isTraining ? (
-          <TouchableOpacity onPress={onTrainingBell} style={hdrStyles.side} hitSlop={8} activeOpacity={0.6}>
-            <KettlebellIcon size={32} color="rgba(255,255,255,0.85)" badge={hasUnreadTraining} />
-          </TouchableOpacity>
-        ) : (
-          <View style={hdrStyles.side} />
-        )}
+  const left = showBack ? (
+    <HeaderChip onPress={onBack}>
+      <SymbolView name="chevron.left" size={20} tintColor={HEADER_ICON} />
+    </HeaderChip>
+  ) : isTraining ? (
+    <HeaderChip onPress={onTrainingBell} badge={hasUnreadTraining}>
+      <KettlebellIcon size={26} color={HEADER_ICON} />
+    </HeaderChip>
+  ) : null;
 
-        <Text style={hdrStyles.title}>{title}</Text>
-
-        {/* Session indicator — absolute so title never shifts */}
-        {hasSession && (
-          <TouchableOpacity style={hdrStyles.sessIndicator} onPress={onSessionTap} hitSlop={12} activeOpacity={0.8}>
-            <SymbolView name="timer" size={13} tintColor={ACCENT} />
-            <Text style={hdrStyles.sessTimerText}>
-              {String(Math.floor(sessionElapsed / 60)).padStart(2, '0')}:{String(sessionElapsed % 60).padStart(2, '0')}
-            </Text>
-          </TouchableOpacity>
-        )}
-
-        <TouchableOpacity
-          onPress={() => router.navigate('/(client)' as any)}
-          style={[hdrStyles.side, hdrStyles.right]}
-          hitSlop={8}
-          activeOpacity={0.6}
-        >
-          <VFIcon size={30} color="rgba(255,255,255,0.85)" />
-        </TouchableOpacity>
-      </View>
-    </View>
+  const right = (
+    <HeaderChip onPress={() => router.navigate('/(client)' as any)}>
+      <VFIcon size={26} color={HEADER_ICON} />
+    </HeaderChip>
   );
+
+  // Session indicator — absolute so title never shifts (sits left of the VF chip)
+  const overlay = hasSession ? (
+    <TouchableOpacity style={hdrStyles.sessIndicator} onPress={onSessionTap} hitSlop={12} activeOpacity={0.8}>
+      <SymbolView name="timer" size={13} tintColor={ACCENT} />
+      <Text style={hdrStyles.sessTimerText}>
+        {String(Math.floor(sessionElapsed / 60)).padStart(2, '0')}:{String(sessionElapsed % 60).padStart(2, '0')}
+      </Text>
+    </TouchableOpacity>
+  ) : null;
+
+  return <LightHeader left={left} title={title} right={right} overlay={overlay} />;
 }
 
 const hdrStyles = StyleSheet.create({
-  wrap:  { backgroundColor: HEADER },
-  row:   { height: 62, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20 },
-  side:  { width: 48, alignItems: 'flex-start', justifyContent: 'center' },
-  right: { alignItems: 'flex-end' },
-  title: { flex: 1, fontSize: 18, fontWeight: '700', color: '#fff', textAlign: 'center' },
   sessIndicator: {
-    position: 'absolute', right: 56,
+    position: 'absolute', right: 66,
     top: 0, bottom: 0,
     flexDirection: 'row', alignItems: 'center', gap: 4,
   },
@@ -201,6 +184,9 @@ export default function ClientTabsLayout() {
 
       <Tabs
         backBehavior="none"
+        // iOS: floating capsule pill (FloatingTabBar). Android: falls back to the
+        // default flat bar styled by tabBarStyle below (kept for the Android app).
+        tabBar={Platform.OS === 'ios' ? (props) => <FloatingTabBar {...props} /> : undefined}
         screenOptions={{
           headerShown: false,
           tabBarActiveTintColor: '#24ac88',
