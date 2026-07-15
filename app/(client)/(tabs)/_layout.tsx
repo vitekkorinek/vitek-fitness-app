@@ -1,12 +1,12 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Modal, Pressable, Platform } from 'react-native';
-import { Tabs, useFocusEffect, useRouter } from 'expo-router';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { View, Text, TouchableOpacity, StyleSheet, Modal, Pressable } from 'react-native';
+import { useFocusEffect, useRouter, useSegments } from 'expo-router';
+import { NativeTabs, Icon, Label } from 'expo-router/unstable-native-tabs';
 import { SymbolView } from 'expo-symbols';
 import { VFIcon } from '@/components/VFIcon';
 import { KettlebellIcon } from '@/components/icons/KettlebellIcon';
 import { NotificationOverlay } from '@/components/NotificationOverlay';
 import { LightHeader, HeaderIcon, HEADER_ICON } from '@/components/LightHeader';
-import { FloatingTabBar } from '@/components/FloatingTabBar';
 import { useAuth } from '@/context/AuthContext';
 import { supabase } from '@/lib/supabase';
 import { useSessionStore } from '@/store/sessionStore';
@@ -40,7 +40,7 @@ function ClientTabHeader({
     </HeaderIcon>
   ) : isTraining ? (
     <HeaderIcon onPress={onTrainingBell} badge={hasUnreadTraining}>
-      <KettlebellIcon size={34} color={HEADER_ICON} />
+      <KettlebellIcon size={34} color={HEADER_ICON} strokeWidth={1.5} />
     </HeaderIcon>
   ) : null;
 
@@ -74,11 +74,19 @@ const hdrStyles = StyleSheet.create({
 
 export default function ClientTabsLayout() {
   const router = useRouter();
+  const segments = useSegments();
   const { profile } = useAuth();
   const { suspendedSession, clearSuspendedSession } = useSessionStore();
 
-  const [title, setTitle]           = useState('Training');
-  const [activeRoute, setActiveRoute] = useState('train');
+  // Active tab is derived from the route segments (NativeTabs has no
+  // `screenListeners`). The segment right after `(tabs)` is the focused tab.
+  const activeRoute = useMemo(() => {
+    const i = segments.lastIndexOf('(tabs)' as never);
+    const r = i >= 0 ? (segments[i + 1] as string | undefined) : undefined;
+    return r && TITLE_MAP[r] ? r : 'train';
+  }, [segments]);
+  const title = TITLE_MAP[activeRoute] ?? 'Training';
+
   const [trainingNotifOverlay, setTrainingNotifOverlay] = useState(false);
   const [hasUnreadTraining, setHasUnreadTraining]       = useState(false);
   const [sessionModalVisible, setSessionModalVisible]   = useState(false);
@@ -171,79 +179,32 @@ export default function ClientTabsLayout() {
         </Pressable>
       </Modal>
 
-      <Tabs
-        backBehavior="none"
-        // iOS: floating capsule pill (FloatingTabBar). Android: falls back to the
-        // default flat bar styled by tabBarStyle below (kept for the Android app).
-        tabBar={Platform.OS === 'ios' ? (props) => <FloatingTabBar {...props} /> : undefined}
-        screenOptions={{
-          headerShown: false,
-          tabBarActiveTintColor: '#24ac88',
-          tabBarInactiveTintColor: '#999',
-          tabBarStyle: {
-            backgroundColor: '#faf9f7',
-            borderTopColor: '#e8e8e4',
-            borderTopWidth: 1,
-          },
-          tabBarLabelStyle: {
-            fontSize: 10,
-            fontWeight: '600',
-          },
-        }}
-        screenListeners={({ route }) => ({
-          focus: () => {
-            setTitle(TITLE_MAP[route.name] ?? route.name);
-            setActiveRoute(route.name);
-          },
-        })}
-      >
-        <Tabs.Screen
-          name="train"
-          options={{
-            title: 'Training',
-            tabBarItemStyle: { flex: 1 },
-            tabBarIcon: ({ color, focused }) => (
-              <SymbolView name={focused ? 'bolt.fill' : 'bolt'} size={22} tintColor={color} />
-            ),
-          }}
-        />
-        <Tabs.Screen
-          name="schedule"
-          options={{
-            title: 'Appointments',
-            tabBarItemStyle: { flex: 1 },
-            tabBarIcon: ({ color }) => (
-              <SymbolView name="calendar" size={22} tintColor={color} />
-            ),
-          }}
-        />
-        <Tabs.Screen
-          name="progress"
-          options={{
-            title: 'Progress',
-            tabBarItemStyle: { flex: 1 },
-            tabBarIcon: ({ color, focused }) => (
-              <SymbolView name={focused ? 'chart.line.uptrend.xyaxis.circle.fill' : 'chart.line.uptrend.xyaxis'} size={22} tintColor={color} />
-            ),
-          }}
-        />
-        <Tabs.Screen
-          name="me"
-          options={{
-            title: 'Me',
-            tabBarItemStyle: { flex: 1 },
-            tabBarIcon: ({ color, focused }) => (
-              <SymbolView name={focused ? 'person.fill' : 'person'} size={22} tintColor={color} />
-            ),
-          }}
-        />
-        <Tabs.Screen
-          name="overview"
-          options={{ tabBarButton: () => null, tabBarItemStyle: { flex: 0, width: 0, overflow: 'hidden' } }}
-        />
-      </Tabs>
+      {/* Native iOS tab bar (real Liquid Glass + vibrancy on iOS 26). The green
+          `tintColor` is the active tint; iOS adapts the inactive glyph/label colour
+          to the content behind the bar automatically — the thing the custom JS bar
+          could not do. */}
+      <NativeTabs tintColor={ACCENT} backBehavior="none">
+        <NativeTabs.Trigger name="train">
+          <Label>Training</Label>
+          <Icon sf={{ default: 'bolt', selected: 'bolt.fill' }} />
+        </NativeTabs.Trigger>
+        <NativeTabs.Trigger name="schedule">
+          <Label>Appointments</Label>
+          <Icon sf="calendar" />
+        </NativeTabs.Trigger>
+        <NativeTabs.Trigger name="progress">
+          <Label>Progress</Label>
+          <Icon sf={{ default: 'chart.line.uptrend.xyaxis', selected: 'chart.line.uptrend.xyaxis.circle.fill' }} />
+        </NativeTabs.Trigger>
+        <NativeTabs.Trigger name="me">
+          <Label>Me</Label>
+          <Icon sf={{ default: 'person', selected: 'person.fill' }} />
+        </NativeTabs.Trigger>
+        {/* Suppressed route — mounted but hidden from the bar */}
+        <NativeTabs.Trigger name="overview" hidden />
+      </NativeTabs>
 
-      {/* Glass header — rendered last so it overlays the scrolling tab content */}
+      {/* Glass header — rendered last so it overlays the (native) tab content */}
       <ClientTabHeader
         title={title}
         showBack={activeRoute !== 'train'}
@@ -274,4 +235,3 @@ const sessStyles = StyleSheet.create({
   returnBtn: { backgroundColor: ACCENT, borderRadius: 100, paddingVertical: 13, alignSelf: 'stretch', alignItems: 'center' },
   returnBtnText: { color: '#fff', fontSize: 15, fontWeight: '700' },
 });
-

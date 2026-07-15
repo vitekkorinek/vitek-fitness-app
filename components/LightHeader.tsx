@@ -49,28 +49,46 @@ export function LightHeader({
   const insets = useSafeAreaInsets();
   const rowBottom = insets.top + HEADER_ROW_HEIGHT;
   const totalH = rowBottom + FADE_ZONE;
-  const rowFrac = rowBottom / totalH;
   return (
     <View style={[lh.wrap, { height: totalH }]} pointerEvents="box-none">
-      {/* TRUE progressive blur (WhatsApp-style): a vertical gradient MASK — opaque
-          behind the nav row, fading to transparent across the strip below — is
-          applied to the blur + tint, so the blur STRENGTH itself ramps smoothly to
-          zero. No hard edge, no step lines. The mask's alpha drives visibility:
-          `black` = show, `transparent` = hide. */}
+      {/* TRUE progressive blur (WhatsApp-style): a vertical gradient MASK is applied
+          to the blur so the blur STRENGTH itself ramps — strongest at the very top,
+          then a LONG monotonic decrease all the way to zero at the bottom edge.
+          There is NO flat "full blur" region and NO crammed short fade: the ramp is
+          spread across the whole header so it dissolves into the content with no
+          visible seam. The mask's alpha drives visibility (opaque = show). Keep the
+          curve smooth (many stops) and reaching exactly 0 at location 1. */}
       <MaskedView
         style={StyleSheet.absoluteFill}
         pointerEvents="none"
         maskElement={
           <LinearGradient
-            colors={['black', 'black', 'transparent']}
-            locations={[0, rowFrac, 1]}
+            colors={[
+              'rgba(0,0,0,1)',
+              'rgba(0,0,0,0.96)',
+              'rgba(0,0,0,0.72)',
+              'rgba(0,0,0,0.42)',
+              'rgba(0,0,0,0.12)',
+              'rgba(0,0,0,0)',
+            ]}
+            locations={[0, 0.4, 0.62, 0.75, 0.88, 1]}
             style={StyleSheet.absoluteFill}
           />
         }
       >
-        <BlurView intensity={46} tint="light" style={StyleSheet.absoluteFill} />
-        <View style={[StyleSheet.absoluteFill, lh.tint]} />
+        <BlurView intensity={62} tint="light" style={StyleSheet.absoluteFill} />
       </MaskedView>
+      {/* Light tint — its OWN gradient (NOT masked with the blur) that fades out
+          HIGHER up than the blur, so it whitens the top for legibility but is fully
+          gone well before the bottom edge — a semi-opaque colour band fading over
+          content is an independent source of a visible seam, so it must not linger
+          near the bottom. */}
+      <LinearGradient
+        pointerEvents="none"
+        colors={['rgba(250,249,247,0.7)', 'rgba(250,249,247,0.34)', 'rgba(250,249,247,0)']}
+        locations={[0, 0.55, 0.82]}
+        style={StyleSheet.absoluteFill}
+      />
       <View style={[lh.row, { marginTop: insets.top }]}>
         <View style={lh.side}>{left}</View>
         <Text style={lh.title} numberOfLines={1}>{title}</Text>
@@ -113,11 +131,10 @@ const lh = StyleSheet.create({
     backgroundColor: 'transparent',
     overflow: 'hidden',
   },
-  tint:  { backgroundColor: 'rgba(250,249,247,0.55)' },
   row:   { height: HEADER_ROW_HEIGHT, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16 },
   side:  { width: 44, alignItems: 'flex-start', justifyContent: 'center' },
   right: { alignItems: 'flex-end' },
-  title: { flex: 1, fontSize: 18, fontWeight: '700', color: TEXT, textAlign: 'center' },
+  title: { flex: 1, fontSize: 20, fontWeight: '700', color: TEXT, textAlign: 'center' },
 });
 
 const hi = StyleSheet.create({
