@@ -12,7 +12,7 @@ import {
   View,
 } from 'react-native';
 import { Image } from 'expo-image';
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, type ReactNode } from 'react';
 import { SymbolView } from 'expo-symbols';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
@@ -40,6 +40,10 @@ interface Props {
   onClose: () => void;
   onConfirm: (result: FoodConfirmResult) => Promise<void>;
   onDelete?: () => void;
+  /** Overrides the confirm button label (default "Update"). */
+  confirmLabel?: string;
+  /** Extra content rendered under the food name — e.g. a date + meal picker. */
+  extraTop?: ReactNode;
 }
 
 function NutrCell({ label, value, color, large }: { label: string; value: string; color: string; large?: boolean }) {
@@ -51,7 +55,7 @@ function NutrCell({ label, value, color, large }: { label: string; value: string
   );
 }
 
-export default function EditPortionSheet({ food, visible, onClose, onConfirm, onDelete }: Props) {
+export default function EditPortionSheet({ food, visible, onClose, onConfirm, onDelete, confirmLabel, extraTop }: Props) {
   const insets = useSafeAreaInsets();
 
   const [portions, setPortions]               = useState<FoodPortion[]>([]);
@@ -212,6 +216,8 @@ export default function EditPortionSheet({ food, visible, onClose, onConfirm, on
             </View>
           </View>
 
+          {extraTop}
+
           {loadingPortions ? (
             <ActivityIndicator color={ACCENT} style={{ marginVertical: 24 }} />
           ) : (
@@ -278,7 +284,7 @@ export default function EditPortionSheet({ food, visible, onClose, onConfirm, on
             disabled={confirming}
             activeOpacity={0.8}
           >
-            <Text style={s.updateBtnText}>{confirming ? 'Updating…' : 'Update'}</Text>
+            <Text style={s.updateBtnText}>{confirming ? 'Saving…' : (confirmLabel ?? 'Update')}</Text>
           </TouchableOpacity>
 
           {onDelete && (

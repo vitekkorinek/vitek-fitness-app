@@ -423,7 +423,7 @@ function CalendarPicker({ current, onSelect, onClose, calTarget, calData, favDat
           })}
         </View>
       ))}
-      <TouchableOpacity onPress={onClose} style={cp.doneBtn} activeOpacity={0.85}>
+      <TouchableOpacity onPress={() => onClose()} style={cp.doneBtn} activeOpacity={0.85}>
         <Text style={cp.doneBtnText}>Done</Text>
       </TouchableOpacity>
     </View>

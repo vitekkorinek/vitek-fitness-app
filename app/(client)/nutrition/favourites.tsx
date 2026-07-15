@@ -28,6 +28,9 @@ import { VFIcon } from '@/components/VFIcon';
 import type { FoodLogEntry } from '@/lib/nutritionInsights';
 import FoodSearchModal from '@/components/FoodSearchModal';
 import type { FoodConfirmResult } from '@/components/FoodSearchModal';
+import EditPortionSheet from '@/components/EditPortionSheet';
+import { BottomSheet } from '@/components/BottomSheet';
+import type { FoodResult } from '@/lib/foodApi';
 
 const BG     = '#faf9f7';
 const CARD   = '#ffffff';
@@ -62,9 +65,50 @@ function formatDateLabel(d: Date): string {
   return d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
 }
 
-type FavTab = 'recipes' | 'meals' | 'days' | 'recommendations';
+type FavTab = 'recipes' | 'meals' | 'foods' | 'days' | 'recommendations';
 type ViewState = 'landing' | FavTab;
 type RecipeFilter = 'all' | 'trainer' | 'mine';
+
+interface FavNutrients {
+  calories: number; protein: number; carbs: number;
+  fat: number; fiber: number; sugar: number; salt: number;
+}
+
+interface FavFood {
+  id: string;
+  food_name: string;
+  brand: string | null;
+  source: string;
+  source_id: string | null;
+  nutrients_json: FavNutrients;
+  food_groups?: string[];
+}
+
+function favFoodKey(f: FavFood): string {
+  return `${f.source}:${f.source_id ?? f.food_name}`;
+}
+
+function favFoodToResult(f: FavFood, imageUrl?: string): FoodResult {
+  return {
+    id: favFoodKey(f),
+    name: f.food_name,
+    brand: f.brand,
+    source: f.source as FoodResult['source'],
+    sourceId: f.source_id ?? '',
+    nutrientsPer100g: f.nutrients_json,
+    foodGroups: (f.food_groups ?? []) as FoodResult['foodGroups'],
+    imageUrl,
+  };
+}
+
+// Smart default meal by time of day (keys must match MEAL_CATS below).
+function defaultMealForNow(): string {
+  const h = new Date().getHours();
+  if (h < 10) return 'breakfast';
+  if (h < 15) return 'lunch';
+  if (h < 21) return 'dinner';
+  return 'snack_morning';
+}
 
 interface Recommendation {
   id: string;
@@ -159,7 +203,7 @@ function FullWidthCard({
           <View style={fc.circle2} />
           <View style={fc.body}>
             <View style={fc.iconWrap}>
-              <SymbolView name={symbolName} size={30} tintColor="rgba(255,255,255,0.9)" />
+              <SymbolView name={symbolName} size={28} tintColor="rgba(255,255,255,0.9)" />
             </View>
             <Text style={fc.title}>{title}</Text>
             <Text style={fc.desc}>{description}</Text>
@@ -186,13 +230,13 @@ const fc = StyleSheet.create({
     shadowColor: '#000', shadowOffset: { width: 0, height: 5 },
     shadowOpacity: 0.2, shadowRadius: 14, elevation: 7,
   },
-  card:    { borderRadius: 20, padding: 18, height: 142, overflow: 'hidden', justifyContent: 'flex-end' },
+  card:    { borderRadius: 20, padding: 16, height: 126, overflow: 'hidden', justifyContent: 'flex-end' },
   circle1: { position: 'absolute', top: -32, right: -32, width: 158, height: 158, borderRadius: 79, backgroundColor: 'rgba(255,255,255,0.07)' },
   circle2: { position: 'absolute', top: 26, right: 52,  width:  61, height:  61, borderRadius: 30, backgroundColor: 'rgba(255,255,255,0.05)' },
-  iconWrap:{ marginBottom: 8 },
+  iconWrap:{ marginBottom: 6 },
   body:    { gap: 0 },
   title:   { fontSize: 18, fontWeight: '800', color: '#fff', letterSpacing: -0.3 },
-  desc:    { fontSize: 13, color: 'rgba(255,255,255,0.60)', lineHeight: 18, marginBottom: 8 },
+  desc:    { fontSize: 13, color: 'rgba(255,255,255,0.60)', lineHeight: 17, marginBottom: 8 },
   footer:  { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   badge:   { backgroundColor: 'rgba(255,255,255,0.18)', borderRadius: 100, paddingHorizontal: 11, paddingVertical: 4 },
   badgeText: { fontSize: 12, fontWeight: '700', color: '#fff' },
@@ -310,6 +354,26 @@ export default function FavouritesScreen() {
   const [insertDayModal, setInsertDayModal] = useState<FavouriteDay | null>(null);
   const [insertingDay, setInsertingDay]     = useState(false);
 
+  // Foods
+  const [favFoods, setFavFoods]           = useState<FavFood[]>([]);
+  const [favFoodsLoading, setFavFoodsLoading] = useState(true);
+  const [foodQuery, setFoodQuery]         = useState('');
+  const [foodImageMap, setFoodImageMap]   = useState<Map<string, string>>(new Map());
+  const [foodSelectMode, setFoodSelectMode] = useState(false);
+  const [selectedFoodIds, setSelectedFoodIds] = useState<Set<string>>(new Set());
+  const [foodToast, setFoodToast]         = useState<string | null>(null);
+  // Add-food-to-log sheet
+  const [addFood, setAddFood]             = useState<FoodResult | null>(null);
+  const [addFoodMeal, setAddFoodMeal]     = useState('lunch');
+  const [addFoodDate, setAddFoodDate]     = useState(new Date());
+  // New / draft meal (Meals "+" and "Make meal" from selected foods).
+  // Holds the id of a just-created, not-yet-named meal so we can discard it if
+  // the user backs out of the making page without naming it.
+  const [newMealDraftId, setNewMealDraftId] = useState<string | null>(null);
+  // True when the name sheet was opened as a leave-reminder (vs a header tap),
+  // so Cancel/Save can also leave the making page.
+  const [nameSheetLeave, setNameSheetLeave] = useState(false);
+
   // Recommendations
   const [recommendations, setRecommendations]             = useState<Recommendation[]>([]);
   const [recommLoading, setRecommLoading]                 = useState(true);
@@ -359,6 +423,31 @@ export default function FavouritesScreen() {
     setDays((data ?? []) as FavouriteDay[]);
   }, [clientId]);
 
+  const loadFavFoods = useCallback(async () => {
+    const { data } = await supabase.from('favourite_foods')
+      .select('id, food_name, brand, source, source_id, nutrients_json, food_groups')
+      .eq('client_id', clientId)
+      .order('food_name');
+    const rows = (data ?? []) as FavFood[];
+    setFavFoods(rows);
+
+    // Batch-load thumbnails from food_cache (same as the Food Log).
+    const pairs = rows.filter(r => r.source && r.source_id);
+    if (pairs.length > 0) {
+      const { data: cache } = await supabase
+        .from('food_cache')
+        .select('source, source_id, image_url')
+        .in('source_id', pairs.map(p => p.source_id!));
+      const map = new Map<string, string>();
+      for (const row of cache ?? []) {
+        if (row.image_url) map.set(`${row.source}:${row.source_id}`, row.image_url);
+      }
+      setFoodImageMap(map);
+    } else {
+      setFoodImageMap(new Map());
+    }
+  }, [clientId]);
+
   const loadRecommendations = useCallback(async () => {
     const { data } = await supabase
       .from('nutrition_tips')
@@ -374,13 +463,15 @@ export default function FavouritesScreen() {
     setMealsLoading(true);
     setDaysLoading(true);
     setRecommLoading(true);
-    Promise.all([loadRecipes(), loadMeals(), loadDays(), loadRecommendations()]).finally(() => {
+    setFavFoodsLoading(true);
+    Promise.all([loadRecipes(), loadMeals(), loadFavFoods(), loadDays(), loadRecommendations()]).finally(() => {
       setRecipesLoading(false);
       setMealsLoading(false);
       setDaysLoading(false);
       setRecommLoading(false);
+      setFavFoodsLoading(false);
     });
-  }, [loadRecipes, loadMeals, loadDays, loadRecommendations]));
+  }, [loadRecipes, loadMeals, loadFavFoods, loadDays, loadRecommendations]));
 
   // ─── Actions ──────────────────────────────────────────────────────────────
 
@@ -465,6 +556,147 @@ export default function FavouritesScreen() {
     }, 2500);
   };
 
+  // ─── Foods ────────────────────────────────────────────────────────────────
+
+  const openAddFood = (f: FavFood) => {
+    setAddFoodMeal(defaultMealForNow());
+    setAddFoodDate(new Date());
+    setAddFood(favFoodToResult(f, foodImageMap.get(favFoodKey(f))));
+  };
+
+  const handleAddFavFood = async (result: FoodConfirmResult): Promise<void> => {
+    const dateStr = toDateStr(addFoodDate);
+    await supabase.from('food_log_entries').insert({
+      id: makeUUID(), client_id: clientId, date: dateStr,
+      meal_category: addFoodMeal,
+      food_name: result.foodName, brand: result.brand,
+      source: result.source, source_id: result.sourceId,
+      portion_amount: result.amount, portion_unit: result.unit,
+      calories: result.nutrition.calories, protein_g: result.nutrition.protein,
+      carbs_g: result.nutrition.carbs, fat_g: result.nutrition.fat,
+      fiber_g: result.nutrition.fiber, sugar_g: result.nutrition.sugar,
+      salt_g: result.nutrition.salt, food_groups: result.foodGroups ?? [],
+    });
+    setAddFood(null);
+    setFoodToast(`Logged to ${formatDateLabel(addFoodDate)}`);
+    setTimeout(() => setFoodToast(null), 3000);
+  };
+
+  const removeFavFood = async (f: FavFood) => {
+    await supabase.from('favourite_foods').delete().eq('id', f.id);
+    setFavFoods(prev => prev.filter(x => x.id !== f.id));
+    setSelectedFoodIds(prev => { const n = new Set(prev); n.delete(f.id); return n; });
+  };
+
+  // Long-press a food card to enter selection mode (matches Do Mode — no
+  // dedicated "Select" button, which would be an unfamiliar pattern elsewhere).
+  // It only turns ON the mode (empty circles); the user then taps foods to
+  // select — the held food is NOT auto-selected.
+  const enterFoodSelect = () => {
+    setFoodSelectMode(true);
+    setSelectedFoodIds(new Set());
+  };
+
+  const toggleFoodSelect = (id: string) => {
+    setSelectedFoodIds(prev => {
+      const n = new Set(prev);
+      n.has(id) ? n.delete(id) : n.add(id);
+      if (n.size === 0) setFoodSelectMode(false); // deselecting the last one leaves select mode
+      return n;
+    });
+  };
+
+  const exitFoodSelect = () => {
+    setFoodSelectMode(false);
+    setSelectedFoodIds(new Set());
+  };
+
+  const removeSelectedFavFoods = async () => {
+    const ids = new Set(selectedFoodIds);
+    if (ids.size === 0) return;
+    await supabase.from('favourite_foods').delete().in('id', [...ids]);
+    setFavFoods(prev => prev.filter(f => !ids.has(f.id)));
+    exitFoodSelect();
+  };
+
+  const favFoodToIngredient = (f: FavFood): MealIngredient => ({
+    foodName: f.food_name,
+    brand: f.brand ?? undefined,
+    source: f.source,
+    sourceId: f.source_id ?? undefined,
+    amount: 100,
+    unit: 'g',
+    nutrition: { ...f.nutrients_json },
+    foodGroups: f.food_groups ?? [],
+    nutrientsPer100g: { ...f.nutrients_json },
+  });
+
+  // Create a saved_meals row immediately, then open the making page (meal
+  // detail). Naming happens ON that page — a blank name shows a "Name your
+  // meal" prompt; leaving without a name discards the draft (see closeMealDetail).
+  const startNewMeal = async (ingredients: MealIngredient[]) => {
+    const { data } = await supabase.from('saved_meals')
+      .insert({ client_id: clientId, name: '', ingredients, visibility: 'private' })
+      .select().single();
+    if (!data) return;
+    const meal = data as SavedMeal;
+    setMeals(prev => [meal, ...prev]);
+    setNewMealDraftId(meal.id);
+    openMealDetail(meal);
+    // No auto-prompt — the header already shows a "Name your meal" field; the
+    // app reminds the user to name it when they try to leave (closeMealDetail).
+  };
+
+  const openNewMeal = () => startNewMeal([]);
+
+  const makeMealFromFoods = () => {
+    const chosen = favFoods.filter(f => selectedFoodIds.has(f.id));
+    if (chosen.length === 0) return;
+    const ingredients = chosen.map(favFoodToIngredient);
+    exitFoodSelect();
+    startNewMeal(ingredients);
+  };
+
+  const discardDraftMeal = async (meal: SavedMeal) => {
+    await supabase.from('saved_meals').delete().eq('id', meal.id);
+    setMeals(prev => prev.filter(m => m.id !== meal.id));
+    setNewMealDraftId(null);
+    setMealDetail(null);
+  };
+
+  const openNameSheet = (leaveOnDone: boolean) => {
+    setNameSheetLeave(leaveOnDone);
+    setRenameText(mealDetail?.name ?? '');
+    setRenameModal(true);
+  };
+
+  // Leaving the making page. An unnamed brand-new draft is never kept: if it's
+  // empty we discard it silently; if it already has food we remind the user by
+  // popping the "Name your meal" sheet (Save names it, Cancel discards) rather
+  // than losing their work or saving a nameless meal.
+  const closeMealDetail = () => {
+    if (mealDetail && newMealDraftId === mealDetail.id && !mealDetail.name.trim()) {
+      if (mealDetail.ingredients.length > 0) {
+        openNameSheet(true); // remind → name sheet
+        return;
+      }
+      discardDraftMeal(mealDetail); // empty & unnamed — nothing to keep
+      return;
+    }
+    setNewMealDraftId(null);
+    setMealDetail(null);
+  };
+
+  // Cancel on the name sheet: if it was a leave-reminder for an unnamed draft,
+  // abandoning naming discards the draft (and leaves); otherwise just closes.
+  const cancelNameSheet = () => {
+    setRenameModal(false);
+    if (nameSheetLeave && mealDetail && newMealDraftId === mealDetail.id && !mealDetail.name.trim()) {
+      discardDraftMeal(mealDetail);
+    }
+    setNameSheetLeave(false);
+  };
+
   const mealTotals = (meal: SavedMeal) => ({
     kcal:  Math.round(meal.ingredients.reduce((s, i) => s + i.nutrition.calories, 0)),
     pro:   Math.round(meal.ingredients.reduce((s, i) => s + i.nutrition.protein, 0)),
@@ -531,7 +763,9 @@ export default function FavouritesScreen() {
   const saveRename = async () => {
     if (!renameText.trim()) return;
     await saveMealPatch({ name: renameText.trim() });
+    setNewMealDraftId(null); // now named — no longer a discardable draft
     setRenameModal(false);
+    if (nameSheetLeave) { setMealDetail(null); setNameSheetLeave(false); }
   };
 
   const saveNotes = async () => {
@@ -618,6 +852,7 @@ export default function FavouritesScreen() {
       onConfirm: async () => {
         setConfirmModal(null);
         await deleteMeal(mealDetail);
+        setNewMealDraftId(null);
         setMealDetail(null);
       },
     });
@@ -649,9 +884,17 @@ export default function FavouritesScreen() {
     return result;
   })();
 
+  const filteredFoods = (() => {
+    if (!foodQuery.trim()) return favFoods;
+    const q = foodQuery.toLowerCase();
+    return favFoods.filter(f =>
+      f.food_name.toLowerCase().includes(q) || (f.brand ?? '').toLowerCase().includes(q));
+  })();
+
   const headerTitle =
     view === 'recipes'         ? 'Recipes' :
     view === 'meals'           ? 'Meals' :
+    view === 'foods'           ? 'Foods' :
     view === 'days'            ? 'Days' :
     view === 'recommendations' ? 'Recommendations' :
     'Favourites';
@@ -665,6 +908,7 @@ export default function FavouritesScreen() {
             style={s.hdrSide}
             onPress={() => {
               // In insert mode the user came straight from the Food Log FAB → return there.
+              if (foodSelectMode) { exitFoodSelect(); return; }
               if (isInsertMode) { router.navigate('/(client)/nutrition' as any); return; }
               view === 'landing' ? smartBack(router) : setView('landing');
             }}
@@ -708,6 +952,16 @@ export default function FavouritesScreen() {
             symbolName="fork.knife"
             onPress={() => setView('meals')}
             loading={mealsLoading}
+          />
+          <FullWidthCard
+            title="Foods"
+            description="Your go-to single foods"
+            count={favFoods.length}
+            countLabel={favFoods.length === 1 ? 'food' : 'foods'}
+            colors={['#1f7a6b', '#12564a']}
+            symbolName="carrot.fill"
+            onPress={() => setView('foods')}
+            loading={favFoodsLoading}
           />
           <FullWidthCard
             title="Days"
@@ -808,7 +1062,11 @@ export default function FavouritesScreen() {
             <View style={s.emptyState}>
               <SymbolView name="fork.knife" size={40} tintColor={MUTED} />
               <Text style={[s.emptyTitle, { marginTop: 12 }]}>No saved meals</Text>
-              <Text style={s.emptySubtitle}>Tap ❤️ next to a meal in the Food Log to save it here</Text>
+              <Text style={s.emptySubtitle}>Build one here, or save a combo from the Food Log</Text>
+              <TouchableOpacity style={s.emptyCreateBtn} onPress={openNewMeal} activeOpacity={0.85}>
+                <SymbolView name="plus" size={15} tintColor="#fff" />
+                <Text style={s.emptyCreateText}>Create a meal</Text>
+              </TouchableOpacity>
             </View>
           ) : (
             <>
@@ -828,6 +1086,9 @@ export default function FavouritesScreen() {
                     </TouchableOpacity>
                   )}
                 </View>
+                <TouchableOpacity style={s.createBtn} onPress={openNewMeal} hitSlop={8}>
+                  <SymbolView name="plus.circle.fill" size={30} tintColor={ACCENT} />
+                </TouchableOpacity>
               </View>
               <View style={s.filterRow}>
                 {(['newest', 'oldest', 'az', 'za'] as const).map(opt => (
@@ -855,9 +1116,24 @@ export default function FavouritesScreen() {
                 >
                   {filteredMeals.map(meal => {
                     const { kcal, pro, carbs, fat } = mealTotals(meal);
-                    return (
+                    const renderMealDelete = () => (
                       <TouchableOpacity
-                        key={meal.id}
+                        style={mc.swipeDelete}
+                        onPress={() => setConfirmModal({
+                          title: 'Delete meal?',
+                          message: `"${meal.name || 'This meal'}" will be permanently removed.`,
+                          confirmLabel: 'Delete', danger: true,
+                          onConfirm: () => { setConfirmModal(null); deleteMeal(meal); },
+                        })}
+                        activeOpacity={0.8}
+                      >
+                        <SymbolView name="trash.fill" size={18} tintColor="#fff" />
+                        <Text style={mc.swipeDeleteText}>Delete</Text>
+                      </TouchableOpacity>
+                    );
+                    return (
+                      <Swipeable key={meal.id} renderRightActions={renderMealDelete} overshootRight={false}>
+                      <TouchableOpacity
                         style={mc.card}
                         onPress={() => openMealDetail(meal)}
                         activeOpacity={0.85}
@@ -875,7 +1151,9 @@ export default function FavouritesScreen() {
                           )}
                         </View>
                         <View style={mc.info}>
-                          <Text style={mc.name} numberOfLines={1}>{meal.name}</Text>
+                          <Text style={[mc.name, !meal.name.trim() && { color: MUTED, fontStyle: 'italic' }]} numberOfLines={1}>
+                            {meal.name.trim() ? meal.name : 'Unnamed meal'}
+                          </Text>
                           <Text style={mc.sub}>{meal.ingredients.length} item{meal.ingredients.length !== 1 ? 's' : ''}</Text>
                           <View style={mc.macroRow}>
                             <Text style={mc.kcalText}>{kcal} kcal</Text>
@@ -888,11 +1166,145 @@ export default function FavouritesScreen() {
                           <SymbolView name="chevron.right" size={14} tintColor={MUTED} />
                         </View>
                       </TouchableOpacity>
+                      </Swipeable>
                     );
                   })}
                 </ScrollView>
               )}
             </>
+          )}
+        </View>
+      )}
+
+      {/* ── Foods ───────────────────────────────────────────────────── */}
+      {view === 'foods' && (
+        <View style={{ flex: 1 }}>
+          {favFoodsLoading ? (
+            <View style={s.loader}><ActivityIndicator color={ACCENT} /></View>
+          ) : favFoods.length === 0 ? (
+            <View style={s.emptyState}>
+              <SymbolView name="carrot.fill" size={40} tintColor={MUTED} />
+              <Text style={[s.emptyTitle, { marginTop: 12 }]}>No favourite foods</Text>
+              <Text style={s.emptySubtitle}>Tap the ❤️ on a food while searching in the Food Log to save it here</Text>
+            </View>
+          ) : (
+            <>
+              <View style={s.recipeToolbar}>
+                <View style={s.searchBar}>
+                  <SymbolView name="magnifyingglass" size={15} tintColor={MUTED} />
+                  <TextInput
+                    style={s.searchInput}
+                    placeholder="Search foods…"
+                    placeholderTextColor={MUTED}
+                    value={foodQuery}
+                    onChangeText={setFoodQuery}
+                  />
+                  {foodQuery.length > 0 && (
+                    <TouchableOpacity onPress={() => setFoodQuery('')} hitSlop={8}>
+                      <SymbolView name="xmark.circle.fill" size={15} tintColor={MUTED} />
+                    </TouchableOpacity>
+                  )}
+                </View>
+              </View>
+
+              {!foodSelectMode && (
+                <Text style={ff.hint}>Tap to log · long-press to combine into a meal</Text>
+              )}
+
+              {filteredFoods.length === 0 ? (
+                <View style={s.emptyState}>
+                  <Text style={s.emptyTitle}>No results</Text>
+                  <Text style={s.emptySubtitle}>Try a different search</Text>
+                </View>
+              ) : (
+                <ScrollView
+                  contentContainerStyle={[s.list, { paddingBottom: insets.bottom + (foodSelectMode ? 160 : 80) }]}
+                  showsVerticalScrollIndicator={false}
+                >
+                  {filteredFoods.map(f => {
+                    const n = f.nutrients_json;
+                    const thumb = f.source_id ? foodImageMap.get(favFoodKey(f)) : undefined;
+                    const selected = selectedFoodIds.has(f.id);
+                    const renderRemove = () => (
+                      <TouchableOpacity style={ff.swipeRemove} onPress={() => removeFavFood(f)} activeOpacity={0.8}>
+                        <SymbolView name="heart.slash.fill" size={18} tintColor="#fff" />
+                        <Text style={ff.swipeRemoveText}>Remove</Text>
+                      </TouchableOpacity>
+                    );
+                    return (
+                      <Swipeable key={f.id} renderRightActions={renderRemove} overshootRight={false} enabled={!foodSelectMode}>
+                        <TouchableOpacity
+                          style={[ff.row, selected && ff.rowSelected]}
+                          onPress={() => foodSelectMode ? toggleFoodSelect(f.id) : openAddFood(f)}
+                          onLongPress={() => { if (!foodSelectMode) enterFoodSelect(); }}
+                          delayLongPress={300}
+                          activeOpacity={0.85}
+                        >
+                          <View style={ff.thumb}>
+                            {thumb ? (
+                              <Image source={{ uri: thumb }} style={StyleSheet.absoluteFillObject} resizeMode="cover" />
+                            ) : (
+                              <SymbolView name="fork.knife" size={20} tintColor="#bbb" />
+                            )}
+                          </View>
+                          <View style={ff.info}>
+                            <Text style={ff.name} numberOfLines={1}>{f.food_name}</Text>
+                            {!!f.brand && <Text style={ff.brand} numberOfLines={1}>{f.brand}</Text>}
+                            <View style={ff.macroRow}>
+                              <Text style={ff.kcal}>{Math.round(n.calories)} kcal</Text>
+                              <Text style={ff.per}>/100g</Text>
+                              <Text style={ff.macro}>P <Text style={ff.macroVal}>{Math.round(n.protein)}</Text></Text>
+                              <Text style={ff.macro}>C <Text style={ff.macroVal}>{Math.round(n.carbs)}</Text></Text>
+                              <Text style={ff.macro}>F <Text style={ff.macroVal}>{Math.round(n.fat)}</Text></Text>
+                            </View>
+                          </View>
+                          {foodSelectMode ? (
+                            <View style={[ff.selCircle, selected && ff.selCircleActive]}>
+                              {selected && <SymbolView name="checkmark" size={11} tintColor="#fff" />}
+                            </View>
+                          ) : (
+                            <SymbolView name="plus.circle.fill" size={26} tintColor={ACCENT} />
+                          )}
+                        </TouchableOpacity>
+                      </Swipeable>
+                    );
+                  })}
+                </ScrollView>
+              )}
+            </>
+          )}
+
+          {/* Selection action bar — actions depend on how many are selected
+              (1 → Remove · 2+ → Make meal or Remove), mirroring the Food Log. */}
+          {foodSelectMode && (
+            <View style={[ff.selBar, { paddingBottom: insets.bottom + 12 }]}>
+              <View style={ff.selTopRow}>
+                <Text style={ff.selCount}>
+                  {selectedFoodIds.size === 0
+                    ? 'Select foods'
+                    : `${selectedFoodIds.size} selected`}
+                </Text>
+                <TouchableOpacity onPress={exitFoodSelect} hitSlop={8}>
+                  <Text style={ff.selCancelText}>Cancel</Text>
+                </TouchableOpacity>
+              </View>
+              {selectedFoodIds.size === 0 ? (
+                <Text style={ff.selHint}>Tap foods — pick 2 or more to build a meal</Text>
+              ) : (
+                <View style={ff.selBtns}>
+                  <TouchableOpacity style={ff.selRemoveBtn} onPress={removeSelectedFavFoods} activeOpacity={0.85}>
+                    <SymbolView name="heart.slash.fill" size={14} tintColor="#e05555" />
+                    <Text style={ff.selRemoveText}>Remove</Text>
+                  </TouchableOpacity>
+                  {selectedFoodIds.size >= 2 && (
+                    <TouchableOpacity style={ff.selMakeBtn} onPress={makeMealFromFoods} activeOpacity={0.85}>
+                      <SymbolView name="fork.knife" size={14} tintColor="#fff" />
+                      <Text style={ff.selMakeText}>Make meal</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+              )}
+            </View>
           )}
         </View>
       )}
@@ -1097,9 +1509,9 @@ export default function FavouritesScreen() {
       </Modal>
 
       {/* ── Toasts ──────────────────────────────────────────────────── */}
-      {(mealToast || dayToast) && (
+      {(mealToast || dayToast || foodToast) && (
         <View style={s.toast} pointerEvents="none">
-          <Text style={s.toastText}>{mealToast ?? dayToast}</Text>
+          <Text style={s.toastText}>{mealToast ?? dayToast ?? foodToast}</Text>
         </View>
       )}
 
@@ -1112,17 +1524,21 @@ export default function FavouritesScreen() {
             {/* Header */}
             <View style={{ backgroundColor: HEADER, paddingTop: insets.top }}>
               <View style={{ height: 62, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16 }}>
-                <TouchableOpacity style={{ width: 52 }} onPress={() => setMealDetail(null)} hitSlop={8}>
+                <TouchableOpacity style={{ width: 52 }} onPress={closeMealDetail} hitSlop={8}>
                   <SymbolView name="chevron.left" size={22} tintColor="rgba(255,255,255,0.85)" />
                 </TouchableOpacity>
                 <TouchableOpacity
-                  style={{ flex: 1, alignItems: 'center' }}
-                  onPress={() => { setRenameText(mealDetail.name); setRenameModal(true); }}
+                  style={{ flex: 1, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 6 }}
+                  onPress={() => openNameSheet(false)}
                   activeOpacity={0.8}
                 >
-                  <Text style={{ fontSize: 18, fontWeight: '700', color: '#fff' }} numberOfLines={1}>
-                    {mealDetail.name}
+                  <Text
+                    style={{ fontSize: 18, fontWeight: '700', color: mealDetail.name.trim() ? '#fff' : 'rgba(255,255,255,0.5)' }}
+                    numberOfLines={1}
+                  >
+                    {mealDetail.name.trim() ? mealDetail.name : 'Name your meal'}
                   </Text>
+                  <SymbolView name="pencil" size={13} tintColor="rgba(255,255,255,0.6)" />
                 </TouchableOpacity>
                 <View style={{ width: 52 }} />
               </View>
@@ -1263,49 +1679,28 @@ export default function FavouritesScreen() {
                   </View>
                 </View>
 
-                {/* Log this meal */}
+                {/* Save meal — finishes & keeps the meal (names it first if blank) */}
+                <TouchableOpacity style={md.saveBtn} onPress={closeMealDetail} activeOpacity={0.85}>
+                  <SymbolView name="checkmark" size={16} tintColor="#fff" />
+                  <Text style={md.saveBtnText}>Save meal</Text>
+                </TouchableOpacity>
+
+                {/* Log this meal — copies it into today's food diary */}
                 <TouchableOpacity
                   style={md.logBtn}
                   onPress={() => { setLogMealDate(new Date()); setLogMealCat('lunch'); setLogMealModal(mealDetail); }}
                   activeOpacity={0.85}
                 >
-                  <SymbolView name="plus" size={16} tintColor="#fff" />
+                  <SymbolView name="plus" size={16} tintColor={ACCENT} />
                   <Text style={md.logBtnText}>Log this meal</Text>
                 </TouchableOpacity>
-                <TouchableOpacity style={md.deleteLink} onPress={confirmDeleteMealDetail}>
-                  <Text style={md.deleteLinkText}>Delete meal</Text>
+
+                {/* Delete meal */}
+                <TouchableOpacity style={md.deleteBtn} onPress={confirmDeleteMealDetail} activeOpacity={0.85}>
+                  <SymbolView name="trash" size={15} tintColor="#e05555" />
+                  <Text style={md.deleteBtnText}>Delete meal</Text>
                 </TouchableOpacity>
               </ScrollView>
-
-              {/* ── Rename overlay (inline, no Modal nesting issue) ── */}
-              {renameModal && (
-                <KeyboardAvoidingView
-                  style={[StyleSheet.absoluteFillObject, { zIndex: 20, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center' }]}
-                  behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-                  pointerEvents="box-none"
-                >
-                  <Pressable style={StyleSheet.absoluteFillObject} onPress={() => setRenameModal(false)} />
-                  <View style={[s.modal, { zIndex: 1 }]}>
-                    <Text style={s.modalTitle}>Rename meal</Text>
-                    <TextInput
-                      style={s.renameInput}
-                      value={renameText}
-                      onChangeText={setRenameText}
-                      placeholder="Meal name…"
-                      placeholderTextColor={MUTED}
-                      autoFocus
-                      returnKeyType="done"
-                      onSubmitEditing={saveRename}
-                    />
-                    <TouchableOpacity style={[s.confirmBtn, !renameText.trim() && { opacity: 0.5 }]} onPress={saveRename} disabled={!renameText.trim()}>
-                      <Text style={s.confirmBtnText}>Save</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity style={{ marginTop: 8, alignSelf: 'center' }} onPress={() => setRenameModal(false)}>
-                      <Text style={{ fontSize: 14, color: MUTED }}>Cancel</Text>
-                    </TouchableOpacity>
-                  </View>
-                </KeyboardAvoidingView>
-              )}
 
               {/* ── Notes overlay ── */}
               {notesModal && (
@@ -1407,6 +1802,74 @@ export default function FavouritesScreen() {
         mealLabel="Meal"
         onConfirm={addIngredient}
       />
+
+      {/* ── Add favourite food to log (same portion sheet as the Food Log) ── */}
+      <EditPortionSheet
+        food={addFood}
+        visible={!!addFood}
+        onClose={() => setAddFood(null)}
+        onConfirm={handleAddFavFood}
+        confirmLabel="Add to log"
+        extraTop={
+          <View style={ff.addControls}>
+            <View style={ff.addDateRow}>
+              <TouchableOpacity onPress={() => setAddFoodDate(d => addDays(d, -1))} hitSlop={8} style={s.dateArrow}>
+                <SymbolView name="chevron.left" size={16} tintColor={HEADER} />
+              </TouchableOpacity>
+              <Text style={s.dateLabel}>{formatDateLabel(addFoodDate)}</Text>
+              <TouchableOpacity onPress={() => setAddFoodDate(d => addDays(d, 1))} hitSlop={8} style={s.dateArrow}>
+                <SymbolView name="chevron.right" size={16} tintColor={HEADER} />
+              </TouchableOpacity>
+            </View>
+            <View style={ff.mealPills}>
+              {MEAL_CATS.map(cat => (
+                <TouchableOpacity
+                  key={cat.key}
+                  style={[ff.mealPill, addFoodMeal === cat.key && ff.mealPillActive]}
+                  onPress={() => setAddFoodMeal(cat.key)}
+                >
+                  <Text style={[ff.mealPillText, addFoodMeal === cat.key && ff.mealPillTextActive]}>{cat.label}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
+        }
+      />
+
+      {/* ── Name your meal (slide-up sheet, matches other tabs) ───────── */}
+      {renameModal && mealDetail && (
+        <BottomSheet onClose={cancelNameSheet} avoidKeyboard>
+          {close => (
+            <View style={{ paddingHorizontal: 20 }}>
+              <Text style={[s.modalTitle, { marginBottom: 14 }]}>
+                {mealDetail.name.trim() ? 'Rename meal' : 'Name your meal'}
+              </Text>
+              <TextInput
+                style={s.renameInput}
+                value={renameText}
+                onChangeText={setRenameText}
+                placeholder="Meal name…"
+                placeholderTextColor={MUTED}
+                autoFocus
+                returnKeyType="done"
+                onSubmitEditing={saveRename}
+              />
+              <TouchableOpacity
+                style={[s.confirmBtn, !renameText.trim() && { opacity: 0.5 }]}
+                onPress={saveRename}
+                disabled={!renameText.trim()}
+                activeOpacity={0.8}
+              >
+                <Text style={s.confirmBtnText}>Save</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={{ marginTop: 8, alignSelf: 'center', paddingVertical: 6 }} onPress={() => close()}>
+                <Text style={{ fontSize: 14, color: MUTED }}>Cancel</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+        </BottomSheet>
+      )}
+
 
       {/* ── Log Meal Modal ──────────────────────────────────────────── */}
       <Modal visible={!!logMealModal} transparent animationType="fade" onRequestClose={() => setLogMealModal(null)}>
@@ -1543,7 +2006,7 @@ const s = StyleSheet.create({
   hdrRight:  { alignItems: 'flex-end' },
   hdrTitle:  { flex: 1, fontSize: 18, fontWeight: '700', color: '#fff', textAlign: 'center' },
 
-  landingContent: { padding: 16, paddingTop: 20, gap: 16 },
+  landingContent: { padding: 16, paddingTop: 16, gap: 12 },
 
   recipeToolbar: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 16, paddingVertical: 12 },
   searchBar:  { flex: 1, flexDirection: 'row', alignItems: 'center', backgroundColor: CARD, borderRadius: 10, paddingHorizontal: 10, paddingVertical: 9, gap: 8, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.06, shadowRadius: 4, elevation: 2 },
@@ -1576,6 +2039,8 @@ const s = StyleSheet.create({
   emptyState:    { flex: 1, alignItems: 'center', justifyContent: 'center', paddingBottom: 80 },
   emptyTitle:    { fontSize: 16, fontWeight: '600', color: TEXT, marginBottom: 6 },
   emptySubtitle: { fontSize: 13, color: MUTED, textAlign: 'center', paddingHorizontal: 32 },
+  emptyCreateBtn:  { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: ACCENT, borderRadius: 100, paddingHorizontal: 18, paddingVertical: 10, marginTop: 18 },
+  emptyCreateText: { fontSize: 14, fontWeight: '700', color: '#fff' },
 
   itemCard:  { backgroundColor: CARD, borderRadius: 14, overflow: 'hidden', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 8, elevation: 3 },
   itemRow:   { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 14 },
@@ -1645,6 +2110,8 @@ const mc = StyleSheet.create({
   macroText:    { fontSize: 11, color: MUTED, fontWeight: '500' },
   macroVal:     { fontWeight: '700', color: TEXT },
   arrow:        { paddingRight: 12 },
+  swipeDelete:     { width: 84, backgroundColor: '#e05555', alignItems: 'center', justifyContent: 'center', gap: 4, borderRadius: 14, marginLeft: 8 },
+  swipeDeleteText: { fontSize: 11, fontWeight: '700', color: '#fff' },
 });
 
 // ─── Meal detail styles ───────────────────────────────────────────────────────
@@ -1715,11 +2182,66 @@ const md = StyleSheet.create({
   visText:      { fontSize: 13, fontWeight: '600', color: MUTED },
   visTextActive:{ color: '#fff' },
 
-  logBtn:        { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: ACCENT, borderRadius: 100, paddingVertical: 14, marginHorizontal: 16, marginTop: 24 },
-  logBtnText:    { fontSize: 15, fontWeight: '700', color: '#fff' },
+  saveBtn:       { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: ACCENT, borderRadius: 100, paddingVertical: 14, marginHorizontal: 16, marginTop: 24 },
+  saveBtnText:   { fontSize: 15, fontWeight: '700', color: '#fff' },
+  logBtn:        { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: 'transparent', borderWidth: 1.5, borderColor: ACCENT, borderRadius: 100, paddingVertical: 13, marginHorizontal: 16, marginTop: 10 },
+  logBtnText:    { fontSize: 15, fontWeight: '700', color: ACCENT },
+  deleteBtn:     { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: '#fdecec', borderRadius: 100, paddingVertical: 13, marginHorizontal: 16, marginTop: 10 },
+  deleteBtnText: { fontSize: 15, fontWeight: '700', color: '#e05555' },
   deleteLink:    { alignSelf: 'center', marginTop: 16 },
   deleteLinkText:{ fontSize: 14, color: '#e05555' },
 
   swipeRemove:     { width: 80, backgroundColor: '#e05555', alignItems: 'center', justifyContent: 'center', gap: 4, borderTopRightRadius: 12, borderBottomRightRadius: 12, marginBottom: 8 },
   swipeRemoveText: { fontSize: 11, fontWeight: '700', color: '#fff' },
+});
+
+// ─── Favourite food styles ────────────────────────────────────────────────────
+const ff = StyleSheet.create({
+  hint: { fontSize: 12, color: MUTED, paddingHorizontal: 16, paddingBottom: 8, marginTop: -4 },
+
+  row: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    backgroundColor: CARD, borderRadius: 14, padding: 10, paddingRight: 12,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 8, elevation: 3,
+  },
+  rowSelected: { backgroundColor: 'rgba(36,172,136,0.08)' },
+  thumb: { width: 46, height: 46, borderRadius: 10, backgroundColor: '#f0f7f4', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
+  info: { flex: 1 },
+  name: { fontSize: 14, fontWeight: '600', color: TEXT },
+  brand: { fontSize: 11, color: MUTED, marginTop: 1 },
+  macroRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 3, flexWrap: 'wrap' },
+  kcal: { fontSize: 11, fontWeight: '700', color: HEADER },
+  per: { fontSize: 10, color: MUTED, marginLeft: -5 },
+  macro: { fontSize: 11, color: MUTED, fontWeight: '500' },
+  macroVal: { fontWeight: '700', color: TEXT },
+
+  selCircle: { width: 22, height: 22, borderRadius: 11, borderWidth: 1.5, borderColor: '#ccc', alignItems: 'center', justifyContent: 'center' },
+  selCircleActive: { backgroundColor: ACCENT, borderColor: ACCENT },
+
+  swipeRemove: { width: 84, backgroundColor: '#e05555', alignItems: 'center', justifyContent: 'center', gap: 4, borderRadius: 14, marginLeft: 8 },
+  swipeRemoveText: { fontSize: 11, fontWeight: '700', color: '#fff' },
+
+  selBar: {
+    position: 'absolute', left: 0, right: 0, bottom: 0,
+    backgroundColor: CARD, borderTopLeftRadius: 18, borderTopRightRadius: 18,
+    paddingHorizontal: 16, paddingTop: 14,
+    shadowColor: '#000', shadowOffset: { width: 0, height: -3 }, shadowOpacity: 0.10, shadowRadius: 10, elevation: 10,
+  },
+  selTopRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 },
+  selCount: { fontSize: 13, fontWeight: '700', color: TEXT },
+  selCancelText: { fontSize: 14, fontWeight: '600', color: MUTED },
+  selHint: { fontSize: 13, color: MUTED, paddingBottom: 4 },
+  selBtns: { flexDirection: 'row', gap: 10 },
+  selRemoveBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: '#fdecec', borderRadius: 100, paddingVertical: 13 },
+  selRemoveText: { fontSize: 15, fontWeight: '700', color: '#e05555' },
+  selMakeBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: ACCENT, borderRadius: 100, paddingVertical: 13 },
+  selMakeText: { fontSize: 15, fontWeight: '700', color: '#fff' },
+
+  addControls: { marginTop: 4, marginBottom: 4 },
+  addDateRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 20, backgroundColor: BG, borderRadius: 10, paddingVertical: 8, marginBottom: 10 },
+  mealPills: { flexDirection: 'row', gap: 8, justifyContent: 'center', flexWrap: 'wrap' },
+  mealPill: { borderRadius: 100, backgroundColor: '#f5f5f3', paddingHorizontal: 14, paddingVertical: 7 },
+  mealPillActive: { backgroundColor: ACCENT },
+  mealPillText: { fontSize: 13, fontWeight: '600', color: MUTED },
+  mealPillTextActive: { color: '#fff' },
 });
