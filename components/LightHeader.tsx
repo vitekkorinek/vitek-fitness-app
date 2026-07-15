@@ -42,9 +42,9 @@ export function LightHeader({
   return (
     <View style={[lh.wrap, { height: insets.top + HEADER_ROW_HEIGHT }]}>
       <BlurView intensity={40} tint="light" style={StyleSheet.absoluteFill} />
-      {/* frosted tone-over keeps the page colour + legibility over dark content */}
+      {/* frosted tone-over keeps the page colour + legibility over dark content.
+          No bottom hairline — WhatsApp-style seamless fade into the content. */}
       <View style={[StyleSheet.absoluteFill, lh.tone]} />
-      <View style={lh.hairline} />
       <View style={[lh.row, { marginTop: insets.top }]}>
         <View style={lh.side}>{left}</View>
         <Text style={lh.title} numberOfLines={1}>{title}</Text>
@@ -87,11 +87,7 @@ const lh = StyleSheet.create({
     backgroundColor: 'transparent',
     overflow: 'hidden',
   },
-  tone:     { backgroundColor: 'rgba(250,249,247,0.55)' },
-  hairline: {
-    position: 'absolute', left: 0, right: 0, bottom: 0,
-    height: StyleSheet.hairlineWidth, backgroundColor: 'rgba(0,0,0,0.06)',
-  },
+  tone:  { backgroundColor: 'rgba(250,249,247,0.55)' },
   row:   { height: HEADER_ROW_HEIGHT, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16 },
   side:  { width: 44, alignItems: 'flex-start', justifyContent: 'center' },
   right: { alignItems: 'flex-end' },
