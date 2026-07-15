@@ -5,7 +5,7 @@ import { SymbolView } from 'expo-symbols';
 import { VFIcon } from '@/components/VFIcon';
 import { KettlebellIcon } from '@/components/icons/KettlebellIcon';
 import { NotificationOverlay } from '@/components/NotificationOverlay';
-import { LightHeader, HeaderChip, HEADER_ICON } from '@/components/LightHeader';
+import { LightHeader, HeaderIcon, HEADER_ICON } from '@/components/LightHeader';
 import { FloatingTabBar } from '@/components/FloatingTabBar';
 import { useAuth } from '@/context/AuthContext';
 import { supabase } from '@/lib/supabase';
@@ -35,19 +35,19 @@ function ClientTabHeader({
   const router = useRouter();
 
   const left = showBack ? (
-    <HeaderChip onPress={onBack}>
-      <SymbolView name="chevron.left" size={20} tintColor={HEADER_ICON} />
-    </HeaderChip>
+    <HeaderIcon onPress={onBack}>
+      <SymbolView name="chevron.left" size={24} tintColor={HEADER_ICON} weight="semibold" />
+    </HeaderIcon>
   ) : isTraining ? (
-    <HeaderChip onPress={onTrainingBell} badge={hasUnreadTraining}>
-      <KettlebellIcon size={26} color={HEADER_ICON} />
-    </HeaderChip>
+    <HeaderIcon onPress={onTrainingBell} badge={hasUnreadTraining}>
+      <KettlebellIcon size={34} color={HEADER_ICON} />
+    </HeaderIcon>
   ) : null;
 
   const right = (
-    <HeaderChip onPress={() => router.navigate('/(client)' as any)}>
-      <VFIcon size={26} color={HEADER_ICON} />
-    </HeaderChip>
+    <HeaderIcon onPress={() => router.navigate('/(client)' as any)}>
+      <VFIcon size={32} color={HEADER_ICON} />
+    </HeaderIcon>
   );
 
   // Session indicator — absolute so title never shifts (sits left of the VF chip)
@@ -132,17 +132,6 @@ export default function ClientTabsLayout() {
 
   return (
     <View style={{ flex: 1 }}>
-      <ClientTabHeader
-        title={title}
-        showBack={activeRoute !== 'train'}
-        onBack={() => smartBack(router)}
-        isTraining={activeRoute === 'train'}
-        hasUnreadTraining={hasUnreadTraining}
-        onTrainingBell={handleKettlebellTap}
-        hasSession={hasSession}
-        sessionElapsed={sessionElapsed}
-        onSessionTap={() => setSessionModalVisible(true)}
-      />
       <NotificationOverlay
         area="training"
         visible={trainingNotifOverlay}
@@ -253,6 +242,19 @@ export default function ClientTabsLayout() {
           options={{ tabBarButton: () => null, tabBarItemStyle: { flex: 0, width: 0, overflow: 'hidden' } }}
         />
       </Tabs>
+
+      {/* Glass header — rendered last so it overlays the scrolling tab content */}
+      <ClientTabHeader
+        title={title}
+        showBack={activeRoute !== 'train'}
+        onBack={() => smartBack(router)}
+        isTraining={activeRoute === 'train'}
+        hasUnreadTraining={hasUnreadTraining}
+        onTrainingBell={handleKettlebellTap}
+        hasSession={hasSession}
+        sessionElapsed={sessionElapsed}
+        onSessionTap={() => setSessionModalVisible(true)}
+      />
     </View>
   );
 }

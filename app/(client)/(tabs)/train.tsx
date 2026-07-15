@@ -18,6 +18,8 @@ import { CATEGORY_COLORS } from '@/lib/workoutCategories';
 import type { WorkoutCategory } from '@/lib/workoutCategories';
 import type { ClientTrainingData } from '@/lib/clientTraining';
 import { BottomSheet } from '@/components/BottomSheet';
+import { useHeaderHeight } from '@/components/LightHeader';
+import { useTabBarHeight } from '@/components/FloatingTabBar';
 import { SessionDetailsSheet } from '@/components/SessionDetailsSheet';
 import { RoutineDetailsSheet } from '@/components/RoutineDetailsSheet';
 import type { RoutineWorkoutPick } from '@/components/RoutineDetailsSheet';
@@ -203,6 +205,8 @@ export default function TrainTabScreen() {
   const { profile } = useAuth();
   const router = useRouter();
   const { width: sw } = useWindowDimensions();
+  const headerH = useHeaderHeight();
+  const tabBarH = useTabBarHeight();
 
   const [training, setTraining]                 = useState<ClientTrainingData | null>(null);
   const [workoutCards, setWorkoutCards]         = useState<WorkoutCard[]>([]);
@@ -743,7 +747,7 @@ export default function TrainTabScreen() {
 
   return (
     <View style={styles.root}>
-      <StatusBar barStyle="light-content" />
+      <StatusBar barStyle="dark-content" />
 
       {loading ? (
         <View style={styles.loaderWrap}>
@@ -752,9 +756,10 @@ export default function TrainTabScreen() {
       ) : (
         <ScrollView
           style={styles.scroll}
-          contentContainerStyle={styles.scrollContent}
+          contentContainerStyle={[styles.scrollContent, { paddingTop: headerH, paddingBottom: tabBarH }]}
           showsVerticalScrollIndicator={false}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={ACCENT} />}
+          scrollIndicatorInsets={{ top: headerH, bottom: tabBarH }}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={ACCENT} progressViewOffset={headerH} />}
         >
           {/* ── Weekly Goal Gauge Card ─────────────────────────────── */}
           {weeklyGoal != null && (

@@ -23,6 +23,8 @@ import * as ImagePicker from 'expo-image-picker';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/context/AuthContext';
 import { BottomSheet } from '@/components/BottomSheet';
+import { useHeaderHeight } from '@/components/LightHeader';
+import { useTabBarHeight } from '@/components/FloatingTabBar';
 import t from '@/i18n/en';
 import type { SessionPackage, Invoice } from '@/types/database';
 
@@ -83,6 +85,8 @@ type FieldModalConfig = {
 
 export default function MeScreen() {
   const { profile, refreshProfile, signOut } = useAuth();
+  const headerH = useHeaderHeight();
+  const tabBarH = useTabBarHeight();
 
   const [pkg, setPkg]       = useState<SessionPackage | null>(null);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
@@ -314,12 +318,13 @@ export default function MeScreen() {
 
   return (
     <SafeAreaView style={styles.root} edges={[]}>
-      <StatusBar barStyle="light-content" backgroundColor={HEADER} />
+      <StatusBar barStyle="dark-content" backgroundColor="#faf9f7" />
 
       <ScrollView
         style={styles.scroll}
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={[styles.scrollContent, { paddingTop: headerH, paddingBottom: tabBarH }]}
         showsVerticalScrollIndicator={false}
+        scrollIndicatorInsets={{ top: headerH, bottom: tabBarH }}
       >
         {/* ── Profile card ────────────────────────────────────────────── */}
         <View style={styles.profileCard}>

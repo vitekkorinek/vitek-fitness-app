@@ -106,7 +106,7 @@ export default function OverviewScreen() {
 
   return (
     <View style={styles.root}>
-      <StatusBar barStyle="light-content" />
+      <StatusBar barStyle="dark-content" />
       {loading ? (
         <View style={styles.loaderWrap}>
           <ActivityIndicator color={ACCENT} size="large" />

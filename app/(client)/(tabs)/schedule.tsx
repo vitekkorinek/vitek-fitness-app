@@ -8,6 +8,8 @@ import { SymbolView } from 'expo-symbols';
 import { useAuth } from '@/context/AuthContext';
 import { supabase } from '@/lib/supabase';
 import { BottomSheet } from '@/components/BottomSheet';
+import { useHeaderHeight } from '@/components/LightHeader';
+import { useTabBarHeight } from '@/components/FloatingTabBar';
 import type { SessionPackage } from '@/types/database';
 
 const BG       = '#faf9f7';
@@ -112,6 +114,8 @@ export type Appointment = {
 export default function ScheduleTabScreen() {
   const { profile } = useAuth();
   const router = useRouter();
+  const headerH = useHeaderHeight();
+  const tabBarH = useTabBarHeight();
   const { date: notifDate } = useLocalSearchParams<{ date?: string }>();
 
   const today    = new Date();
@@ -339,12 +343,13 @@ export default function ScheduleTabScreen() {
 
   return (
     <View style={s.root}>
-      <StatusBar barStyle="light-content" />
+      <StatusBar barStyle="dark-content" />
       <ScrollView
         style={s.scroll}
-        contentContainerStyle={s.content}
+        contentContainerStyle={[s.content, { paddingTop: headerH, paddingBottom: tabBarH }]}
         showsVerticalScrollIndicator={false}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={ACCENT} />}
+        scrollIndicatorInsets={{ top: headerH, bottom: tabBarH }}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={ACCENT} progressViewOffset={headerH} />}
       >
 
         {/* ── Calendar ─────────────────────────────────────────────── */}
