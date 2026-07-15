@@ -14,11 +14,11 @@ import {
   Pressable,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { smartBack } from '@/lib/navHistory';
 import { SymbolView } from 'expo-symbols';
 import { VFIcon } from '@/components/VFIcon';
+import { LightHeader, HeaderIcon, HEADER_ICON, useHeaderHeight } from '@/components/LightHeader';
 import { SessionDetailsSheet } from '@/components/SessionDetailsSheet';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/context/AuthContext';
@@ -120,6 +120,7 @@ async function fetchAllWorkouts(clientId: string): Promise<WorkoutRow[]> {
 export default function AllWorkoutsScreen() {
   const { profile } = useAuth();
   const router = useRouter();
+  const headerH = useHeaderHeight();
 
   const [allWorkouts, setAllWorkouts] = useState<WorkoutRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -182,28 +183,7 @@ export default function AllWorkoutsScreen() {
 
   return (
     <View style={styles.root}>
-      <StatusBar barStyle="light-content" />
-      <SafeAreaView style={styles.headerSafe} edges={['top']}>
-        <View style={styles.headerBar}>
-          <TouchableOpacity
-            onPress={() => smartBack(router)}
-            style={styles.headerSide}
-            hitSlop={8}
-            activeOpacity={0.6}
-          >
-            <SymbolView name="chevron.left" size={22} tintColor="rgba(255,255,255,0.85)" />
-          </TouchableOpacity>
-          <Text style={styles.headerTitle}>My Workouts</Text>
-          <TouchableOpacity
-            onPress={() => router.navigate('/(client)' as any)}
-            style={[styles.headerSide, styles.headerRight]}
-            hitSlop={8}
-            activeOpacity={0.6}
-          >
-            <VFIcon size={28} color="rgba(255,255,255,0.85)" />
-          </TouchableOpacity>
-        </View>
-      </SafeAreaView>
+      <StatusBar barStyle="dark-content" />
 
       {loading ? (
         <View style={styles.loaderWrap}>
@@ -212,10 +192,11 @@ export default function AllWorkoutsScreen() {
       ) : (
         <ScrollView
           style={styles.scroll}
-          contentContainerStyle={styles.content}
+          contentContainerStyle={[styles.content, { paddingTop: headerH + 16 }]}
+          scrollIndicatorInsets={{ top: headerH }}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={ACCENT} />}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={ACCENT} progressViewOffset={headerH} />}
         >
           {/* Workouts / Stretching tab */}
           <View style={awStyles.tabBar}>
@@ -384,6 +365,21 @@ export default function AllWorkoutsScreen() {
         sessionId={null}
         clientId={profile?.id ?? null}
       />
+
+      {/* Glass header — rendered last so it overlays the scrolling content */}
+      <LightHeader
+        left={
+          <HeaderIcon onPress={() => smartBack(router)}>
+            <SymbolView name="chevron.left" size={24} tintColor={HEADER_ICON} weight="semibold" />
+          </HeaderIcon>
+        }
+        title="My Workouts"
+        right={
+          <HeaderIcon onPress={() => router.navigate('/(client)' as any)}>
+            <VFIcon size={26} color={HEADER_ICON} />
+          </HeaderIcon>
+        }
+      />
     </View>
   );
 }
@@ -533,14 +529,7 @@ const awStyles = StyleSheet.create({
 });
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: HEADER },
-  headerSafe: { backgroundColor: HEADER },
-  headerBar: {
-    height: 62, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20,
-  },
-  headerSide: { width: 48, alignItems: 'flex-start', justifyContent: 'center' },
-  headerRight: { alignItems: 'flex-end' },
-  headerTitle: { flex: 1, color: '#fff', fontSize: 18, fontWeight: '700', textAlign: 'center' },
+  root: { flex: 1, backgroundColor: BG },
 
   loaderWrap: { flex: 1, backgroundColor: BG, alignItems: 'center', justifyContent: 'center' },
   scroll: { flex: 1, backgroundColor: BG },

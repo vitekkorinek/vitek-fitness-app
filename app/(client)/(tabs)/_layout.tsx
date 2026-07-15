@@ -46,7 +46,7 @@ function ClientTabHeader({
 
   const right = (
     <HeaderIcon onPress={() => router.navigate('/(client)' as any)}>
-      <VFIcon size={32} color={HEADER_ICON} />
+      <VFIcon size={26} color={HEADER_ICON} />
     </HeaderIcon>
   );
 

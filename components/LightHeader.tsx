@@ -2,6 +2,8 @@ import { ReactNode } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { BlurView } from 'expo-blur';
+import { LinearGradient } from 'expo-linear-gradient';
+import MaskedView from '@react-native-masked-view/masked-view';
 
 /**
  * Light, airy screen header (redesign July 2026).
@@ -23,8 +25,14 @@ const TEXT   = '#1a1a1a';
 export const HEADER_ICON = '#244e43'; // brand green — use for header glyphs
 
 export const HEADER_ROW_HEIGHT = 58;
+// Strip BELOW the nav row over which the blur + tint smoothly RAMP TO ZERO (via a
+// gradient mask), so there's no visible bottom edge — the real WhatsApp effect.
+// It overlaps the top of the page content (which scrolls under it); screens still
+// pad only by the row height, so this fade sits over the content.
+const FADE_ZONE = 36;
 
-/** Full header height (status-bar inset + row). Screens pad scroll content by this. */
+/** Content inset — status-bar inset + row (NOT the fade strip, which overlaps the
+ *  content on purpose). Screens pad scroll content by this. */
 export function useHeaderHeight() {
   const insets = useSafeAreaInsets();
   return insets.top + HEADER_ROW_HEIGHT;
@@ -39,12 +47,30 @@ export function LightHeader({
   overlay?: ReactNode;
 }) {
   const insets = useSafeAreaInsets();
+  const rowBottom = insets.top + HEADER_ROW_HEIGHT;
+  const totalH = rowBottom + FADE_ZONE;
+  const rowFrac = rowBottom / totalH;
   return (
-    <View style={[lh.wrap, { height: insets.top + HEADER_ROW_HEIGHT }]}>
-      <BlurView intensity={40} tint="light" style={StyleSheet.absoluteFill} />
-      {/* frosted tone-over keeps the page colour + legibility over dark content.
-          No bottom hairline — WhatsApp-style seamless fade into the content. */}
-      <View style={[StyleSheet.absoluteFill, lh.tone]} />
+    <View style={[lh.wrap, { height: totalH }]} pointerEvents="box-none">
+      {/* TRUE progressive blur (WhatsApp-style): a vertical gradient MASK — opaque
+          behind the nav row, fading to transparent across the strip below — is
+          applied to the blur + tint, so the blur STRENGTH itself ramps smoothly to
+          zero. No hard edge, no step lines. The mask's alpha drives visibility:
+          `black` = show, `transparent` = hide. */}
+      <MaskedView
+        style={StyleSheet.absoluteFill}
+        pointerEvents="none"
+        maskElement={
+          <LinearGradient
+            colors={['black', 'black', 'transparent']}
+            locations={[0, rowFrac, 1]}
+            style={StyleSheet.absoluteFill}
+          />
+        }
+      >
+        <BlurView intensity={46} tint="light" style={StyleSheet.absoluteFill} />
+        <View style={[StyleSheet.absoluteFill, lh.tint]} />
+      </MaskedView>
       <View style={[lh.row, { marginTop: insets.top }]}>
         <View style={lh.side}>{left}</View>
         <Text style={lh.title} numberOfLines={1}>{title}</Text>
@@ -87,7 +113,7 @@ const lh = StyleSheet.create({
     backgroundColor: 'transparent',
     overflow: 'hidden',
   },
-  tone:  { backgroundColor: 'rgba(250,249,247,0.55)' },
+  tint:  { backgroundColor: 'rgba(250,249,247,0.55)' },
   row:   { height: HEADER_ROW_HEIGHT, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16 },
   side:  { width: 44, alignItems: 'flex-start', justifyContent: 'center' },
   right: { alignItems: 'flex-end' },

@@ -56,6 +56,13 @@ The app has two roles: **Trainer** (Vitek) and **Client**. The trainer controls 
 - Rounded corners 16px on cards
 - Photography brings warmth
 
+### Navigation chrome — glass redesign (July 2026)
+The old heavy dark-green (`#244e43`) 62px header + flat welded bottom tab bar are being replaced app-wide by a lighter, more premium "glass" nav (inspired by WhatsApp / iOS 26). Two shared components; iOS-tuned, Android keeps the flat bar via a `Platform.OS` gate. **Design is finalized; rollout is staged.** Full implementation detail in CLAUDE.md → "Nav chrome redesign".
+- **`components/LightHeader.tsx`** — a light glass header floating over the page (content scrolls under it). It uses a **gradient-masked progressive blur** (`@react-native-masked-view/masked-view`) so the blur fades to nothing with no visible bottom edge — the WhatsApp seamless look. Bare brand-green glyphs (no chip circles); black status-bar clock.
+- **`components/FloatingTabBar.tsx`** — a floating frosted capsule pill with a **real iOS 26 Liquid Glass** (`expo-glass-effect`) background. The selection is a near-opaque pale-mint pill that **hugs the active tab's label** and is **gesture-driven** (press expands it, drag carries it, release "grabs" the icon). No center "+" (add actions are contextual).
+- **Native modules** (`expo-glass-effect`, `@react-native-masked-view/masked-view`) mean the glass + masked blur require a **fresh native build** — JS-only tweaks hot-reload, these do not.
+- **Rollout:** ✅ client main tabs + 5 training sub-screens (all-workouts, all-routines, availability, past-sessions, routine detail). ⏳ Next: nutrition section (screens + its own tab bar), then the trainer side. Do Mode / Exercise Detail / Session Intro / client Home keep their own designs.
+
 ### Button system
 
 Three button types — always use the correct one:

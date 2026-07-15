@@ -4,7 +4,8 @@ import {
   StatusBar, PanResponder, ActivityIndicator, TextInput,
   Alert,
 } from 'react-native';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { LightHeader, HeaderIcon, HEADER_ICON, useHeaderHeight } from '@/components/LightHeader';
 import { SymbolView } from 'expo-symbols';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { smartBack } from '@/lib/navHistory';
@@ -80,6 +81,7 @@ export default function AvailabilityScreen() {
   const { profile } = useAuth();
   const router      = useRouter();
   const insets      = useSafeAreaInsets();
+  const headerH     = useHeaderHeight();
   const params      = useLocalSearchParams<{ weekStart?: string }>();
   const paramWeekStart = Array.isArray(params.weekStart) ? params.weekStart[0] : params.weekStart;
 
@@ -390,26 +392,9 @@ export default function AvailabilityScreen() {
 
   return (
     <View style={st.root}>
-      <StatusBar barStyle="light-content" />
+      <StatusBar barStyle="dark-content" />
 
-      <SafeAreaView style={st.headerSafe} edges={['top']}>
-        <View style={st.headerBar}>
-          <TouchableOpacity onPress={() => smartBack(router)} style={st.headerBack} hitSlop={8} activeOpacity={0.7}>
-            <SymbolView name="chevron.left" size={18} tintColor="#fff" />
-          </TouchableOpacity>
-          <Text style={st.headerTitle}>My Availability</Text>
-          <TouchableOpacity
-            onPress={() => router.navigate('/(client)' as any)}
-            style={st.headerRight}
-            hitSlop={8}
-            activeOpacity={0.7}
-          >
-            <VFIcon size={28} color="rgba(255,255,255,0.85)" />
-          </TouchableOpacity>
-        </View>
-      </SafeAreaView>
-
-      <View style={[st.body, { paddingBottom: Math.max(16, insets.bottom) }]}>
+      <View style={[st.body, { paddingTop: headerH + 8, paddingBottom: Math.max(16, insets.bottom) }]}>
 
         {/* Week picker card */}
         <View style={st.introCard}>
@@ -617,20 +602,27 @@ export default function AvailabilityScreen() {
           </View>
         </Modal>
       )}
+
+      {/* Glass header — rendered last so it overlays the content below it */}
+      <LightHeader
+        left={
+          <HeaderIcon onPress={() => smartBack(router)}>
+            <SymbolView name="chevron.left" size={24} tintColor={HEADER_ICON} weight="semibold" />
+          </HeaderIcon>
+        }
+        title="My Availability"
+        right={
+          <HeaderIcon onPress={() => router.navigate('/(client)' as any)}>
+            <VFIcon size={26} color={HEADER_ICON} />
+          </HeaderIcon>
+        }
+      />
     </View>
   );
 }
 
 const st = StyleSheet.create({
   root:       { flex: 1, backgroundColor: BG },
-  headerSafe: { backgroundColor: HEADER },
-  headerBar:  {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: 16, paddingVertical: 12,
-  },
-  headerBack:  { width: 44, alignItems: 'flex-start' },
-  headerRight: { width: 44, alignItems: 'flex-end' },
-  headerTitle: { color: '#fff', fontSize: 18, fontWeight: '700' },
 
   body: { flex: 1, padding: 16, gap: 12 },
 

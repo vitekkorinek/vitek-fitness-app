@@ -11,9 +11,9 @@ import {
   Image,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { smartBack } from '@/lib/navHistory';
+import { LightHeader, HeaderIcon, HEADER_ICON, useHeaderHeight } from '@/components/LightHeader';
 import { SymbolView } from 'expo-symbols';
 import { VFIcon } from '@/components/VFIcon';
 import { BottomSheet } from '@/components/BottomSheet';
@@ -94,6 +94,7 @@ export default function ClientRoutineDetailScreen() {
   const { routineId } = useLocalSearchParams<{ routineId: string }>();
   const { profile } = useAuth();
   const router = useRouter();
+  const headerH = useHeaderHeight();
 
   const [routine, setRoutine] = useState<Routine | null>(null);
   const [workouts, setWorkouts] = useState<RoutineWorkout[]>([]);
@@ -143,33 +144,7 @@ export default function ClientRoutineDetailScreen() {
 
   return (
     <View style={styles.root}>
-      <StatusBar barStyle="light-content" />
-      <SafeAreaView style={styles.headerSafe} edges={['top']}>
-        <View style={styles.headerBar}>
-          <TouchableOpacity
-            onPress={() => smartBack(router)}
-            style={styles.headerSide}
-            hitSlop={8}
-            activeOpacity={0.6}
-          >
-            <SymbolView name="chevron.left" size={22} tintColor="rgba(255,255,255,0.85)" />
-          </TouchableOpacity>
-          <View style={styles.headerCenter}>
-            <Text style={styles.headerTitle} numberOfLines={1}>{routine?.name ?? 'Routine'}</Text>
-            <TouchableOpacity onPress={() => setHistoryModal(true)} hitSlop={8} style={styles.infoBtn} activeOpacity={0.7}>
-              <Text style={styles.infoBtnText}>i</Text>
-            </TouchableOpacity>
-          </View>
-          <TouchableOpacity
-            onPress={() => router.navigate('/(client)' as any)}
-            style={[styles.headerSide, styles.headerRight]}
-            hitSlop={8}
-            activeOpacity={0.6}
-          >
-            <VFIcon size={28} color="rgba(255,255,255,0.85)" />
-          </TouchableOpacity>
-        </View>
-      </SafeAreaView>
+      <StatusBar barStyle="dark-content" />
 
       {loading ? (
         <View style={styles.loaderWrap}>
@@ -178,9 +153,10 @@ export default function ClientRoutineDetailScreen() {
       ) : (
         <ScrollView
           style={styles.scroll}
-          contentContainerStyle={styles.content}
+          contentContainerStyle={[styles.content, { paddingTop: headerH + 16 }]}
+          scrollIndicatorInsets={{ top: headerH }}
           showsVerticalScrollIndicator={false}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={ACCENT} />}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={ACCENT} progressViewOffset={headerH} />}
         >
           {isActive && (
             <View style={styles.activeBadgeRow}>
@@ -308,6 +284,35 @@ export default function ClientRoutineDetailScreen() {
         workoutId={quickLookWorkout?.id ?? null}
         workoutName={quickLookWorkout?.name ?? ''}
         onClose={() => setQuickLookWorkout(null)}
+      />
+
+      {/* Glass header — rendered last so it overlays the scrolling content. The
+          (i) routine-history button lives in the overlay slot (absolute, so it
+          never shifts the centered title). */}
+      <LightHeader
+        left={
+          <HeaderIcon onPress={() => smartBack(router)}>
+            <SymbolView name="chevron.left" size={24} tintColor={HEADER_ICON} weight="semibold" />
+          </HeaderIcon>
+        }
+        title={routine?.name ?? 'Routine'}
+        overlay={
+          <View style={styles.infoBtnWrap}>
+            <TouchableOpacity
+              onPress={() => setHistoryModal(true)}
+              hitSlop={10}
+              style={styles.infoBtn}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.infoBtnText}>i</Text>
+            </TouchableOpacity>
+          </View>
+        }
+        right={
+          <HeaderIcon onPress={() => router.navigate('/(client)' as any)}>
+            <VFIcon size={26} color={HEADER_ICON} />
+          </HeaderIcon>
+        }
       />
     </View>
   );
@@ -441,22 +446,16 @@ const ACCENT = '#24ac88';
 const MUTED  = '#999';
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: HEADER },
-  headerSafe: { backgroundColor: HEADER },
-  headerBar: {
-    height: 62, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20,
-  },
-  headerSide: { width: 48, alignItems: 'flex-start', justifyContent: 'center' },
-  headerRight: { alignItems: 'flex-end' },
-  headerCenter: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 },
-  headerTitle: { color: '#fff', fontSize: 18, fontWeight: '700', textAlign: 'center', flexShrink: 1 },
+  root: { flex: 1, backgroundColor: BG },
+  // (i) routine-history button — absolute in the LightHeader overlay slot, sitting
+  // just left of the VF home icon so it never shifts the centered title.
+  infoBtnWrap: { position: 'absolute', right: 58, top: 0, bottom: 0, justifyContent: 'center' },
   infoBtn: {
-    width: 18, height: 18, borderRadius: 100,
-    backgroundColor: 'rgba(255,255,255,0.18)',
-    borderWidth: 1, borderColor: 'rgba(255,255,255,0.3)',
-    alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+    width: 20, height: 20, borderRadius: 100,
+    borderWidth: 1.5, borderColor: HEADER,
+    alignItems: 'center', justifyContent: 'center',
   },
-  infoBtnText: { fontSize: 11, fontStyle: 'italic', fontWeight: '700', color: '#fff' },
+  infoBtnText: { fontSize: 11, fontStyle: 'italic', fontWeight: '700', color: HEADER },
 
   loaderWrap: { flex: 1, backgroundColor: BG, alignItems: 'center', justifyContent: 'center' },
   scroll: { flex: 1, backgroundColor: BG },

@@ -5,7 +5,7 @@ import {
 } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { smartBack } from '@/lib/navHistory';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { LightHeader, HeaderIcon, HEADER_ICON, useHeaderHeight } from '@/components/LightHeader';
 import { SymbolView } from 'expo-symbols';
 import { VFIcon } from '@/components/VFIcon';
 import { BottomSheet } from '@/components/BottomSheet';
@@ -38,6 +38,7 @@ type StatusFilter = 'all' | 'completed' | 'cancelled';
 export default function PastSessionsScreen() {
   const { profile } = useAuth();
   const router      = useRouter();
+  const headerH     = useHeaderHeight();
   const todayStr    = localDateStr(new Date());
 
   const [sessions, setSessions]         = useState<Appointment[]>([]);
@@ -154,28 +155,17 @@ export default function PastSessionsScreen() {
 
   return (
     <View style={s.root}>
-      <StatusBar barStyle="light-content" />
-
-      <SafeAreaView style={s.headerSafe} edges={['top']}>
-        <View style={s.headerBar}>
-          <TouchableOpacity style={s.headerSide} onPress={() => smartBack(router)} activeOpacity={0.7}>
-            <SymbolView name="chevron.left" size={22} tintColor="rgba(255,255,255,0.85)" />
-          </TouchableOpacity>
-          <Text style={s.headerTitle}>Past Sessions</Text>
-          <TouchableOpacity style={[s.headerSide, s.headerRight]} onPress={() => router.navigate('/(client)')} activeOpacity={0.7}>
-            <VFIcon size={28} color="#fff" />
-          </TouchableOpacity>
-        </View>
-      </SafeAreaView>
+      <StatusBar barStyle="dark-content" />
 
       {loading ? (
         <View style={s.loader}><ActivityIndicator color={ACCENT} size="large" /></View>
       ) : (
         <ScrollView
           style={s.scroll}
-          contentContainerStyle={s.content}
+          contentContainerStyle={[s.content, { paddingTop: headerH + 16 }]}
+          scrollIndicatorInsets={{ top: headerH }}
           showsVerticalScrollIndicator={false}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={ACCENT} />}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={ACCENT} progressViewOffset={headerH} />}
         >
 
           {/* ── Status filter ─────────────────────────────────────── */}
@@ -331,17 +321,26 @@ export default function PastSessionsScreen() {
         </BottomSheet>
       )}
 
+      {/* Glass header — rendered last so it overlays the scrolling content */}
+      <LightHeader
+        left={
+          <HeaderIcon onPress={() => smartBack(router)}>
+            <SymbolView name="chevron.left" size={24} tintColor={HEADER_ICON} weight="semibold" />
+          </HeaderIcon>
+        }
+        title="Past Sessions"
+        right={
+          <HeaderIcon onPress={() => router.navigate('/(client)' as any)}>
+            <VFIcon size={26} color={HEADER_ICON} />
+          </HeaderIcon>
+        }
+      />
     </View>
   );
 }
 
 const s = StyleSheet.create({
   root:        { flex: 1, backgroundColor: BG },
-  headerSafe:  { backgroundColor: HEADER },
-  headerBar:   { height: 62, flexDirection: 'row', alignItems: 'center' },
-  headerSide:  { width: 48, height: 62, alignItems: 'flex-start', justifyContent: 'center', paddingLeft: 16 },
-  headerRight: { alignItems: 'flex-end', paddingLeft: 0, paddingRight: 16 },
-  headerTitle: { flex: 1, color: '#fff', fontSize: 18, fontWeight: '700', textAlign: 'center' },
 
   scroll:  { flex: 1 },
   content: { padding: 16, gap: 12, paddingBottom: 40 },
