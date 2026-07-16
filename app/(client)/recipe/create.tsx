@@ -21,7 +21,6 @@ import { useAuth } from '@/context/AuthContext';
 import { supabase } from '@/lib/supabase';
 import FoodSearchModal from '@/components/FoodSearchModal';
 import type { FoodConfirmResult } from '@/components/FoodSearchModal';
-import { useTabBarHeight } from '@/components/FloatingTabBar';
 
 const BG     = '#faf9f7';
 const CARD   = '#ffffff';
@@ -47,7 +46,6 @@ export default function CreateRecipeScreen() {
   const { profile }  = useAuth();
   const router       = useRouter();
   const insets       = useSafeAreaInsets();
-  const tabBarH      = useTabBarHeight();
 
   const isEdit = !!editId;
 
@@ -246,7 +244,7 @@ export default function CreateRecipeScreen() {
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <ScrollView
           contentInsetAdjustmentBehavior="never"
-          contentContainerStyle={[s.content, { paddingBottom: tabBarH + 24 }]}
+          contentContainerStyle={[s.content, { paddingBottom: insets.bottom + 24 }]}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
         >
@@ -318,7 +316,7 @@ export default function CreateRecipeScreen() {
 
         {/* Live macro summary (fixed bottom bar) */}
         {ingredients.length > 0 && (
-          <View style={[s.macroBar, { paddingBottom: 8, marginBottom: tabBarH }]}>
+          <View style={[s.macroBar, { paddingBottom: insets.bottom + 8 }]}>
             <Text style={s.macroBarLabel}>Per portion:</Text>
             <Text style={s.macroBarVal}>{Math.round(totalsPerPortion.cal)} kcal</Text>
             <Text style={s.macroBarSep}>·</Text>

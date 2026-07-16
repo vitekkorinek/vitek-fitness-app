@@ -16,7 +16,6 @@ import { SymbolView } from 'expo-symbols';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useAuth } from '@/context/AuthContext';
 import { supabase } from '@/lib/supabase';
-import { useTabBarHeight } from '@/components/FloatingTabBar';
 
 const BG     = '#faf9f7';
 const CARD   = '#ffffff';
@@ -69,7 +68,6 @@ export default function RecipeDetailScreen() {
   const { profile }  = useAuth();
   const router       = useRouter();
   const insets       = useSafeAreaInsets();
-  const tabBarH      = useTabBarHeight();
 
   const [recipe, setRecipe]           = useState<Recipe | null>(null);
   const [ingredients, setIngredients] = useState<Ingredient[]>([]);
@@ -173,7 +171,7 @@ export default function RecipeDetailScreen() {
 
   return (
     <View style={s.root}>
-      <ScrollView showsVerticalScrollIndicator={false} contentInsetAdjustmentBehavior="never" contentContainerStyle={{ paddingBottom: tabBarH + 24 }} scrollIndicatorInsets={{ bottom: tabBarH }}>
+      <ScrollView showsVerticalScrollIndicator={false} contentInsetAdjustmentBehavior="never" contentContainerStyle={{ paddingBottom: insets.bottom + 24 }}>
         {/* ── Cover header ────────────────────────────────────────── */}
         <View style={[s.coverWrap, { paddingTop: insets.top }]}>
           {recipe.cover_photo_url ? (
@@ -305,7 +303,7 @@ export default function RecipeDetailScreen() {
           <TouchableOpacity activeOpacity={1} style={s.modalCard}>
             <TouchableOpacity
               style={s.menuRow}
-              onPress={() => { setMenuModal(false); router.push(`/(client)/nutrition/recipe/create?editId=${recipe.id}` as any); }}
+              onPress={() => { setMenuModal(false); router.push(`/(client)/recipe/create?editId=${recipe.id}` as any); }}
             >
               <SymbolView name="pencil" size={18} tintColor={TEXT} />
               <Text style={s.menuRowText}>Edit</Text>

@@ -989,7 +989,7 @@ export default function FavouritesScreen() {
             </View>
             <TouchableOpacity
               style={s.createBtn}
-              onPress={() => router.push('/(client)/nutrition/recipe/create' as any)}
+              onPress={() => router.push('/(client)/recipe/create' as any)}
               hitSlop={8}
             >
               <SymbolView name="plus.circle.fill" size={30} tintColor={ACCENT} />
@@ -1028,7 +1028,7 @@ export default function FavouritesScreen() {
                 <RecipeCard
                   key={r.id}
                   recipe={r}
-                  onPress={() => router.push(`/(client)/nutrition/recipe/${r.id}` as any)}
+                  onPress={() => router.push(`/(client)/recipe/${r.id}` as any)}
                 />
               ))}
             </ScrollView>

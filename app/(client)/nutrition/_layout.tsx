@@ -26,8 +26,6 @@ export default function NutritionLayout() {
       <NativeTabs.Trigger name="tips" hidden />
       <NativeTabs.Trigger name="recipes" hidden />
       <NativeTabs.Trigger name="recommendations" hidden />
-      <NativeTabs.Trigger name="recipe/create" hidden />
-      <NativeTabs.Trigger name="recipe/[id]" hidden />
     </NativeTabs>
   );
 }
