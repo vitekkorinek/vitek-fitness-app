@@ -311,11 +311,13 @@ export default function MealEditorScreen() {
       ) : (
         <ScrollView
           contentInsetAdjustmentBehavior="never"
-          contentContainerStyle={{ paddingBottom: insets.bottom + 32 }}
+          contentContainerStyle={{ paddingTop: headerH, paddingBottom: insets.bottom + 32 }}
+          scrollIndicatorInsets={{ top: headerH }}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
         >
-          {/* Cover (hero — scrolls under the frosted header) */}
+          {/* Cover — rounded card that starts BELOW the header (only scrolls
+              under the frosted glass when the page moves) */}
           <TouchableOpacity style={s.coverWrap} onPress={pickCover} activeOpacity={0.9}>
             {meal.cover_photo_url ? (
               <Image source={{ uri: meal.cover_photo_url }} style={StyleSheet.absoluteFill} resizeMode="cover" />
@@ -658,7 +660,7 @@ const s = StyleSheet.create({
   root:   { flex: 1, backgroundColor: BG },
   loader: { flex: 1, alignItems: 'center', justifyContent: 'center' },
 
-  coverWrap:   { width: '100%', height: 220, backgroundColor: '#1d2d6a', overflow: 'hidden' },
+  coverWrap:   { marginHorizontal: 16, marginTop: 16, height: 180, borderRadius: 16, backgroundColor: '#1d2d6a', overflow: 'hidden' },
   cameraBadge: {
     position: 'absolute', bottom: 10, right: 10,
     width: 32, height: 32, borderRadius: 16,
