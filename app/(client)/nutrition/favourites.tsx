@@ -27,7 +27,6 @@ import { useAuth } from '@/context/AuthContext';
 import { supabase } from '@/lib/supabase';
 import { VFIcon } from '@/components/VFIcon';
 import type { FoodLogEntry } from '@/lib/nutritionInsights';
-import FoodSearchModal from '@/components/FoodSearchModal';
 import type { FoodConfirmResult } from '@/components/FoodSearchModal';
 import EditPortionSheet from '@/components/EditPortionSheet';
 import { BottomSheet } from '@/components/BottomSheet';
@@ -165,10 +164,6 @@ interface SavedMeal {
   notes: string | null;
   visibility: 'private' | 'trainer' | 'clients';
   created_at: string;
-}
-
-function ingDisplayName(ing: MealIngredient): string {
-  return ing.foodName ?? ing.name ?? '—';
 }
 
 interface FavouriteDay {
@@ -323,30 +318,7 @@ export default function FavouritesScreen() {
   const [mealsLoading, setMealsLoading] = useState(true);
   const [mealQuery, setMealQuery]       = useState('');
   const [mealSort, setMealSort]         = useState<'newest' | 'oldest' | 'az' | 'za'>('newest');
-  const [logMealModal, setLogMealModal] = useState<SavedMeal | null>(null);
-  const [logMealCat, setLogMealCat]     = useState('lunch');
-  const [logMealDate, setLogMealDate]   = useState(new Date());
-  const [loggingMeal, setLoggingMeal]   = useState(false);
-  const [mealToast, setMealToast]       = useState<string | null>(null);
-
-  // Meal detail
-  const [mealDetail, setMealDetail]    = useState<SavedMeal | null>(null);
-  const [mealThumbMap, setMealThumbMap] = useState<Map<string, string>>(new Map());
-  const [uploadingCover, setUploadingCover] = useState(false);
-  const [addFoodVisible, setAddFoodVisible] = useState(false);
-  const lastNameTapRef = useRef<number>(0);
-
-  // Rename modal
-  const [renameModal, setRenameModal]  = useState(false);
-  const [renameText, setRenameText]    = useState('');
-
-  // Notes modal
-  const [notesModal, setNotesModal]    = useState(false);
-  const [notesText, setNotesText]      = useState('');
-
-  // Ingredient edit modal
-  const [ingEditIdx, setIngEditIdx]    = useState<number | null>(null);
-  const [ingEditAmount, setIngEditAmount] = useState('');
+  // Meal making + logging happens on its own screen (app/(client)/meal/[id].tsx).
 
   // Days
   const [days, setDays]               = useState<FavouriteDay[]>([]);
@@ -371,14 +343,6 @@ export default function FavouritesScreen() {
   const [addFood, setAddFood]             = useState<FoodResult | null>(null);
   const [addFoodMeal, setAddFoodMeal]     = useState('lunch');
   const [addFoodDate, setAddFoodDate]     = useState(new Date());
-  // New / draft meal (Meals "+" and "Make meal" from selected foods).
-  // Holds the id of a just-created, not-yet-named meal so we can discard it if
-  // the user backs out of the making page without naming it.
-  const [newMealDraftId, setNewMealDraftId] = useState<string | null>(null);
-  // True when the name sheet was opened as a leave-reminder (vs a header tap),
-  // so Cancel/Save can also leave the making page.
-  const [nameSheetLeave, setNameSheetLeave] = useState(false);
-
   // Recommendations
   const [recommendations, setRecommendations]             = useState<Recommendation[]>([]);
   const [recommLoading, setRecommLoading]                 = useState(true);
@@ -479,31 +443,6 @@ export default function FavouritesScreen() {
   }, [loadRecipes, loadMeals, loadFavFoods, loadDays, loadRecommendations]));
 
   // ─── Actions ──────────────────────────────────────────────────────────────
-
-  const logMeal = async () => {
-    if (!logMealModal || loggingMeal) return;
-    setLoggingMeal(true);
-    const dateStr = toDateStr(logMealDate);
-    await supabase.from('food_log_entries').insert(
-      logMealModal.ingredients.map(ing => ({
-        id: makeUUID(), client_id: clientId, date: dateStr,
-        meal_category: logMealCat,
-        food_name: ingDisplayName(ing),
-        brand: ing.brand ?? null,
-        source: ing.source ?? null,
-        source_id: ing.sourceId ?? null,
-        portion_amount: ing.amount, portion_unit: ing.unit,
-        calories: ing.nutrition.calories, protein_g: ing.nutrition.protein,
-        carbs_g: ing.nutrition.carbs, fat_g: ing.nutrition.fat,
-        fiber_g: ing.nutrition.fiber, sugar_g: ing.nutrition.sugar,
-        salt_g: ing.nutrition.salt, food_groups: ing.foodGroups ?? [],
-      }))
-    );
-    setLoggingMeal(false);
-    setLogMealModal(null);
-    setMealToast(`Logged to ${formatDateLabel(logMealDate)}`);
-    setTimeout(() => setMealToast(null), 3000);
-  };
 
   const useDay = async () => {
     if (!useDayModal || usingDay) return;
@@ -644,12 +583,9 @@ export default function FavouritesScreen() {
       .insert({ client_id: clientId, name: '', ingredients, visibility: 'private' })
       .select().single();
     if (!data) return;
-    const meal = data as SavedMeal;
-    setMeals(prev => [meal, ...prev]);
-    setNewMealDraftId(meal.id);
-    openMealDetail(meal);
-    // No auto-prompt — the header already shows a "Name your meal" field; the
-    // app reminds the user to name it when they try to leave (closeMealDetail).
+    // Meal making happens on its own screen (app/(client)/meal/[id].tsx). isNew=1
+    // lets that screen discard the draft if the user leaves it empty + unnamed.
+    router.push(`/(client)/meal/${(data as SavedMeal).id}?isNew=1` as any);
   };
 
   const openNewMeal = () => startNewMeal([]);
@@ -662,206 +598,12 @@ export default function FavouritesScreen() {
     startNewMeal(ingredients);
   };
 
-  const discardDraftMeal = async (meal: SavedMeal) => {
-    await supabase.from('saved_meals').delete().eq('id', meal.id);
-    setMeals(prev => prev.filter(m => m.id !== meal.id));
-    setNewMealDraftId(null);
-    setMealDetail(null);
-  };
-
-  const openNameSheet = (leaveOnDone: boolean) => {
-    setNameSheetLeave(leaveOnDone);
-    setRenameText(mealDetail?.name ?? '');
-    setRenameModal(true);
-  };
-
-  // Leaving the making page. An unnamed brand-new draft is never kept: if it's
-  // empty we discard it silently; if it already has food we remind the user by
-  // popping the "Name your meal" sheet (Save names it, Cancel discards) rather
-  // than losing their work or saving a nameless meal.
-  const closeMealDetail = () => {
-    if (mealDetail && newMealDraftId === mealDetail.id && !mealDetail.name.trim()) {
-      if (mealDetail.ingredients.length > 0) {
-        openNameSheet(true); // remind → name sheet
-        return;
-      }
-      discardDraftMeal(mealDetail); // empty & unnamed — nothing to keep
-      return;
-    }
-    setNewMealDraftId(null);
-    setMealDetail(null);
-  };
-
-  // Cancel on the name sheet: if it was a leave-reminder for an unnamed draft,
-  // abandoning naming discards the draft (and leaves); otherwise just closes.
-  const cancelNameSheet = () => {
-    setRenameModal(false);
-    if (nameSheetLeave && mealDetail && newMealDraftId === mealDetail.id && !mealDetail.name.trim()) {
-      discardDraftMeal(mealDetail);
-    }
-    setNameSheetLeave(false);
-  };
-
   const mealTotals = (meal: SavedMeal) => ({
     kcal:  Math.round(meal.ingredients.reduce((s, i) => s + i.nutrition.calories, 0)),
     pro:   Math.round(meal.ingredients.reduce((s, i) => s + i.nutrition.protein, 0)),
     carbs: Math.round(meal.ingredients.reduce((s, i) => s + i.nutrition.carbs, 0)),
     fat:   Math.round(meal.ingredients.reduce((s, i) => s + i.nutrition.fat, 0)),
   });
-
-  const loadMealThumbs = async (ingredients: MealIngredient[]) => {
-    const pairs = ingredients.filter(i => i.source && i.sourceId);
-    if (pairs.length === 0) { setMealThumbMap(new Map()); return; }
-    const sourceIds = pairs.map(p => p.sourceId!);
-    const { data } = await supabase
-      .from('food_cache')
-      .select('source, source_id, image_url')
-      .in('source_id', sourceIds);
-    const map = new Map<string, string>();
-    for (const row of data ?? []) {
-      if (row.image_url) map.set(`${row.source}:${row.source_id}`, row.image_url);
-    }
-    setMealThumbMap(map);
-  };
-
-  const openMealDetail = (meal: SavedMeal) => {
-    setMealDetail(meal);
-    loadMealThumbs(meal.ingredients);
-  };
-
-  const saveMealPatch = async (patch: Partial<SavedMeal>) => {
-    if (!mealDetail) return;
-    await supabase.from('saved_meals').update(patch).eq('id', mealDetail.id);
-    const updated = { ...mealDetail, ...patch };
-    setMealDetail(updated);
-    setMeals(prev => prev.map(m => m.id === mealDetail.id ? updated : m));
-  };
-
-  const pickMealCover = async () => {
-    if (!mealDetail) return;
-    const res = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ['images'],
-      allowsEditing: true,
-      aspect: [4, 3],
-      quality: 0.85,
-    });
-    if (res.canceled || !res.assets?.[0]) return;
-    const asset = res.assets[0];
-    setUploadingCover(true);
-    try {
-      const resp = await fetch(asset.uri);
-      const buf  = await resp.arrayBuffer();
-      const ext  = asset.uri.split('.').pop() ?? 'jpg';
-      const path = `${makeUUID()}.${ext}`;
-      const { error } = await supabase.storage.from('meal-covers').upload(path, buf, {
-        contentType: `image/${ext === 'jpg' ? 'jpeg' : ext}`,
-        upsert: true,
-      });
-      if (!error) {
-        const { data: pub } = supabase.storage.from('meal-covers').getPublicUrl(path);
-        await saveMealPatch({ cover_photo_url: pub.publicUrl });
-      }
-    } catch {}
-    setUploadingCover(false);
-  };
-
-  const saveRename = async () => {
-    if (!renameText.trim()) return;
-    await saveMealPatch({ name: renameText.trim() });
-    setNewMealDraftId(null); // now named — no longer a discardable draft
-    setRenameModal(false);
-    if (nameSheetLeave) { setMealDetail(null); setNameSheetLeave(false); }
-  };
-
-  const saveNotes = async () => {
-    await saveMealPatch({ notes: notesText.trim() || null });
-    setNotesModal(false);
-  };
-
-  const saveVisibility = async (vis: 'private' | 'trainer' | 'clients') => {
-    await saveMealPatch({ visibility: vis });
-  };
-
-  const removeIngredient = async (idx: number) => {
-    if (!mealDetail) return;
-    const updated = mealDetail.ingredients.filter((_, i) => i !== idx);
-    await saveMealPatch({ ingredients: updated });
-    loadMealThumbs(updated);
-  };
-
-  const addIngredient = async (result: FoodConfirmResult): Promise<void> => {
-    if (!mealDetail) return;
-    const ing: MealIngredient = {
-      foodName: result.foodName,
-      brand: result.brand ?? undefined,
-      source: result.source,
-      sourceId: result.sourceId ?? undefined,
-      amount: result.amount,
-      unit: result.unit,
-      nutrition: result.nutrition,
-      foodGroups: result.foodGroups,
-      nutrientsPer100g: result.nutrientsPer100g,
-    };
-    const updated = [...mealDetail.ingredients, ing];
-    await saveMealPatch({ ingredients: updated });
-    loadMealThumbs(updated);
-    setAddFoodVisible(false);
-  };
-
-  const openIngEdit = (idx: number) => {
-    if (!mealDetail) return;
-    setIngEditIdx(idx);
-    setIngEditAmount(String(mealDetail.ingredients[idx].amount));
-  };
-
-  const saveIngEdit = async () => {
-    if (!mealDetail || ingEditIdx === null) return;
-    const newAmt = parseFloat(ingEditAmount);
-    if (isNaN(newAmt) || newAmt <= 0) return;
-    const ing = mealDetail.ingredients[ingEditIdx];
-    const scale = ing.amount > 0 ? newAmt / ing.amount : 1;
-    const r1 = (n: number) => Math.round(n * 10) / 10;
-    const updated = mealDetail.ingredients.map((i, pos) =>
-      pos !== ingEditIdx ? i : {
-        ...i, amount: newAmt,
-        nutrition: {
-          calories: r1(i.nutrition.calories * scale),
-          protein:  r1(i.nutrition.protein * scale),
-          carbs:    r1(i.nutrition.carbs * scale),
-          fat:      r1(i.nutrition.fat * scale),
-          fiber:    r1(i.nutrition.fiber * scale),
-          sugar:    r1(i.nutrition.sugar * scale),
-          salt:     r1((i.nutrition.salt ?? 0) * scale),
-        },
-      }
-    );
-    await saveMealPatch({ ingredients: updated });
-    setIngEditIdx(null);
-  };
-
-  const removeIngFromEdit = async () => {
-    if (!mealDetail || ingEditIdx === null) return;
-    const updated = mealDetail.ingredients.filter((_, i) => i !== ingEditIdx);
-    await saveMealPatch({ ingredients: updated });
-    loadMealThumbs(updated);
-    setIngEditIdx(null);
-  };
-
-  const confirmDeleteMealDetail = () => {
-    if (!mealDetail) return;
-    setConfirmModal({
-      title: 'Delete meal?',
-      message: `"${mealDetail.name}" will be permanently removed.`,
-      confirmLabel: 'Delete',
-      danger: true,
-      onConfirm: async () => {
-        setConfirmModal(null);
-        await deleteMeal(mealDetail);
-        setNewMealDraftId(null);
-        setMealDetail(null);
-      },
-    });
-  };
 
   const dayTotals = (day: FavouriteDay) => ({
     kcal:  Math.round(day.snapshot_json.reduce((s, e) => s + (e.calories ?? 0), 0)),
@@ -1119,7 +861,7 @@ export default function FavouritesScreen() {
                       <Swipeable key={meal.id} renderRightActions={renderMealDelete} overshootRight={false}>
                       <TouchableOpacity
                         style={mc.card}
-                        onPress={() => openMealDetail(meal)}
+                        onPress={() => router.push(`/(client)/meal/${meal.id}` as any)}
                         activeOpacity={0.85}
                       >
                         <View style={mc.thumb}>
@@ -1496,299 +1238,12 @@ export default function FavouritesScreen() {
       </Modal>
 
       {/* ── Toasts ──────────────────────────────────────────────────── */}
-      {(mealToast || dayToast || foodToast) && (
+      {(dayToast || foodToast) && (
         <View style={s.toast} pointerEvents="none">
-          <Text style={s.toastText}>{mealToast ?? dayToast ?? foodToast}</Text>
+          <Text style={s.toastText}>{dayToast ?? foodToast}</Text>
         </View>
       )}
 
-      {/* ── Meal Detail Modal ───────────────────────────────────────── */}
-      {/* ── Meal Detail (absolute-positioned, avoids iOS modal stacking) ── */}
-      {mealDetail && (() => {
-        const { kcal, pro, carbs, fat } = mealTotals(mealDetail);
-        return (
-          <View style={[StyleSheet.absoluteFillObject, { zIndex: 10, backgroundColor: BG }]}>
-            {/* Header */}
-            <View style={{ backgroundColor: HEADER, paddingTop: insets.top }}>
-              <View style={{ height: 62, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16 }}>
-                <TouchableOpacity style={{ width: 52 }} onPress={closeMealDetail} hitSlop={8}>
-                  <SymbolView name="chevron.left" size={22} tintColor="rgba(255,255,255,0.85)" />
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={{ flex: 1, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 6 }}
-                  onPress={() => openNameSheet(false)}
-                  activeOpacity={0.8}
-                >
-                  <Text
-                    style={{ fontSize: 18, fontWeight: '700', color: mealDetail.name.trim() ? '#fff' : 'rgba(255,255,255,0.5)' }}
-                    numberOfLines={1}
-                  >
-                    {mealDetail.name.trim() ? mealDetail.name : 'Name your meal'}
-                  </Text>
-                  <SymbolView name="pencil" size={13} tintColor="rgba(255,255,255,0.6)" />
-                </TouchableOpacity>
-                <View style={{ width: 52 }} />
-              </View>
-            </View>
-
-              <ScrollView
-                style={{ flex: 1 }}
-                contentContainerStyle={{ paddingBottom: insets.bottom + 80 }}
-                showsVerticalScrollIndicator={false}
-                keyboardShouldPersistTaps="handled"
-              >
-                {/* Cover photo with camera badge */}
-                <View style={md.coverWrap}>
-                  {mealDetail.cover_photo_url ? (
-                    <Image source={{ uri: mealDetail.cover_photo_url }} style={md.coverImage} resizeMode="cover" />
-                  ) : (
-                    <LinearGradient colors={['#2e4288', '#1d2d6a']} style={[md.coverImage, { alignItems: 'center', justifyContent: 'center' }]}>
-                      <SymbolView name="fork.knife" size={48} tintColor="rgba(255,255,255,0.45)" />
-                    </LinearGradient>
-                  )}
-                  <TouchableOpacity style={md.cameraBadge} onPress={pickMealCover}>
-                    {uploadingCover
-                      ? <ActivityIndicator color="#fff" size="small" />
-                      : <SymbolView name="camera.fill" size={14} tintColor="#fff" />
-                    }
-                  </TouchableOpacity>
-                </View>
-
-                {/* Nutrition strip */}
-                <View style={md.nutritionCard}>
-                  <View style={md.nutriCell}>
-                    <Text style={md.nutriVal}>{kcal}</Text>
-                    <Text style={md.nutriLabel}>kcal</Text>
-                  </View>
-                  <View style={md.nutriDivider} />
-                  <View style={md.nutriCell}>
-                    <Text style={[md.nutriVal, { color: '#378ADD' }]}>{pro}g</Text>
-                    <Text style={md.nutriLabel}>Protein</Text>
-                  </View>
-                  <View style={md.nutriDivider} />
-                  <View style={md.nutriCell}>
-                    <Text style={[md.nutriVal, { color: '#EF9F27' }]}>{carbs}g</Text>
-                    <Text style={md.nutriLabel}>Carbs</Text>
-                  </View>
-                  <View style={md.nutriDivider} />
-                  <View style={md.nutriCell}>
-                    <Text style={[md.nutriVal, { color: '#D85A30' }]}>{fat}g</Text>
-                    <Text style={md.nutriLabel}>Fat</Text>
-                  </View>
-                </View>
-
-                {/* Ingredients */}
-                <View style={md.section}>
-                  <View style={md.sectionLabelRow}>
-                    <Text style={md.sectionLabel}>INGREDIENTS</Text>
-                    <Text style={md.sectionCount}>{mealDetail.ingredients.length}</Text>
-                  </View>
-                  {mealDetail.ingredients.map((ing, idx) => {
-                    const thumbUrl = (ing.source && ing.sourceId)
-                      ? mealThumbMap.get(`${ing.source}:${ing.sourceId}`) ?? null
-                      : null;
-                    const displayName = ingDisplayName(ing);
-                    const renderRemove = () => (
-                      <TouchableOpacity style={md.swipeRemove} onPress={() => removeIngredient(idx)} activeOpacity={0.8}>
-                        <SymbolView name="trash.fill" size={18} tintColor="#fff" />
-                        <Text style={md.swipeRemoveText}>Remove</Text>
-                      </TouchableOpacity>
-                    );
-                    return (
-                      <Swipeable key={idx} renderRightActions={renderRemove} overshootRight={false}>
-                        <TouchableOpacity style={md.ingRow} onPress={() => openIngEdit(idx)} activeOpacity={0.8}>
-                          <View style={md.ingThumbWrap}>
-                            {thumbUrl ? (
-                              <Image source={{ uri: thumbUrl }} style={md.ingThumb} resizeMode="cover" />
-                            ) : (
-                              <Text style={md.ingThumbEmoji}>🍏</Text>
-                            )}
-                          </View>
-                          <View style={md.ingText}>
-                            <View style={md.ingNameRow}>
-                              <Text style={md.ingName} numberOfLines={1}>{displayName}</Text>
-                              <Text style={md.ingKcal}>{Math.round(ing.nutrition.calories)} kcal</Text>
-                            </View>
-                            <Text style={md.ingMeta}>
-                              {ing.amount}{ing.unit}
-                              {(ing.nutrition.protein > 0 || ing.nutrition.carbs > 0 || ing.nutrition.fat > 0)
-                                ? `  P ${ing.nutrition.protein.toFixed(1)}  C ${ing.nutrition.carbs.toFixed(1)}  F ${ing.nutrition.fat.toFixed(1)}`
-                                : ''}
-                            </Text>
-                          </View>
-                        </TouchableOpacity>
-                      </Swipeable>
-                    );
-                  })}
-                  <TouchableOpacity style={md.addFoodBtn} onPress={() => setAddFoodVisible(true)} activeOpacity={0.8}>
-                    <SymbolView name="plus" size={14} tintColor={ACCENT} />
-                    <Text style={md.addFoodText}>Add food</Text>
-                  </TouchableOpacity>
-                </View>
-
-                {/* Notes */}
-                <View style={[md.section, { marginBottom: 4 }]}>
-                  <Text style={[md.sectionLabel, { marginBottom: 8 }]}>NOTES</Text>
-                  <TouchableOpacity
-                    style={mealDetail.notes ? md.notesBox : md.notesEmptyBox}
-                    onPress={() => { setNotesText(mealDetail.notes ?? ''); setNotesModal(true); }}
-                    activeOpacity={0.75}
-                  >
-                    {mealDetail.notes
-                      ? <Text style={md.notesText}>{mealDetail.notes}</Text>
-                      : <Text style={md.notesEmpty}>Tap to add a note…</Text>
-                    }
-                  </TouchableOpacity>
-                </View>
-
-                {/* Share with */}
-                <View style={[md.section, { marginTop: 24 }]}>
-                  <Text style={[md.sectionLabel, { marginBottom: 12 }]}>SHARE WITH</Text>
-                  <View style={md.visRow}>
-                    {([
-                      { key: 'private', label: 'No one',     icon: 'lock.fill' },
-                      { key: 'trainer', label: 'My trainer', icon: 'person.badge.shield.checkmark.fill' },
-                      { key: 'clients', label: 'My clients', icon: 'person.2.fill' },
-                    ] as const).map(opt => {
-                      const active = (mealDetail.visibility ?? 'private') === opt.key;
-                      return (
-                        <TouchableOpacity
-                          key={opt.key}
-                          style={[md.visPill, active && md.visPillActive]}
-                          onPress={() => saveVisibility(opt.key)}
-                          activeOpacity={0.8}
-                        >
-                          <SymbolView name={opt.icon} size={13} tintColor={active ? '#fff' : MUTED} />
-                          <Text style={[md.visText, active && md.visTextActive]}>{opt.label}</Text>
-                        </TouchableOpacity>
-                      );
-                    })}
-                  </View>
-                </View>
-
-                {/* Save meal — finishes & keeps the meal (names it first if blank) */}
-                <TouchableOpacity style={md.saveBtn} onPress={closeMealDetail} activeOpacity={0.85}>
-                  <SymbolView name="checkmark" size={16} tintColor="#fff" />
-                  <Text style={md.saveBtnText}>Save meal</Text>
-                </TouchableOpacity>
-
-                {/* Log this meal — copies it into today's food diary */}
-                <TouchableOpacity
-                  style={md.logBtn}
-                  onPress={() => { setLogMealDate(new Date()); setLogMealCat('lunch'); setLogMealModal(mealDetail); }}
-                  activeOpacity={0.85}
-                >
-                  <SymbolView name="plus" size={16} tintColor={ACCENT} />
-                  <Text style={md.logBtnText}>Log this meal</Text>
-                </TouchableOpacity>
-
-                {/* Delete meal */}
-                <TouchableOpacity style={md.deleteBtn} onPress={confirmDeleteMealDetail} activeOpacity={0.85}>
-                  <SymbolView name="trash" size={15} tintColor="#e05555" />
-                  <Text style={md.deleteBtnText}>Delete meal</Text>
-                </TouchableOpacity>
-              </ScrollView>
-
-              {/* ── Notes overlay ── */}
-              {notesModal && (
-                <KeyboardAvoidingView
-                  style={[StyleSheet.absoluteFillObject, { zIndex: 20, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center' }]}
-                  behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-                  pointerEvents="box-none"
-                >
-                  <Pressable style={StyleSheet.absoluteFillObject} onPress={() => setNotesModal(false)} />
-                  <View style={[s.modal, { zIndex: 1 }]}>
-                    <Text style={s.modalTitle}>Notes</Text>
-                    <TextInput
-                      style={s.notesInput}
-                      value={notesText}
-                      onChangeText={setNotesText}
-                      placeholder="Add a note…"
-                      placeholderTextColor={MUTED}
-                      multiline
-                      numberOfLines={4}
-                      autoFocus
-                    />
-                    <TouchableOpacity style={s.confirmBtn} onPress={saveNotes}>
-                      <Text style={s.confirmBtnText}>Save</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity style={{ marginTop: 8, alignSelf: 'center' }} onPress={() => setNotesModal(false)}>
-                      <Text style={{ fontSize: 14, color: MUTED }}>Cancel</Text>
-                    </TouchableOpacity>
-                  </View>
-                </KeyboardAvoidingView>
-              )}
-
-              {/* ── Ingredient edit overlay ── */}
-              {ingEditIdx !== null && (() => {
-                const ing     = mealDetail.ingredients[ingEditIdx];
-                const newAmt  = parseFloat(ingEditAmount) || 0;
-                const scale   = (newAmt > 0 && ing.amount > 0) ? newAmt / ing.amount : 0;
-                const preview = {
-                  kcal:  scale > 0 ? Math.round(ing.nutrition.calories * scale) : 0,
-                  pro:   scale > 0 ? (ing.nutrition.protein * scale).toFixed(1) : '0',
-                  carbs: scale > 0 ? (ing.nutrition.carbs * scale).toFixed(1) : '0',
-                  fat:   scale > 0 ? (ing.nutrition.fat * scale).toFixed(1) : '0',
-                };
-                return (
-                  <KeyboardAvoidingView
-                    style={[StyleSheet.absoluteFillObject, { zIndex: 20, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center' }]}
-                    behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-                    pointerEvents="box-none"
-                  >
-                    <Pressable style={StyleSheet.absoluteFillObject} onPress={() => setIngEditIdx(null)} />
-                    <View style={[s.modal, { zIndex: 1 }]}>
-                      <Text style={s.modalTitle} numberOfLines={2}>{ingDisplayName(ing)}</Text>
-                      <View style={s.editAmountRow}>
-                        <TextInput
-                          style={s.editAmountInput}
-                          value={ingEditAmount}
-                          onChangeText={setIngEditAmount}
-                          keyboardType="decimal-pad"
-                          autoFocus
-                          selectTextOnFocus
-                        />
-                        <Text style={s.editUnit}>{ing.unit}</Text>
-                      </View>
-                      <View style={s.editNutrRow}>
-                        {[
-                          { val: preview.kcal, label: 'kcal', color: TEXT },
-                          { val: preview.pro,  label: 'protein', color: '#378ADD' },
-                          { val: preview.carbs,label: 'carbs', color: '#EF9F27' },
-                          { val: preview.fat,  label: 'fat',  color: '#D85A30' },
-                        ].map(c => (
-                          <View key={c.label} style={s.editNutrCell}>
-                            <Text style={[s.editNutrVal, { color: c.color }]}>{c.val}</Text>
-                            <Text style={s.editNutrLabel}>{c.label}</Text>
-                          </View>
-                        ))}
-                      </View>
-                      <TouchableOpacity style={[s.confirmBtn, newAmt <= 0 && { opacity: 0.4 }]} onPress={saveIngEdit} disabled={newAmt <= 0}>
-                        <Text style={s.confirmBtnText}>Update</Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity style={{ marginTop: 8, alignSelf: 'center' }} onPress={() => setIngEditIdx(null)}>
-                        <Text style={{ fontSize: 14, color: MUTED }}>Cancel</Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity style={s.editDeleteBtn} onPress={removeIngFromEdit}>
-                        <SymbolView name="trash" size={13} tintColor="#e05555" />
-                        <Text style={s.editDeleteText}>Remove from meal</Text>
-                      </TouchableOpacity>
-                    </View>
-                  </KeyboardAvoidingView>
-                );
-              })()}
-            </View>
-          );
-        })()}
-
-      {/* ── FoodSearchModal ──────────────────────────────────────────── */}
-      <FoodSearchModal
-        visible={addFoodVisible}
-        onClose={() => setAddFoodVisible(false)}
-        clientId={clientId}
-        mealLabel="Meal"
-        onConfirm={addIngredient}
-      />
 
       {/* ── Add favourite food to log (same portion sheet as the Food Log) ── */}
       <EditPortionSheet
@@ -1823,84 +1278,6 @@ export default function FavouritesScreen() {
         }
       />
 
-      {/* ── Name your meal (slide-up sheet, matches other tabs) ───────── */}
-      {renameModal && mealDetail && (
-        <BottomSheet onClose={cancelNameSheet} avoidKeyboard>
-          {close => (
-            <View style={{ paddingHorizontal: 20 }}>
-              <Text style={[s.modalTitle, { marginBottom: 14 }]}>
-                {mealDetail.name.trim() ? 'Rename meal' : 'Name your meal'}
-              </Text>
-              <TextInput
-                style={s.renameInput}
-                value={renameText}
-                onChangeText={setRenameText}
-                placeholder="Meal name…"
-                placeholderTextColor={MUTED}
-                autoFocus
-                returnKeyType="done"
-                onSubmitEditing={saveRename}
-              />
-              <TouchableOpacity
-                style={[s.confirmBtn, !renameText.trim() && { opacity: 0.5 }]}
-                onPress={saveRename}
-                disabled={!renameText.trim()}
-                activeOpacity={0.8}
-              >
-                <Text style={s.confirmBtnText}>Save</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={{ marginTop: 8, alignSelf: 'center', paddingVertical: 6 }} onPress={() => close()}>
-                <Text style={{ fontSize: 14, color: MUTED }}>Cancel</Text>
-              </TouchableOpacity>
-            </View>
-          )}
-        </BottomSheet>
-      )}
-
-
-      {/* ── Log Meal Modal ──────────────────────────────────────────── */}
-      <Modal visible={!!logMealModal} transparent animationType="fade" onRequestClose={() => setLogMealModal(null)}>
-        <Pressable style={s.overlay} onPress={() => setLogMealModal(null)}>
-          <Pressable style={s.modal} onPress={() => {}}>
-            <Text style={s.modalTitle}>Log: {logMealModal?.name}</Text>
-            <Text style={s.modalSub}>{logMealModal?.ingredients.length} items</Text>
-
-            <Text style={s.fieldLabel}>Date</Text>
-            <View style={s.datePicker}>
-              <TouchableOpacity onPress={() => setLogMealDate(d => addDays(d, -1))} hitSlop={8} style={s.dateArrow}>
-                <SymbolView name="chevron.left" size={18} tintColor={HEADER} />
-              </TouchableOpacity>
-              <Text style={s.dateLabel}>{formatDateLabel(logMealDate)}</Text>
-              <TouchableOpacity onPress={() => setLogMealDate(d => addDays(d, 1))} hitSlop={8} style={s.dateArrow}>
-                <SymbolView name="chevron.right" size={18} tintColor={HEADER} />
-              </TouchableOpacity>
-            </View>
-
-            <Text style={[s.fieldLabel, { marginTop: 12 }]}>Meal</Text>
-            <View style={s.catRow}>
-              {MEAL_CATS.map(cat => (
-                <TouchableOpacity
-                  key={cat.key}
-                  style={[s.catPill, logMealCat === cat.key && s.catPillActive]}
-                  onPress={() => setLogMealCat(cat.key)}
-                >
-                  <Text style={[s.catPillText, logMealCat === cat.key && s.catPillTextActive]}>{cat.label}</Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-
-            <TouchableOpacity
-              style={[s.confirmBtn, loggingMeal && { opacity: 0.5 }]}
-              onPress={logMeal} disabled={loggingMeal} activeOpacity={0.8}
-            >
-              <Text style={s.confirmBtnText}>{loggingMeal ? 'Logging…' : 'Log meal'}</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={{ marginTop: 8, alignSelf: 'center' }} onPress={() => setLogMealModal(null)}>
-              <Text style={{ fontSize: 14, color: MUTED }}>Cancel</Text>
-            </TouchableOpacity>
-          </Pressable>
-        </Pressable>
-      </Modal>
 
       {/* ── Use Day Modal ───────────────────────────────────────────── */}
       <Modal visible={!!useDayModal} transparent animationType="fade" onRequestClose={() => setUseDayModal(null)}>
@@ -1980,26 +1357,23 @@ export default function FavouritesScreen() {
         </Pressable>
       </Modal>
 
-      {/* Glass header — hidden while the full-screen meal editor is open (that
-          overlay has its own header). */}
-      {!mealDetail && (
-        <LightHeader
-          left={
-            <HeaderIcon
-              onPress={() => {
-                // In insert mode the user came straight from the Food Log FAB → return there.
-                if (foodSelectMode) { exitFoodSelect(); return; }
-                if (isInsertMode) { router.navigate('/(client)/nutrition' as any); return; }
-                view === 'landing' ? smartBack(router) : setView('landing');
-              }}
-            >
-              <SymbolView name="chevron.left" size={24} tintColor={HEADER_ICON} weight="semibold" />
-            </HeaderIcon>
-          }
-          title={headerTitle}
-          right={<HeaderIcon onPress={() => router.navigate('/(client)' as any)}><VFIcon size={26} color={HEADER_ICON} /></HeaderIcon>}
-        />
-      )}
+      {/* Glass header */}
+      <LightHeader
+        left={
+          <HeaderIcon
+            onPress={() => {
+              // In insert mode the user came straight from the Food Log FAB → return there.
+              if (foodSelectMode) { exitFoodSelect(); return; }
+              if (isInsertMode) { router.navigate('/(client)/nutrition' as any); return; }
+              view === 'landing' ? smartBack(router) : setView('landing');
+            }}
+          >
+            <SymbolView name="chevron.left" size={24} tintColor={HEADER_ICON} weight="semibold" />
+          </HeaderIcon>
+        }
+        title={headerTitle}
+        right={<HeaderIcon onPress={() => router.navigate('/(client)' as any)}><VFIcon size={26} color={HEADER_ICON} /></HeaderIcon>}
+      />
     </View>
   );
 }
@@ -2117,85 +1491,6 @@ const mc = StyleSheet.create({
 });
 
 // ─── Meal detail styles ───────────────────────────────────────────────────────
-const md = StyleSheet.create({
-  root:   { flex: 1, backgroundColor: BG },
-  // Header extends into status bar — paddingTop set inline from insets
-  header: { backgroundColor: HEADER, paddingHorizontal: 16, paddingBottom: 0 },
-  hdrRow: { flexDirection: 'row', alignItems: 'center' },
-  hdrSide:  { width: 52, justifyContent: 'center' },
-  hdrTitle: { flex: 1, fontSize: 18, fontWeight: '700', color: '#fff', textAlign: 'center' },
-
-  coverWrap:   { width: '100%', height: 200, backgroundColor: '#1d2d6a', overflow: 'hidden' },
-  coverImage:  { width: '100%', height: '100%' },
-  cameraBadge: {
-    position: 'absolute', bottom: 10, right: 10,
-    width: 32, height: 32, borderRadius: 16,
-    backgroundColor: 'rgba(0,0,0,0.55)',
-    alignItems: 'center', justifyContent: 'center',
-  },
-
-  nutritionCard: {
-    flexDirection: 'row', backgroundColor: CARD, marginHorizontal: 16, marginTop: 16,
-    borderRadius: 14,
-    shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 8, elevation: 3,
-    overflow: 'hidden',
-  },
-  nutriCell:    { flex: 1, alignItems: 'center', paddingVertical: 14 },
-  nutriDivider: { width: 1, backgroundColor: BORDER, marginVertical: 10 },
-  nutriVal:     { fontSize: 17, fontWeight: '700', color: TEXT },
-  nutriLabel:   { fontSize: 10, color: MUTED, marginTop: 2 },
-
-  section:         { marginHorizontal: 16, marginTop: 20 },
-  sectionLabelRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 10 },
-  sectionLabel:    { fontSize: 11, fontWeight: '700', color: MUTED, letterSpacing: 0.5, textTransform: 'uppercase' },
-  sectionCount:    { fontSize: 11, fontWeight: '700', color: MUTED },
-
-  ingRow:     {
-    flexDirection: 'row', alignItems: 'center', backgroundColor: CARD,
-    borderRadius: 12,
-    marginBottom: 8, overflow: 'hidden',
-    shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.04, shadowRadius: 4, elevation: 2,
-  },
-  ingThumbWrap: { width: 52, height: 52, borderRadius: 0, backgroundColor: '#f0f7f4', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', flexShrink: 0 },
-  ingThumb:     { width: 52, height: 52 },
-  ingThumbEmoji:{ fontSize: 24 },
-  ingText:    { flex: 1, paddingHorizontal: 10, paddingVertical: 8 },
-  ingNameRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 3 },
-  ingName:    { flex: 1, fontSize: 13, fontWeight: '600', color: TEXT, marginRight: 8 },
-  ingKcal:    { fontSize: 11, fontWeight: '600', color: '#3a7d6b' },
-  ingMeta:    { fontSize: 11, color: MUTED },
-  ingRemove:  { paddingHorizontal: 12, alignSelf: 'stretch', alignItems: 'center', justifyContent: 'center' },
-
-  addFoodBtn: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
-    borderRadius: 12, borderWidth: 1.5, borderColor: ACCENT,
-    paddingVertical: 11, marginTop: 4,
-  },
-  addFoodText: { fontSize: 14, fontWeight: '600', color: ACCENT },
-
-  notesBox:     { backgroundColor: CARD, borderRadius: 12, padding: 12, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.06, shadowRadius: 6, elevation: 2 },
-  notesEmptyBox:{ backgroundColor: CARD, borderRadius: 12, padding: 12, opacity: 0.7, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.06, shadowRadius: 6, elevation: 2 },
-  notesText:    { fontSize: 14, color: TEXT, lineHeight: 20 },
-  notesEmpty:   { fontSize: 13, color: MUTED, fontStyle: 'italic' },
-
-  visRow:       { flexDirection: 'row', gap: 8, flexWrap: 'wrap' },
-  visPill:      { flexDirection: 'row', alignItems: 'center', gap: 5, borderRadius: 100, backgroundColor: '#fff', paddingHorizontal: 12, paddingVertical: 7, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 3, elevation: 1 },
-  visPillActive:{ backgroundColor: ACCENT },
-  visText:      { fontSize: 13, fontWeight: '600', color: MUTED },
-  visTextActive:{ color: '#fff' },
-
-  saveBtn:       { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: ACCENT, borderRadius: 100, paddingVertical: 14, marginHorizontal: 16, marginTop: 24 },
-  saveBtnText:   { fontSize: 15, fontWeight: '700', color: '#fff' },
-  logBtn:        { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: 'transparent', borderWidth: 1.5, borderColor: ACCENT, borderRadius: 100, paddingVertical: 13, marginHorizontal: 16, marginTop: 10 },
-  logBtnText:    { fontSize: 15, fontWeight: '700', color: ACCENT },
-  deleteBtn:     { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: '#fdecec', borderRadius: 100, paddingVertical: 13, marginHorizontal: 16, marginTop: 10 },
-  deleteBtnText: { fontSize: 15, fontWeight: '700', color: '#e05555' },
-  deleteLink:    { alignSelf: 'center', marginTop: 16 },
-  deleteLinkText:{ fontSize: 14, color: '#e05555' },
-
-  swipeRemove:     { width: 80, backgroundColor: '#e05555', alignItems: 'center', justifyContent: 'center', gap: 4, borderTopRightRadius: 12, borderBottomRightRadius: 12, marginBottom: 8 },
-  swipeRemoveText: { fontSize: 11, fontWeight: '700', color: '#fff' },
-});
 
 // ─── Favourite food styles ────────────────────────────────────────────────────
 const ff = StyleSheet.create({
