@@ -61,7 +61,7 @@ The old heavy dark-green (`#244e43`) 62px header + flat welded bottom tab bar ar
 - **`components/LightHeader.tsx`** — a light glass header floating over the page (content scrolls under it). It uses a **gradient-masked progressive blur** (`@react-native-masked-view/masked-view`) so the blur fades to nothing with no visible bottom edge — the WhatsApp seamless look. Bare brand-green glyphs (no chip circles); black status-bar clock.
 - **Tab bar = the REAL native iOS tab bar** (`NativeTabs` from `expo-router/unstable-native-tabs`, backed by `react-native-screens`). The custom JS `components/FloatingTabBar.tsx` was **abandoned** (a JS bar can't do Apple's vibrancy) and is retained only for its `useTabBarHeight()` hook. The native bar gives real iOS 26 Liquid Glass + the morphing selection + vibrancy for free; Apple controls styling (green `tintColor`, SF Symbols). No center "+" (add actions are contextual).
 - **Native modules** (native `NativeTabs`/`react-native-screens`, `@react-native-masked-view/masked-view`) mean the glass + masked blur require a **fresh iOS-26 native build** — JS-only tweaks hot-reload, these do not. Expo Go shows an opaque fallback bar; judge nav only in a real build.
-- **Rollout:** ✅ **entire client side done** — main tabs + 5 training sub-screens + all client nutrition (Food Log / Favourites / Weekly / Grocery → `NativeTabs`; headers → `LightHeader`; recipe detail/create + meal editor as `(client)` stack routes). The **Workouts / Routines "See all" lists keep the native bottom bar** — the Training tab is a nested-stack folder (`(tabs)/train/index.tsx` + `train/all-workouts.tsx` + `train/all-routines.tsx` + `train/_layout.tsx` Stack), so those two lists are pushable screens *inside* the tab (bar stays); opening a workout (session-intro/Do Mode, `(client)` stack routes above the tabs) hides it. ⏳ **Next: the trainer side** (5-tab bar → `NativeTabs`), then retire `FloatingTabBar`. Do Mode / Exercise Detail / Session Intro / client Home keep their own designs.
+- **Rollout:** ✅ **entire client side done** — main tabs + 5 training sub-screens + all client nutrition (Food Log / Favourites / Weekly / Grocery → `NativeTabs`; headers → `LightHeader`; recipe detail/create + meal editor as `(client)` stack routes). The **Workouts / Routines "See all" lists keep the native bottom bar** — the Training tab is a nested-stack folder (`(tabs)/train/index.tsx` + `train/all-workouts.tsx` + `train/all-routines.tsx` + `train/_layout.tsx` Stack), so those two lists are pushable screens *inside* the tab (bar stays); opening a workout (session-intro/Do Mode, `(client)` stack routes above the tabs) hides it. ✅ **Trainer bottom bar → `NativeTabs`** (5 triggers, ACCENT-green tint) + `useTabBarHeight()` bottom padding across all 5 tab screens. ✅ **Trainer client-detail header → `LightHeader solid`** with a pinned **underline** main-tab switcher + `GlassToggle` sub-tabs (see Client Profile below). ⏳ **Next: migrate the 5 trainer tab-screen headers** (clients/schedule/library/finance/account) to `LightHeader`, then retire `FloatingTabBar`. Do Mode / Exercise Detail / Session Intro / client Home keep their own designs.
 - **The key layout rules for glass screens (two hard-won ones):** (1) **Use a plain `<View>` root, NEVER `<SafeAreaView>`** — under `NativeTabs`, `SafeAreaView` (even `edges={[]}`) injects a phantom top inset that pushes content too low (this was the real cause of the Progress/Me "content too low" bug; `train`/`schedule` use plain `View` and are correct). Pad `paddingTop: useHeaderHeight()` / `paddingBottom: useTabBarHeight()`. (2) **To give a native-tab screen deeper pushable sub-screens that keep the bar, make the tab a FOLDER with its own `_layout` Stack** — you CANNOT `router.push` to a hidden `NativeTabs.Trigger` (silent no-op), so hidden-trigger + push does not work for reachable deep screens.
 
 ### Button system
@@ -801,21 +801,19 @@ Dark green header: **VF logo left** (TrainerLogoButton — tappable, shows Notif
 
 ---
 
-#### Client Profile (4 tabs)
+#### Client Profile (5 tabs)
 
 **Layout:**
-- Dark green header: client name centred, back chevron left, **+ button right** (plain white `+` text, no circle). Opens an **"Add Session"** white centered modal that mirrors the week-strip + menu, defaulting every action to **today** (July 2026 — previously it navigated straight to the builder): Create new workout · Add workout to this day (→ Workouts Library picker, date=today) · Plan a workout (shared `PlanWorkoutFlow`, scheduled to today) · Continue routine (if an active routine exists) · Start Free Session.
-- Tab bar (Training / Nutrition / Progress / Info) sits directly on the #faf9f7 background immediately below the header
-- Default tab on open: **Training**
-- Tab labels are muted grey (13px, weight 600); active tab label is accent green (#24ac88) with a 2px accent underline indicator. Tab bar background is #faf9f7 (not white).
+- **Header = `LightHeader solid`** (July 2026 — migrated from the old dark-green `SafeAreaView` bar): back chevron left · client name centred · **+ button right** (plain green `+`). Opaque (`solid`) because the dense week-strip ghosted through the translucent glass. `StatusBar dark-content`, root bg #faf9f7. Session-timer indicator lives in the header `overlay` slot. The + opens an **"Add Session"** slide-up `BottomSheet` (mirrors the week-strip + menu, defaults every action to **today**): Create new workout · Add workout to this day (→ Workouts Library picker, date=today) · Plan a workout (shared `PlanWorkoutFlow`, scheduled to today) · Continue routine (if an active routine exists) · Start Free Session.
+- **Tab nav = a pinned `TabPillSwitcher`** (**Training / Sessions / Nutrition / Progress / Info**) sitting just below the solid header on #faf9f7; tab content scrolls under it. **Sessions is its own top-level tab** (July 2026 — the old Training/Sessions toggle inside the Training tab was removed). Default tab on open: **Training**.
+- **Main tabs = a plain UNDERLINE switcher** (July 2026 round-3): active tab = accent-green text (#24ac88) + 2px accent underline under the label, inactive = black. (Briefly a sliding Liquid-Glass pill; removed as too heavy for a 5-item primary row.)
+- **Sub-tab switchers (Nutrition Planning/Overview, Progress Body-composition/Strength) = a `GlassToggle`** — a compact segmented switcher with a faint frosted track + a sliding **real Liquid Glass** pill (frosted-white fallback off iOS 26). Two-level hierarchy: underline = primary, glass toggle = secondary. **Trainer side only** — the client-side Progress screen keeps its underline sub-switcher (`variant="client"`).
 
 ---
 
 ##### Training tab
 
-The training tab contains programme and session content, switchable via a segmented control at the top.
-
-**Segmented switcher (top of tab):** Type 1 switcher — Training | Sessions. Default: Training. Uses the same style as Finance tab (Invoices/Earnings) and Progress tab (Body composition/Strength).
+The training tab contains programme content. **(July 2026: Sessions is now its own top-level tab — the old Training | Sessions segmented control inside this tab was removed; `SessionsTab` renders directly at `activeTab === 'sessions'`.)**
 
 ---
 

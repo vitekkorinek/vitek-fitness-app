@@ -39,16 +39,36 @@ export function useHeaderHeight() {
 }
 
 export function LightHeader({
-  left, title, right, overlay,
+  left, title, right, overlay, solid,
 }: {
   left?: ReactNode;
   title: string;
   right?: ReactNode;
   overlay?: ReactNode;
+  /** Opaque light header (no see-through glass) — content is hidden cleanly behind
+   *  it instead of ghosting through the blur. Use when dense content scrolls under
+   *  the header and the translucent look reads as messy. */
+  solid?: boolean;
 }) {
   const insets = useSafeAreaInsets();
   const rowBottom = insets.top + HEADER_ROW_HEIGHT;
   const totalH = rowBottom + FADE_ZONE;
+
+  if (solid) {
+    return (
+      <View style={[lh.wrap, { height: rowBottom, backgroundColor: BG }]} pointerEvents="box-none">
+        {/* Row a touch shorter than the glass variant so the title sits slightly
+            higher (the solid header otherwise reads as sitting too low). */}
+        <View style={[lh.row, { marginTop: insets.top, height: HEADER_ROW_HEIGHT - 10 }]}>
+          <View style={lh.side}>{left}</View>
+          <Text style={lh.title} numberOfLines={1}>{title}</Text>
+          {overlay}
+          <View style={[lh.side, lh.right]}>{right}</View>
+        </View>
+      </View>
+    );
+  }
+
   return (
     <View style={[lh.wrap, { height: totalH }]} pointerEvents="box-none">
       {/* TRUE progressive blur (WhatsApp-style): a vertical gradient MASK is applied

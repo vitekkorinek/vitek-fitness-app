@@ -29,6 +29,7 @@ import { useFocusEffect } from 'expo-router';
 import { useAuth } from '@/context/AuthContext';
 import { supabase } from '@/lib/supabase';
 import { BottomSheet } from '@/components/BottomSheet';
+import { GlassToggle } from '@/components/GlassToggle';
 // uuid v14 requires crypto.getRandomValues which is not available in Hermes
 function newId(): string {
   return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
@@ -2319,14 +2320,24 @@ export default function ProgressTab({
 }: {
   clientId: string;
   client: User | null;
-  variant?: 'client';
+  variant?: 'client' | 'glass';
 }) {
   type SubTab = 'measurements' | 'strength';
   const [subTab, setSubTab] = useState<SubTab>('measurements');
 
   return (
     <View>
-      {variant === 'client' ? (
+      {variant === 'glass' ? (
+        <GlassToggle<SubTab>
+          options={[
+            { key: 'measurements', label: t.clientProfile.progress.subTabMeasurements },
+            { key: 'strength', label: t.clientProfile.progress.subTabStrength },
+          ]}
+          value={subTab}
+          onChange={setSubTab}
+          style={s.glassToggle}
+        />
+      ) : variant === 'client' ? (
         <View style={s.underlineTabBar}>
           {(['measurements', 'strength'] as SubTab[]).map(tab => (
             <TouchableOpacity
@@ -2367,6 +2378,7 @@ export default function ProgressTab({
 // ─── Shared styles ────────────────────────────────────────────────────────────
 
 const s = StyleSheet.create({
+  glassToggle: { marginBottom: 16 },
   subTabBar: {
     flexDirection: 'row', backgroundColor: '#d8d8d4', borderRadius: 100,
     padding: 3, marginBottom: 16,

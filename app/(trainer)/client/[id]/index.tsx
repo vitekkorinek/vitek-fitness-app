@@ -20,7 +20,7 @@ import {
 } from 'react-native';
 import { GestureDetector, Gesture, ScrollView } from 'react-native-gesture-handler';
 import { LinearGradient } from 'expo-linear-gradient';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { LightHeader, HeaderIcon, HEADER_ICON, useHeaderHeight } from '@/components/LightHeader';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { SymbolView } from 'expo-symbols';
 import Svg, { Circle as SvgCircle, Rect as SvgRect, Line as SvgLine, Path as SvgPath } from 'react-native-svg';
@@ -52,10 +52,27 @@ export default function ClientProfileScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const { profile } = useAuth();
+  const headerH = useHeaderHeight();
+  // The solid header's row is shorter than its reserved height, leaving dead space
+  // under the title. Pull the pinned switcher + content up so "Adam Test" sits
+  // tighter to the tabs and the content gets more room.
+  const segTop = headerH - 12;
   const { suspendedSession, clearSuspendedSession } = useSessionStore();
 
   const sessionActive = suspendedSession?.clientId === id;
   const [sessionElapsed, setSessionElapsed] = useState(0);
+
+  // Resume a suspended session (tapping the header timer indicator)
+  const resumeSession = () => {
+    if (!suspendedSession) return;
+    const { workoutId: suspWid, activeSessionId: suspSessId, startedAt: suspStart } = suspendedSession;
+    clearSuspendedSession();
+    const base = suspWid
+      ? `/(trainer)/client/${id}/workout/${suspWid}`
+      : `/(trainer)/client/${id}/workout/free`;
+    const params = suspSessId ? `?resumeSessionId=${suspSessId}&resumeStartedAt=${suspStart}` : '';
+    router.push(`${base}${params}` as any);
+  };
 
   useEffect(() => {
     if (!sessionActive || !suspendedSession) { setSessionElapsed(0); return; }
@@ -306,51 +323,7 @@ export default function ClientProfileScreen() {
 
   return (
     <View style={styles.root}>
-      <StatusBar barStyle="light-content" backgroundColor="#244e43" />
-
-      {/* Header */}
-      <SafeAreaView style={styles.headerSafe} edges={['top']}>
-        <View style={styles.headerBar}>
-          <TouchableOpacity onPress={() => router.back()} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-            <SymbolView name="chevron.left" size={20} tintColor="#ffffff" />
-          </TouchableOpacity>
-          {sessionActive ? (
-            <TouchableOpacity
-              style={{ flex: 1, alignItems: 'center', marginHorizontal: 8 }}
-              onPress={() => {
-                const { workoutId: suspWid, activeSessionId: suspSessId, startedAt: suspStart } = suspendedSession!;
-                clearSuspendedSession();
-                const base = suspWid
-                  ? `/(trainer)/client/${id}/workout/${suspWid}`
-                  : `/(trainer)/client/${id}/workout/free`;
-                const params = suspSessId
-                  ? `?resumeSessionId=${suspSessId}&resumeStartedAt=${suspStart}`
-                  : '';
-                router.push(`${base}${params}` as any);
-              }}
-              activeOpacity={0.75}
-              hitSlop={8}
-            >
-              <Text style={styles.headerTitle} numberOfLines={1}>
-                {client?.name ?? ''}{' '}
-                <Text style={styles.headerSessionTimer}>
-                  · {String(Math.floor(sessionElapsed / 60)).padStart(2, '0')}:{String(sessionElapsed % 60).padStart(2, '0')}
-                </Text>
-              </Text>
-            </TouchableOpacity>
-          ) : (
-            <Text style={styles.headerTitle} numberOfLines={1}>{client?.name ?? ''}</Text>
-          )}
-          <TouchableOpacity
-            style={styles.addButton}
-            onPress={() => setAddModal(true)}
-            activeOpacity={0.75}
-            hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
-          >
-            <Text style={styles.addButtonText}>＋</Text>
-          </TouchableOpacity>
-        </View>
-      </SafeAreaView>
+      <StatusBar barStyle="dark-content" />
 
       {loading ? (
         <View style={styles.loaderWrap}>
@@ -358,24 +331,13 @@ export default function ClientProfileScreen() {
         </View>
       ) : (
         <View style={styles.below}>
-          {/* Tab bar */}
-          <View style={styles.tabBar}>
-            {(['training', 'sessions', 'nutrition', 'progress', 'info'] as Tab[]).map(tab => (
-              <TouchableOpacity key={tab} style={styles.tabItem} onPress={() => setActiveTab(tab)} activeOpacity={0.7}>
-                <Text style={[styles.tabLabel, activeTab === tab && styles.tabLabelActive]}>
-                  {t.clientProfile.tabs[tab]}
-                </Text>
-                {activeTab === tab && <View style={styles.tabIndicator} />}
-              </TouchableOpacity>
-            ))}
-          </View>
-
-          {/* Tab content */}
+          {/* Tab content — scrolls UNDER the glass header + pinned pill switcher */}
           <ScrollView
             style={styles.scroll}
-            contentContainerStyle={styles.scrollContent}
+            contentContainerStyle={[styles.scrollContent, { paddingTop: segTop + SEG_STRIP_H + 12 }]}
+            scrollIndicatorInsets={{ top: segTop + SEG_STRIP_H }}
             showsVerticalScrollIndicator={false}
-            refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#24ac88" />}
+            refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#24ac88" progressViewOffset={segTop + SEG_STRIP_H} />}
           >
             {activeTab === 'training' && (
               <TrainingTab
@@ -407,6 +369,7 @@ export default function ClientProfileScreen() {
               <ProgressTab
                 clientId={id}
                 client={client}
+                variant="glass"
               />
             )}
             {activeTab === 'info' && (
@@ -451,8 +414,40 @@ export default function ClientProfileScreen() {
               />
             )}
           </ScrollView>
+
+          {/* Pinned section switcher — glass pill slides to the active tab; content
+              scrolls under it. */}
+          <TabPillSwitcher activeTab={activeTab} onChange={setActiveTab} top={segTop} />
         </View>
       )}
+
+      {/* Solid light header — rendered last so it overlays the (scrolling) content.
+          `solid` = opaque (not see-through): the dense week-strip below ghosted
+          through the glass, which read as messy. */}
+      <LightHeader
+        solid
+        left={
+          <HeaderIcon onPress={() => router.back()}>
+            <SymbolView name="chevron.left" size={24} tintColor={HEADER_ICON} weight="semibold" />
+          </HeaderIcon>
+        }
+        title={client?.name ?? ''}
+        right={
+          <HeaderIcon onPress={() => setAddModal(true)}>
+            <SymbolView name="plus" size={22} tintColor={HEADER_ICON} weight="semibold" />
+          </HeaderIcon>
+        }
+        overlay={
+          sessionActive ? (
+            <TouchableOpacity style={styles.hdrSessIndicator} onPress={resumeSession} hitSlop={12} activeOpacity={0.8}>
+              <SymbolView name="timer" size={13} tintColor={ACCENT} />
+              <Text style={styles.hdrSessTimer}>
+                {String(Math.floor(sessionElapsed / 60)).padStart(2, '0')}:{String(sessionElapsed % 60).padStart(2, '0')}
+              </Text>
+            </TouchableOpacity>
+          ) : null
+        }
+      />
 
       {/* ── Add Session modal (header +) — mirrors the week-strip +, defaults to today ── */}
       {addModal && (
@@ -4365,32 +4360,77 @@ const ACCENT = '#24ac88';
 const TEXT = '#1a1a1a';
 const MUTED = '#999';
 
-const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: HEADER },
+// Height (below the header) reserved for the pinned pill switcher — content
+// pads its top by `headerH + SEG_STRIP_H`.
+const SEG_STRIP_H = 50;
 
-  headerSafe: { backgroundColor: HEADER },
-  headerBar: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: 20, paddingVertical: 12,
+const PROFILE_TABS: Tab[] = ['training', 'sessions', 'nutrition', 'progress', 'info'];
+
+/**
+ * Pinned section switcher below the solid header — a plain UNDERLINE switcher (the
+ * primary level). The 5 titles are evenly spread; the active one gets an accent-green
+ * underline + accent text, inactive stay black. (Sub-tabs use a glass toggle instead,
+ * so the two levels read as clearly different.)
+ */
+function TabPillSwitcher({
+  activeTab, onChange, top,
+}: {
+  activeTab: Tab;
+  onChange: (t: Tab) => void;
+  top: number;
+}) {
+  return (
+    <View style={[styles.segStrip, { top }]}>
+      <View style={styles.segTrack}>
+        {PROFILE_TABS.map(tab => {
+          const on = activeTab === tab;
+          return (
+            <TouchableOpacity key={tab} style={styles.segItem} onPress={() => onChange(tab)} activeOpacity={0.7}>
+              <View style={[styles.segUnderline, on && styles.segUnderlineActive]}>
+                <Text style={[styles.segLabel, on && styles.segLabelActive]} numberOfLines={1}>
+                  {t.clientProfile.tabs[tab]}
+                </Text>
+              </View>
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  root: { flex: 1, backgroundColor: BG },
+
+  // Header session-timer indicator (glass-header overlay slot) — absolute so the
+  // centered title never shifts; sits just left of the + icon.
+  hdrSessIndicator: {
+    position: 'absolute', right: 62, top: 0, bottom: 0,
+    flexDirection: 'row', alignItems: 'center', gap: 4,
   },
-  headerTitle: { color: '#fff', fontSize: 17, fontWeight: '600', flex: 1, textAlign: 'center', marginHorizontal: 8 },
-  headerSessionTimer: { color: '#24ac88', fontSize: 14, fontWeight: '600', fontVariant: ['tabular-nums'] },
-  addButton: { padding: 8, alignItems: 'center', justifyContent: 'center' },
-  addButtonText: { color: '#fff', fontSize: 24, lineHeight: 26, fontWeight: '300' },
+  hdrSessTimer: { fontSize: 11, fontWeight: '700', color: ACCENT, fontVariant: ['tabular-nums'] },
 
   loaderWrap: { flex: 1, backgroundColor: BG, alignItems: 'center', justifyContent: 'center' },
 
   below: { flex: 1, backgroundColor: BG },
 
-  // Tab bar
-  tabBar: {
-    flexDirection: 'row', backgroundColor: BG,
-    borderBottomWidth: 1, borderBottomColor: BORDER,
+  // Pinned underline switcher (below the solid header). The active tab gets an
+  // accent underline; sits a touch lower than the header for breathing room.
+  segStrip: {
+    position: 'absolute', left: 0, right: 0,
+    backgroundColor: BG, paddingHorizontal: 8, paddingTop: 14, paddingBottom: 8,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.05, shadowRadius: 5, elevation: 2,
+    zIndex: 50,
   },
-  tabItem: { flex: 1, alignItems: 'center', paddingVertical: 12, position: 'relative' },
-  tabLabel: { fontSize: 12, fontWeight: '600', color: MUTED },
-  tabLabelActive: { color: ACCENT },
-  tabIndicator: { position: 'absolute', bottom: 0, left: 12, right: 12, height: 2, backgroundColor: ACCENT, borderRadius: 1 },
+  segTrack: {
+    flexDirection: 'row',
+  },
+  segItem: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  // Underline sits under the text only (inner view hugs the label), not the full cell.
+  segUnderline: { paddingBottom: 7, borderBottomWidth: 2, borderBottomColor: 'transparent' },
+  segUnderlineActive: { borderBottomColor: ACCENT },
+  segLabel: { fontSize: 14, fontWeight: '600', color: TEXT },
+  segLabelActive: { color: ACCENT, fontWeight: '700' },
 
   scroll: { flex: 1 },
   scrollContent: { padding: 16, paddingBottom: 48 },

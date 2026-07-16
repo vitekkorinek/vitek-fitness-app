@@ -8,6 +8,7 @@ import { SymbolView } from 'expo-symbols';
 import { supabase } from '@/lib/supabase';
 import type { ClientNutritionTargets, FoodLogEntry } from '@/lib/nutritionInsights';
 import type { User } from '@/types/database';
+import { GlassToggle } from '@/components/GlassToggle';
 
 const ACCENT    = '#24ac88';
 const HEADER    = '#244e43';
@@ -532,16 +533,13 @@ export default function NutritionTab({ clientId, trainerId, client }: {
 
   return (
     <>
-      {/* Switcher */}
-      <View style={s.switcherWrap}>
-        <View style={s.switcher}>
-          {(['planning','overview'] as SubTab[]).map(tab=>(
-            <TouchableOpacity key={tab} style={[s.switcherItem,subTab===tab&&s.switcherItemActive]} onPress={()=>setSubTab(tab)} activeOpacity={0.75}>
-              <Text style={[s.switcherText,subTab===tab&&s.switcherTextActive]}>{tab==='planning'?'Planning':'Overview'}</Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-      </View>
+      {/* Switcher — glass toggle (secondary level, distinct from the underline main tabs) */}
+      <GlassToggle<SubTab>
+        options={[{ key: 'planning', label: 'Planning' }, { key: 'overview', label: 'Overview' }]}
+        value={subTab}
+        onChange={setSubTab}
+        style={s.subToggle}
+      />
 
       {/* ── Planning ─────────────────────────────────────────────────── */}
       {subTab==='planning'&&(
@@ -1197,12 +1195,9 @@ export default function NutritionTab({ clientId, trainerId, client }: {
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
 const s = StyleSheet.create({
-  switcherWrap: { paddingBottom: 12 },
-  switcher:     { flexDirection:'row', backgroundColor:'#d8d8d4', borderRadius:100, padding:3 },
-  switcherItem: { flex:1, alignItems:'center', borderRadius:100, paddingVertical:9 },
-  switcherItemActive: { backgroundColor:HEADER },
-  switcherText: { fontSize:13, fontWeight:'600', color:MUTED },
-  switcherTextActive: { color:'#fff', fontWeight:'700' },
+  // Secondary-level switcher: glass toggle (GlassToggle), distinct from the
+  // underline main tabs above it.
+  subToggle: { marginTop: 4, marginBottom: 20 },
 
   // ── Main macro/calories card ──
   mainCard: {
