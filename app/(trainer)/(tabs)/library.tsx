@@ -21,7 +21,7 @@ import {
 import { LinearGradient } from 'expo-linear-gradient';
 import * as ImagePicker from 'expo-image-picker';
 import FoodCreateModal from '@/components/FoodCreateModal';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { SymbolView } from 'expo-symbols';
 import { supabase } from '@/lib/supabase';
@@ -29,6 +29,8 @@ import { useAuth } from '@/context/AuthContext';
 import { loadTrainerFoods, type TrainerFoodRow } from '@/lib/foodApi';
 import { VFIcon } from '@/components/VFIcon';
 import { TrainerLogoButton } from '@/components/TrainerLogoButton';
+import { LightHeader, HeaderIcon, HEADER_ICON, useHeaderHeight } from '@/components/LightHeader';
+import { GlassToggle } from '@/components/GlassToggle';
 import { useTabBarHeight } from '@/components/FloatingTabBar';
 import { ExerciseFilterSheet } from '@/components/ExerciseFilterSheet';
 import { BottomSheet } from '@/components/BottomSheet';
@@ -206,6 +208,7 @@ export default function LibraryScreen() {
   const router = useRouter();
   const { user } = useAuth();
   const tabBarH = useTabBarHeight();
+  const headerH = useHeaderHeight();
 
   const [segment, setSegment] = useState<Segment>('exercises');
   const [exercises, setExercises] = useState<Exercise[]>([]);
@@ -244,6 +247,18 @@ export default function LibraryScreen() {
     }, [loadExercises])
   );
 
+  // Reset navigation to the first tab + sub-tabs when LEAVING the Library tab —
+  // returning starts fresh (you're not continuing the same work). Cleanup runs on blur.
+  useFocusEffect(
+    useCallback(() => {
+      return () => {
+        setSegment('exercises');
+        setNutSubTab('recipes');
+        setWorkoutSubTab('workouts');
+      };
+    }, [])
+  );
+
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     await loadExercises();
@@ -274,63 +289,28 @@ export default function LibraryScreen() {
 
   return (
     <View style={styles.root}>
-      <StatusBar barStyle="light-content" backgroundColor={HEADER} />
+      <StatusBar barStyle="dark-content" />
 
-      <SafeAreaView style={styles.headerSafe} edges={['top']}>
-        <View style={styles.headerBar}>
-          <TrainerLogoButton />
-          <Text style={styles.headerTitle}>{t.library.title}</Text>
-          {segment === 'exercises' ? (
-            <TouchableOpacity
-              style={styles.addButton}
-              onPress={() => router.push('/(trainer)/add-exercise' as any)}
-              activeOpacity={0.75}
-              hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
-            >
-              <Text style={styles.addButtonText}>＋</Text>
-            </TouchableOpacity>
-          ) : segment === 'workouts' ? (
-            <TouchableOpacity
-              style={styles.addButton}
-              onPress={() => router.push('/(trainer)/workout-builder' as any)}
-              activeOpacity={0.75}
-              hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
-            >
-              <Text style={styles.addButtonText}>＋</Text>
-            </TouchableOpacity>
-          ) : segment === 'nutrition' ? (
-            <TouchableOpacity
-              style={styles.addButton}
-              onPress={() => {
-                if (nutSubTab === 'recipes') router.push('/(trainer)/recipe-create' as any);
-                else if (nutSubTab === 'foods') setNutFoodsAddTick(n => n + 1);
-                else setNutAddTick(n => n + 1);
-              }}
-              activeOpacity={0.75}
-              hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
-            >
-              <Text style={styles.addButtonText}>＋</Text>
-            </TouchableOpacity>
-          ) : (
-            <View style={styles.addButtonSpacer} />
-          )}
-        </View>
-      </SafeAreaView>
-
-      <View style={styles.segmentWrapper}>
-        <View style={styles.segmentBar}>
-          {(['exercises', 'workouts', 'nutrition'] as Segment[]).map(seg => (
-            <TouchableOpacity
-              key={seg}
-              style={[styles.segmentItem, segment === seg && styles.segmentItemActive]}
-              onPress={() => setSegment(seg)}
-              activeOpacity={0.75}
-            >
-              <Text style={[styles.segmentText, segment === seg && styles.segmentTextActive]}>
-                {segmentLabels[seg]}
-              </Text>
-            </TouchableOpacity>
-          ))}
+      {/* Main tabs — plain underline switcher (primary level, matches client-detail) */}
+      <View style={[styles.segmentWrapper, { paddingTop: headerH + 14 }]}>
+        <View style={styles.mainTabRow}>
+          {(['exercises', 'workouts', 'nutrition'] as Segment[]).map(seg => {
+            const on = segment === seg;
+            return (
+              <TouchableOpacity
+                key={seg}
+                style={styles.mainTabItem}
+                onPress={() => setSegment(seg)}
+                activeOpacity={0.7}
+              >
+                <View style={[styles.mainTabUnderline, on && styles.mainTabUnderlineActive]}>
+                  <Text style={[styles.mainTabLabel, on && styles.mainTabLabelActive]}>
+                    {segmentLabels[seg]}
+                  </Text>
+                </View>
+              </TouchableOpacity>
+            );
+          })}
         </View>
       </View>
 
@@ -445,6 +425,25 @@ export default function LibraryScreen() {
         onClose={() => setEquipSheetOpen(false)}
       />
 
+      {/* Solid light header (rendered last so it overlays the content) */}
+      <LightHeader
+        solid
+        left={<TrainerLogoButton light />}
+        title={t.library.title}
+        right={
+          <HeaderIcon
+            onPress={() => {
+              if (segment === 'exercises') router.push('/(trainer)/add-exercise' as any);
+              else if (segment === 'workouts') router.push('/(trainer)/workout-builder' as any);
+              else if (nutSubTab === 'recipes') router.push('/(trainer)/recipe-create' as any);
+              else if (nutSubTab === 'foods') setNutFoodsAddTick(n => n + 1);
+              else setNutAddTick(n => n + 1);
+            }}
+          >
+            <SymbolView name="plus" size={22} tintColor={HEADER_ICON} weight="semibold" />
+          </HeaderIcon>
+        }
+      />
     </View>
   );
 }
@@ -504,21 +503,13 @@ function LibraryNutritionTab({
 
   return (
     <View style={styles.content}>
-      {/* Sub-tab switcher — underline style matching Workouts/Templates */}
-      <View style={wStyles.underlineTabBar}>
-        {NUT_TABS.map(tab => (
-          <TouchableOpacity
-            key={tab.key}
-            style={[wStyles.underlineTabItem, nutSubTab === tab.key && wStyles.underlineTabItemActive]}
-            onPress={() => setNutSubTab(tab.key)}
-            activeOpacity={0.75}
-          >
-            <Text style={[wStyles.underlineTabText, nutSubTab === tab.key && wStyles.underlineTabTextActive]}>
-              {tab.label}
-            </Text>
-          </TouchableOpacity>
-        ))}
-      </View>
+      {/* Sub-tab switcher — glass toggle (secondary level, matches client-detail) */}
+      <GlassToggle
+        options={NUT_TABS}
+        value={nutSubTab}
+        onChange={setNutSubTab}
+        style={wStyles.subToggle}
+      />
 
       {nutSubTab === 'recipes' && (
         <RecipesTab trainerId={trainerId} router={router} addTick={addTick} />
@@ -1796,21 +1787,13 @@ function WorkoutsTab({
 
   return (
     <View style={styles.content}>
-      {/* Underline sub-tab switcher */}
-      <View style={wStyles.underlineTabBar}>
-        {(['workouts', 'templates'] as const).map(tab => (
-          <TouchableOpacity
-            key={tab}
-            style={[wStyles.underlineTabItem, workoutSubTab === tab && wStyles.underlineTabItemActive]}
-            onPress={() => setWorkoutSubTab(tab)}
-            activeOpacity={0.7}
-          >
-            <Text style={[wStyles.underlineTabText, workoutSubTab === tab && wStyles.underlineTabTextActive]}>
-              {tab === 'workouts' ? 'Workouts' : 'Templates'}
-            </Text>
-          </TouchableOpacity>
-        ))}
-      </View>
+      {/* Sub-tab switcher — glass toggle (secondary level, matches client-detail) */}
+      <GlassToggle
+        options={[{ key: 'workouts', label: 'Workouts' }, { key: 'templates', label: 'Templates' }]}
+        value={workoutSubTab}
+        onChange={setWorkoutSubTab}
+        style={wStyles.subToggle}
+      />
 
       {/* Templates gallery */}
       {workoutSubTab === 'templates' && (
@@ -2609,28 +2592,18 @@ const TEXT   = '#1a1a1a';
 const MUTED  = '#999';
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: HEADER },
-  headerSafe: { backgroundColor: HEADER },
-  headerBar: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: 20, paddingVertical: 12,
-  },
-  headerTitle: { color: '#fff', fontSize: 17, fontWeight: '600' },
-  addButton: { padding: 8, alignItems: 'center', justifyContent: 'center' },
-  addButtonText: { color: '#fff', fontSize: 24, lineHeight: 26, fontWeight: '300' },
-  addButtonSpacer: { width: 32 },
+  root: { flex: 1, backgroundColor: BG },
 
   segmentWrapper: {
     backgroundColor: BG, paddingHorizontal: 16, paddingTop: 14, paddingBottom: 2,
   },
-  segmentBar: {
-    flexDirection: 'row', backgroundColor: '#d8d8d4',
-    borderRadius: 100, padding: 3,
-  },
-  segmentItem: { flex: 1, alignItems: 'center', paddingVertical: 7, borderRadius: 100 },
-  segmentItemActive: { backgroundColor: HEADER },
-  segmentText: { fontSize: 12, fontWeight: '600', color: MUTED },
-  segmentTextActive: { color: '#fff', fontWeight: '700' },
+  // Main tabs — plain underline switcher (primary level).
+  mainTabRow: { flexDirection: 'row' },
+  mainTabItem: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  mainTabUnderline: { paddingBottom: 7, borderBottomWidth: 2, borderBottomColor: 'transparent' },
+  mainTabUnderlineActive: { borderBottomColor: ACCENT },
+  mainTabLabel: { fontSize: 15, fontWeight: '600', color: TEXT },
+  mainTabLabelActive: { color: ACCENT, fontWeight: '700' },
 
   content: { flex: 1, backgroundColor: BG },
   placeholderContent: {
@@ -2782,11 +2755,8 @@ const wStyles = StyleSheet.create({
   renameBtn: { width: 30, height: 30, alignItems: 'center', justifyContent: 'center' },
 
   // Underline tab bar for Workouts / Templates sub-tabs
-  underlineTabBar:      { flexDirection: 'row', justifyContent: 'center', gap: 32, paddingTop: 12, paddingBottom: 4, backgroundColor: BG },
-  underlineTabItem:     { paddingBottom: 5 },
-  underlineTabItemActive: { borderBottomWidth: 2, borderBottomColor: ACCENT },
-  underlineTabText:     { fontSize: 17, color: '#bbb', fontWeight: '500' },
-  underlineTabTextActive: { color: TEXT, fontWeight: '600' },
+  // Sub-tab glass toggle (secondary level, below the underline main tabs).
+  subToggle:            { marginHorizontal: 16, marginTop: 12, marginBottom: 6 },
 });
 
 // ─── Menu styles (shared by WorkoutMenuModal and RoutinePickerModal) ───────────

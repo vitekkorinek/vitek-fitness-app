@@ -13,7 +13,6 @@ import {
   Pressable,
   RefreshControl,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { SymbolView } from 'expo-symbols';
 import { supabase } from '@/lib/supabase';
@@ -21,6 +20,7 @@ import { useAuth } from '@/context/AuthContext';
 import { nameInitial } from '@/lib/utils';
 import { VFIcon } from '@/components/VFIcon';
 import { TrainerLogoButton } from '@/components/TrainerLogoButton';
+import { LightHeader, HeaderIcon, HEADER_ICON, useHeaderHeight } from '@/components/LightHeader';
 import { useTabBarHeight } from '@/components/FloatingTabBar';
 import { BottomSheet } from '@/components/BottomSheet';
 import t from '@/i18n/en';
@@ -412,6 +412,14 @@ const INV_STATUS_OPTIONS: { key: InvStatusFilter; label: string }[] = [
   { key: 'paid', label: 'Paid' },
 ];
 
+// Earnings time-range dropdown options (Vitek: month / last month / quarter / all time).
+const TIME_RANGE_OPTIONS: { key: TimeRange; label: string }[] = [
+  { key: 'month',      label: t.finance.rangeMonth },
+  { key: 'last_month', label: t.finance.rangeLastMonth },
+  { key: 'quarter',    label: t.finance.rangeQuarter },
+  { key: 'all_time',   label: t.finance.rangeAllTime },
+];
+
 const INV_YEAR_OPTIONS = (() => {
   const now = new Date().getFullYear();
   const opts: number[] = [];
@@ -423,12 +431,14 @@ export default function FinanceScreen() {
   const { profile } = useAuth();
   const router = useRouter();
   const tabBarH = useTabBarHeight();
+  const headerH = useHeaderHeight();
 
   // Tab state
   const [activeTab, setActiveTab] = useState<ActiveTab>('invoices');
 
   // Earnings state
-  const [timeRange, setTimeRange] = useState<TimeRange>('quarter');
+  const [timeRange, setTimeRange] = useState<TimeRange>('month');
+  const [rangePickerOpen, setRangePickerOpen] = useState(false);
   const [data, setData] = useState<FinanceData | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -438,6 +448,7 @@ export default function FinanceScreen() {
   const [invoices, setInvoices] = useState<(Invoice & { clientName: string | null })[]>([]);
   const [invSearch, setInvSearch] = useState('');
   const [invStatusFilter, setInvStatusFilter] = useState<InvStatusFilter>('all');
+  const [invStatusPickerOpen, setInvStatusPickerOpen] = useState(false);
   const [invYearFilter, setInvYearFilter] = useState<number | null>(null);
   const [invYearPickerOpen, setInvYearPickerOpen] = useState(false);
 
@@ -470,6 +481,14 @@ export default function FinanceScreen() {
     load().finally(() => setLoading(false));
   }, [load]));
 
+  // Reset to the first tab (Invoices) when LEAVING Finance — returning starts fresh,
+  // never where you left off. Mirrors the Library tab. Cleanup runs on blur.
+  useFocusEffect(
+    useCallback(() => {
+      return () => setActiveTab('invoices');
+    }, [])
+  );
+
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     await load();
@@ -496,39 +515,28 @@ export default function FinanceScreen() {
 
   return (
     <View style={st.root}>
-      <StatusBar barStyle="light-content" backgroundColor={HEADER} />
-      <SafeAreaView style={st.headerSafe} edges={['top']}>
-        <View style={st.headerBar}>
-          <TrainerLogoButton />
-          <Text style={st.headerTitle}>{t.finance.title}</Text>
-          <TouchableOpacity
-            style={st.addButton}
-            activeOpacity={0.75}
-            onPress={() => router.push('/(trainer)/invoice/new' as any)}
-            hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
-          >
-            <Text style={st.addButtonText}>＋</Text>
-          </TouchableOpacity>
-        </View>
-      </SafeAreaView>
+      <StatusBar barStyle="dark-content" />
 
-      {/* Invoices / Earnings segment switcher */}
-      <View style={st.segmentWrapper}>
-        <View style={st.segmentBar}>
-          <TouchableOpacity
-            style={[st.segmentItem, activeTab === 'invoices' && st.segmentItemActive]}
-            onPress={() => setActiveTab('invoices')}
-            activeOpacity={0.8}
-          >
-            <Text style={[st.segmentText, activeTab === 'invoices' && st.segmentTextActive]}>Invoices</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[st.segmentItem, activeTab === 'earnings' && st.segmentItemActive]}
-            onPress={() => setActiveTab('earnings')}
-            activeOpacity={0.8}
-          >
-            <Text style={[st.segmentText, activeTab === 'earnings' && st.segmentTextActive]}>Earnings</Text>
-          </TouchableOpacity>
+      {/* Invoices / Earnings — plain underline switcher (matches the Library main tabs) */}
+      <View style={[st.segmentWrapper, { paddingTop: headerH + 12 }]}>
+        <View style={st.mainTabRow}>
+          {(['invoices', 'earnings'] as ActiveTab[]).map(tab => {
+            const on = activeTab === tab;
+            return (
+              <TouchableOpacity
+                key={tab}
+                style={st.mainTabItem}
+                onPress={() => setActiveTab(tab)}
+                activeOpacity={0.7}
+              >
+                <View style={[st.mainTabUnderline, on && st.mainTabUnderlineActive]}>
+                  <Text style={[st.mainTabLabel, on && st.mainTabLabelActive]}>
+                    {tab === 'invoices' ? 'Invoices' : 'Earnings'}
+                  </Text>
+                </View>
+              </TouchableOpacity>
+            );
+          })}
         </View>
       </View>
 
@@ -549,18 +557,17 @@ export default function FinanceScreen() {
             />
           </View>
           <View style={st.invFilterRow}>
-            {INV_STATUS_OPTIONS.map(opt => (
-              <TouchableOpacity
-                key={opt.key}
-                style={[st.invFilterPill, invStatusFilter === opt.key && st.invFilterPillActive]}
-                onPress={() => setInvStatusFilter(opt.key)}
-                activeOpacity={0.7}
-              >
-                <Text style={[st.invFilterPillText, invStatusFilter === opt.key && st.invFilterPillTextActive]}>
-                  {opt.label}
-                </Text>
-              </TouchableOpacity>
-            ))}
+            {/* Status dropdown (green when a specific status is filtered) */}
+            <TouchableOpacity
+              style={[st.invFilterPill, invStatusFilter !== 'all' && st.invFilterPillActive]}
+              onPress={() => setInvStatusPickerOpen(true)}
+              activeOpacity={0.7}
+            >
+              <Text style={[st.invFilterPillText, invStatusFilter !== 'all' && st.invFilterPillTextActive]}>
+                {INV_STATUS_OPTIONS.find(o => o.key === invStatusFilter)?.label ?? 'All'}
+              </Text>
+              <SymbolView name="chevron.down" size={10} tintColor={invStatusFilter !== 'all' ? '#fff' : MUTED} />
+            </TouchableOpacity>
             <TouchableOpacity
               style={[st.invFilterPill, st.invYearPill, invYearFilter !== null && st.invFilterPillActive]}
               onPress={() => setInvYearPickerOpen(true)}
@@ -629,24 +636,14 @@ export default function FinanceScreen() {
           showsVerticalScrollIndicator={false}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={ACCENT} />}
         >
-          {/* Time range pills */}
-          <View style={st.pills}>
-            {(['month', 'last_month', 'quarter', 'year', 'all_time'] as TimeRange[]).map(r => (
-              <TouchableOpacity
-                key={r}
-                style={[st.pill, timeRange === r && st.pillActive]}
-                onPress={() => setTimeRange(r)}
-                activeOpacity={0.7}
-              >
-                <Text style={[st.pillText, timeRange === r && st.pillTextActive]}>
-                  {r === 'month' ? t.finance.rangeMonth
-                    : r === 'last_month' ? t.finance.rangeLastMonth
-                    : r === 'quarter' ? t.finance.rangeQuarter
-                    : r === 'year' ? t.finance.rangeYear
-                    : t.finance.rangeAllTime}
-                </Text>
-              </TouchableOpacity>
-            ))}
+          {/* Time range dropdown */}
+          <View style={st.rangeRow}>
+            <TouchableOpacity style={st.rangeDrop} onPress={() => setRangePickerOpen(true)} activeOpacity={0.7}>
+              <Text style={st.rangeDropText}>
+                {TIME_RANGE_OPTIONS.find(o => o.key === timeRange)?.label ?? t.finance.rangeMonth}
+              </Text>
+              <SymbolView name="chevron.down" size={11} tintColor={HEADER} />
+            </TouchableOpacity>
           </View>
 
           {/* Hero card */}
@@ -717,6 +714,50 @@ export default function FinanceScreen() {
       )}
 
       {/* Year picker modal (invoice tab) */}
+      {/* Invoice status picker */}
+      {invStatusPickerOpen && (
+        <BottomSheet onClose={() => setInvStatusPickerOpen(false)}>
+          {close => (
+            <View style={st.pickerBox}>
+              <Text style={st.pickerTitle}>Filter by status</Text>
+              {INV_STATUS_OPTIONS.map((opt, i) => (
+                <TouchableOpacity
+                  key={opt.key}
+                  style={[st.pickerOption, i === INV_STATUS_OPTIONS.length - 1 && st.pickerOptionLast]}
+                  onPress={() => close(() => { setInvStatusFilter(opt.key); })}
+                  activeOpacity={0.7}
+                >
+                  <Text style={[st.pickerOptionText, invStatusFilter === opt.key && st.pickerOptionTextActive]}>{opt.label}</Text>
+                  {invStatusFilter === opt.key && <SymbolView name="checkmark" size={14} tintColor={ACCENT} />}
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
+        </BottomSheet>
+      )}
+
+      {/* Earnings time-range picker */}
+      {rangePickerOpen && (
+        <BottomSheet onClose={() => setRangePickerOpen(false)}>
+          {close => (
+            <View style={st.pickerBox}>
+              <Text style={st.pickerTitle}>Time range</Text>
+              {TIME_RANGE_OPTIONS.map((opt, i) => (
+                <TouchableOpacity
+                  key={opt.key}
+                  style={[st.pickerOption, i === TIME_RANGE_OPTIONS.length - 1 && st.pickerOptionLast]}
+                  onPress={() => close(() => { setTimeRange(opt.key); })}
+                  activeOpacity={0.7}
+                >
+                  <Text style={[st.pickerOptionText, timeRange === opt.key && st.pickerOptionTextActive]}>{opt.label}</Text>
+                  {timeRange === opt.key && <SymbolView name="checkmark" size={14} tintColor={ACCENT} />}
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
+        </BottomSheet>
+      )}
+
       {invYearPickerOpen && (
         <BottomSheet onClose={() => setInvYearPickerOpen(false)}>
           {close => (
@@ -730,10 +771,10 @@ export default function FinanceScreen() {
                 <Text style={[st.pickerOptionText, invYearFilter === null && st.pickerOptionTextActive]}>All years</Text>
                 {invYearFilter === null && <SymbolView name="checkmark" size={14} tintColor={ACCENT} />}
               </TouchableOpacity>
-              {INV_YEAR_OPTIONS.map(y => (
+              {INV_YEAR_OPTIONS.map((y, i) => (
                 <TouchableOpacity
                   key={y}
-                  style={st.pickerOption}
+                  style={[st.pickerOption, i === INV_YEAR_OPTIONS.length - 1 && st.pickerOptionLast]}
                   onPress={() => close(() => { setInvYearFilter(y); })}
                   activeOpacity={0.7}
                 >
@@ -754,6 +795,18 @@ export default function FinanceScreen() {
           onClose={() => setManualModal(false)}
         />
       )}
+
+      {/* Solid light header (rendered last so it overlays the content) */}
+      <LightHeader
+        solid
+        left={<TrainerLogoButton light />}
+        title={t.finance.title}
+        right={
+          <HeaderIcon onPress={() => router.push('/(trainer)/invoice/new' as any)}>
+            <SymbolView name="plus" size={22} tintColor={HEADER_ICON} weight="semibold" />
+          </HeaderIcon>
+        }
+      />
     </View>
   );
 }
@@ -913,28 +966,17 @@ function ManualEntryModal({
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
 const st = StyleSheet.create({
-  root: { flex: 1, backgroundColor: HEADER },
-  headerSafe: { backgroundColor: HEADER },
-  headerBar: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: 20, paddingVertical: 12,
-  },
-  addButton: { padding: 8, alignItems: 'center', justifyContent: 'center' },
-  addButtonText: { color: '#fff', fontSize: 24, lineHeight: 26, fontWeight: '300' },
-  headerTitle: { color: '#fff', fontSize: 17, fontWeight: '700', textAlign: 'center' },
+  root: { flex: 1, backgroundColor: BG },
 
-  pills: {
-    flexDirection: 'row', flexWrap: 'wrap',
-    gap: 8, marginBottom: 14,
-  },
-  pill: {
-    paddingHorizontal: 16, paddingVertical: 8, borderRadius: 100,
+  // Earnings time-range dropdown (single pill → BottomSheet picker).
+  rangeRow: { flexDirection: 'row', marginBottom: 14 },
+  rangeDrop: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    paddingHorizontal: 14, paddingVertical: 8, borderRadius: 100,
     backgroundColor: CARD,
-    shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 3, elevation: 1,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.06, shadowRadius: 4, elevation: 2,
   },
-  pillActive: { backgroundColor: HEADER },
-  pillText: { fontSize: 13, fontWeight: '600', color: MUTED },
-  pillTextActive: { color: '#fff' },
+  rangeDropText: { fontSize: 14, fontWeight: '600', color: TEXT },
 
   loaderWrap: { flex: 1, backgroundColor: BG, alignItems: 'center', justifyContent: 'center' },
   scroll: { flex: 1, backgroundColor: BG },
@@ -988,11 +1030,13 @@ const st = StyleSheet.create({
   manualEntryLink: { fontSize: 14, fontWeight: '600', color: ACCENT },
   // Segment switcher
   segmentWrapper: { backgroundColor: BG, paddingHorizontal: 16, paddingTop: 12, paddingBottom: 10 },
-  segmentBar: { flexDirection: 'row', backgroundColor: '#d8d8d4', borderRadius: 100, padding: 3 },
-  segmentItem: { flex: 1, paddingVertical: 9, alignItems: 'center', borderRadius: 100 },
-  segmentItemActive: { backgroundColor: HEADER },
-  segmentText: { fontSize: 14, fontWeight: '600', color: MUTED },
-  segmentTextActive: { color: '#fff', fontWeight: '700' },
+  // Invoices/Earnings — plain underline switcher (matches the Library main tabs).
+  mainTabRow: { flexDirection: 'row' },
+  mainTabItem: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  mainTabUnderline: { paddingBottom: 7, borderBottomWidth: 2, borderBottomColor: 'transparent' },
+  mainTabUnderlineActive: { borderBottomColor: ACCENT },
+  mainTabLabel: { fontSize: 15, fontWeight: '600', color: TEXT },
+  mainTabLabelActive: { color: ACCENT, fontWeight: '700' },
 
   // Invoice tab
   invFiltersWrap: { backgroundColor: BG, paddingTop: 12 },
@@ -1011,8 +1055,8 @@ const st = StyleSheet.create({
     backgroundColor: CARD,
     shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 3, elevation: 1,
   },
-  invFilterPillActive: { backgroundColor: HEADER },
-  invFilterPillText: { fontSize: 13, fontWeight: '600', color: MUTED },
+  invFilterPillActive: { backgroundColor: ACCENT },
+  invFilterPillText: { fontSize: 13, fontWeight: '600', color: TEXT },
   invFilterPillTextActive: { color: '#fff' },
   invYearPill: { marginLeft: 'auto' as any },
   invList: { flex: 1, backgroundColor: BG },
@@ -1024,13 +1068,11 @@ const st = StyleSheet.create({
     justifyContent: 'center', paddingHorizontal: 40,
   },
   pickerBox: {
-    backgroundColor: CARD, borderRadius: RADIUS, paddingVertical: 8,
-    shadowColor: '#000', shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15, shadowRadius: 16, elevation: 8,
+    backgroundColor: CARD, paddingTop: 4,
   },
   pickerTitle: {
     fontSize: 13, fontWeight: '700', color: MUTED, textTransform: 'uppercase',
-    letterSpacing: 0.6, paddingHorizontal: 20, paddingVertical: 12,
+    letterSpacing: 0.6, textAlign: 'center', paddingHorizontal: 20, paddingVertical: 12,
     borderBottomWidth: 1, borderBottomColor: BORDER,
   },
   pickerOption: {
@@ -1038,6 +1080,7 @@ const st = StyleSheet.create({
     paddingHorizontal: 20, paddingVertical: 14,
     borderBottomWidth: 1, borderBottomColor: '#f5f5f2',
   },
+  pickerOptionLast: { borderBottomWidth: 0 },
   pickerOptionText: { fontSize: 16, color: TEXT, fontWeight: '500' },
   pickerOptionTextActive: { color: ACCENT, fontWeight: '700' },
 });

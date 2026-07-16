@@ -6,12 +6,12 @@ import {
   StyleSheet, StatusBar, ActivityIndicator, PanResponder,
   Animated, TextInput, Platform, KeyboardAvoidingView, Vibration,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { SymbolView } from 'expo-symbols';
 import { useAuth } from '@/context/AuthContext';
 import { supabase } from '@/lib/supabase';
 import { TrainerLogoButton } from '@/components/TrainerLogoButton';
+import { LightHeader, HeaderIcon, HEADER_ICON, useHeaderHeight } from '@/components/LightHeader';
 import { useTabBarHeight } from '@/components/FloatingTabBar';
 import { BottomSheet } from '@/components/BottomSheet';
 
@@ -273,6 +273,7 @@ function AppointmentCard({
 export default function ScheduleScreen() {
   const { profile } = useAuth();
   const tabBarH = useTabBarHeight();
+  const headerH = useHeaderHeight();
   const scrollRef       = useRef<ScrollView>(null);
   const initScrollDone  = useRef(false);
   const scrollOffsetRef = useRef(0);
@@ -684,26 +685,9 @@ export default function ScheduleScreen() {
 
   return (
     <View style={s.root}>
-      <StatusBar barStyle="light-content" backgroundColor={HEADER} />
+      <StatusBar barStyle="dark-content" />
 
-      <SafeAreaView style={s.headerSafe} edges={['top']}>
-        <View style={s.headerBar}>
-          <TrainerLogoButton />
-          <Text style={s.headerTitle}>Schedule</Text>
-          <TouchableOpacity
-            style={s.addButton}
-            activeOpacity={0.75}
-            onPress={() => {
-              setEditAppt(null); setPrefillDate(selectedDate);
-              setPrefillTime(null); setPrefillClientId(null); setShowNew(true);
-            }}
-          >
-            <Text style={s.addButtonText}>+</Text>
-          </TouchableOpacity>
-        </View>
-      </SafeAreaView>
-
-      <View style={s.content}>
+      <View style={[s.content, { paddingTop: headerH }]}>
 
         {showCalModal ? (
         /* Inline month view — replaces the week strip + grid (keeps the app header) */
@@ -1108,6 +1092,23 @@ export default function ScheduleScreen() {
           onSend={async () => { await handleSendAppt(viewAppt); }}
         />
       )}
+
+      {/* Solid light header (rendered last so it overlays the content) */}
+      <LightHeader
+        solid
+        left={<TrainerLogoButton light />}
+        title="Schedule"
+        right={
+          <HeaderIcon
+            onPress={() => {
+              setEditAppt(null); setPrefillDate(selectedDate);
+              setPrefillTime(null); setPrefillClientId(null); setShowNew(true);
+            }}
+          >
+            <SymbolView name="plus" size={22} tintColor={HEADER_ICON} weight="semibold" />
+          </HeaderIcon>
+        }
+      />
     </View>
   );
 }
@@ -1940,12 +1941,7 @@ function ViewAppointmentSheet({
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 const s = StyleSheet.create({
-  root:          { flex:1, backgroundColor:HEADER },
-  headerSafe:    { backgroundColor:HEADER },
-  headerBar:     { flexDirection:'row', alignItems:'center', justifyContent:'space-between', paddingHorizontal:20, paddingVertical:12 },
-  headerTitle:   { color:'#fff', fontSize:18, fontWeight:'700' },
-  addButton:     { padding:8 },
-  addButtonText: { color:'#fff', fontSize:24, fontWeight:'300', lineHeight:28 },
+  root:          { flex:1, backgroundColor:BG },
   content:       { flex:1, backgroundColor:BG },
 });
 

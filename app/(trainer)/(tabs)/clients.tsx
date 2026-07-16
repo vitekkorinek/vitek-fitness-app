@@ -12,12 +12,12 @@ import {
   Modal,
   ScrollView,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { SymbolView } from 'expo-symbols';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/context/AuthContext';
 import { TrainerLogoButton } from '@/components/TrainerLogoButton';
+import { LightHeader, HeaderIcon, HEADER_ICON, useHeaderHeight } from '@/components/LightHeader';
 import { useTabBarHeight } from '@/components/FloatingTabBar';
 import { BottomSheet } from '@/components/BottomSheet';
 import { relativeTime, isInactiveClient, nameInitial } from '@/lib/utils';
@@ -82,6 +82,7 @@ export default function ClientsScreen() {
   const { profile } = useAuth();
   const router = useRouter();
   const tabBarH = useTabBarHeight();
+  const headerH = useHeaderHeight();
 
   const [clients, setClients] = useState<ClientRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -205,31 +206,13 @@ export default function ClientsScreen() {
   }, [clients, searchQuery]);
 
   const trainerName = profile?.name?.split(' ')[0] ?? 'Vitek';
-  const trainerInitial = nameInitial(profile?.name ?? 'V');
 
   return (
     <View style={styles.root}>
-      <StatusBar barStyle="light-content" backgroundColor="#244e43" />
+      <StatusBar barStyle="dark-content" />
 
-      {/* Dark green header — status bar + title bar */}
-      <SafeAreaView style={styles.headerSafe} edges={['top']}>
-        <View style={styles.headerBar}>
-          <TrainerLogoButton />
-          <Text style={styles.headerTitle}>
-            {t.trainer.clients.greeting(trainerName)}
-          </Text>
-          <TouchableOpacity
-            style={styles.addButton}
-            activeOpacity={0.75}
-            onPress={() => router.push('/(trainer)/add-client' as any)}
-          >
-            <Text style={styles.addButtonText}>＋</Text>
-          </TouchableOpacity>
-        </View>
-      </SafeAreaView>
-
-      {/* White content area */}
-      <View style={styles.content}>
+      {/* Content area — flows under the solid light header (padded by headerH) */}
+      <View style={[styles.content, { paddingTop: headerH }]}>
         {/* Title row */}
         <View style={styles.titleRow}>
           <Text style={styles.titleText}>
@@ -325,6 +308,18 @@ export default function ClientsScreen() {
           )}
         </BottomSheet>
       )}
+
+      {/* Solid light header (rendered last so it overlays the content) */}
+      <LightHeader
+        solid
+        left={<TrainerLogoButton light />}
+        title={t.trainer.clients.greeting(trainerName)}
+        right={
+          <HeaderIcon onPress={() => router.push('/(trainer)/add-client' as any)}>
+            <SymbolView name="plus" size={22} tintColor={HEADER_ICON} weight="semibold" />
+          </HeaderIcon>
+        }
+      />
     </View>
   );
 }
@@ -402,23 +397,7 @@ function ClientRowItem({
 const styles = StyleSheet.create({
   root: {
     flex: 1,
-    backgroundColor: '#244e43',
-  },
-  headerSafe: {
-    backgroundColor: '#244e43',
-  },
-  headerBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 20,
-    paddingVertical: 12,
-  },
-  headerTitle: {
-    color: '#ffffff',
-    fontSize: 17,
-    fontWeight: '600',
-    letterSpacing: 0.2,
+    backgroundColor: '#faf9f7',
   },
 
   // Content

@@ -16,18 +16,22 @@ export type GlassToggleOption<T extends string> = { key: T; label: string };
  * Fills its parent's width — options split it evenly.
  */
 export function GlassToggle<T extends string>({
-  options, value, onChange, style,
+  options, value, onChange, style, frosted,
 }: {
   options: GlassToggleOption<T>[];
   value: T;
   onChange: (v: T) => void;
   style?: StyleProp<ViewStyle>;
+  /** Force the frosted-white sliding pill (no real `GlassView`). Use where the extra
+   *  Liquid Glass surface isn't wanted — e.g. it perturbs the native tab bar's glass
+   *  on iOS 26. Visually near-identical, but rock-solid (no adaptive-tint flicker). */
+  frosted?: boolean;
 }) {
   const [trackW, setTrackW] = useState(0);
   const anim = useRef(new Animated.Value(0)).current;
   const idx = Math.max(0, options.findIndex(o => o.key === value));
   const itemW = trackW > 0 ? trackW / options.length : 0;
-  const glass = isLiquidGlassAvailable();
+  const glass = isLiquidGlassAvailable() && !frosted;
 
   useEffect(() => {
     if (itemW <= 0) return;

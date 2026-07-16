@@ -4,7 +4,7 @@ import {
   StyleSheet, StatusBar, ActivityIndicator, Animated,
   PanResponder, TextInput, KeyboardAvoidingView, Platform, Vibration,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { LightHeader, HeaderIcon, HEADER_ICON, useHeaderHeight } from '@/components/LightHeader';
 import { SymbolView } from 'expo-symbols';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useAuth } from '@/context/AuthContext';
@@ -257,6 +257,7 @@ function PwWeekApptCard({
 export default function PlanWeekScreen() {
   const { profile } = useAuth();
   const router = useRouter();
+  const headerH = useHeaderHeight();
   const params = useLocalSearchParams<{ weekStart?: string }>();
   const weekStartParam = Array.isArray(params.weekStart) ? params.weekStart[0] : params.weekStart;
 
@@ -782,28 +783,11 @@ export default function PlanWeekScreen() {
 
   return (
     <View style={s.root}>
-      <StatusBar barStyle="light-content" />
-
-      <SafeAreaView style={s.headerSafe} edges={['top']}>
-        <View style={s.headerBar}>
-          <TouchableOpacity onPress={() => router.back()} style={s.headerSide} hitSlop={8} activeOpacity={0.7}>
-            <SymbolView name="chevron.left" size={19} tintColor="#fff" />
-          </TouchableOpacity>
-          <View style={s.headerTitleWrap}>
-            <Text style={s.headerTitle} numberOfLines={1}>Planning</Text>
-          </View>
-          <TouchableOpacity
-            onPress={() => { setPrefillDate(selectedDayIdx !== null ? selDate : todayStr); setPrefillTime(null); setPrefillClientId(null); setShowNew(true); }}
-            style={s.headerSide} hitSlop={8} activeOpacity={0.7}
-          >
-            <Text style={s.headerAdd}>+</Text>
-          </TouchableOpacity>
-        </View>
-      </SafeAreaView>
+      <StatusBar barStyle="dark-content" />
 
       {/* Info bar (edge-to-edge white, mirrors Schedule) — week title (tap → week view),
           scheduled/requested count left, client menu (person) right */}
-      <View style={s.infoBar} {...infoBarPan.panHandlers}>
+      <View style={[s.infoBar, { paddingTop: headerH + 10 }]} {...infoBarPan.panHandlers}>
         <TouchableOpacity style={s.infoTitleBtn} onPress={() => setSelectedDayIdx(null)} activeOpacity={0.7} hitSlop={8}>
           <Text style={[s.infoTitle, selectedDayIdx === null && s.infoTitleActive]}>{weekTitle}</Text>
         </TouchableOpacity>
@@ -1432,6 +1416,22 @@ export default function PlanWeekScreen() {
           }}
         />
       )}
+
+      {/* Solid light header (rendered last so it overlays the content) */}
+      <LightHeader
+        solid
+        left={
+          <HeaderIcon onPress={() => router.back()}>
+            <SymbolView name="chevron.left" size={24} tintColor={HEADER_ICON} weight="semibold" />
+          </HeaderIcon>
+        }
+        title="Planning"
+        right={
+          <HeaderIcon onPress={() => { setPrefillDate(selectedDayIdx !== null ? selDate : todayStr); setPrefillTime(null); setPrefillClientId(null); setShowNew(true); }}>
+            <SymbolView name="plus" size={22} tintColor={HEADER_ICON} weight="semibold" />
+          </HeaderIcon>
+        }
+      />
     </View>
   );
 }
@@ -1860,14 +1860,8 @@ function formatWeekLabel(dates: Date[]): string {
 }
 
 const s = StyleSheet.create({
-  root:       { flex: 1, backgroundColor: HEADER },
+  root:       { flex: 1, backgroundColor: BG },
   loader:     { flex: 1, backgroundColor: BG, alignItems: 'center', justifyContent: 'center' },
-  headerSafe: { backgroundColor: HEADER },
-  headerBar:  { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 12 },
-  headerSide: { width: 40, alignItems: 'center', justifyContent: 'center' },
-  headerTitleWrap: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  headerTitle:{ color: '#fff', fontSize: 18, fontWeight: '700', textAlign: 'center' },
-  headerAdd:  { color: '#fff', fontSize: 26, fontWeight: '300' },
 
   infoBar:      { backgroundColor: '#fff', paddingHorizontal: 16, paddingTop: 10, paddingBottom: 10 },
   infoTitleBtn: { alignSelf: 'center', marginBottom: 6 },

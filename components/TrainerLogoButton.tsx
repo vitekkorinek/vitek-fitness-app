@@ -67,7 +67,7 @@ const APPT_TYPE_LABELS: Record<string, string> = {
   consultation:         'Consultation',
 };
 
-export function TrainerLogoButton() {
+export function TrainerLogoButton({ light }: { light?: boolean } = {}) {
   const { profile } = useAuth();
   const router = useRouter();
   const { suspendedSession, clearSuspendedSession } = useSessionStore();
@@ -171,12 +171,12 @@ export function TrainerLogoButton() {
         style={ls.logoBtn}
         hitSlop={8}
       >
-        <VFIcon size={28} color="#ffffff" />
+        <VFIcon size={28} color={light ? HEADER : '#ffffff'} />
         {hasSession && (
-          <View style={[ls.badge, ls.badgeGreen]} />
+          <View style={[ls.badge, ls.badgeGreen, light && ls.badgeLight]} />
         )}
         {!hasSession && pendingCount > 0 && (
-          <View style={ls.badge} />
+          <View style={[ls.badge, light && ls.badgeLight]} />
         )}
       </TouchableOpacity>
 
@@ -345,6 +345,8 @@ const ls = StyleSheet.create({
     width: 8, height: 8, borderRadius: 4, backgroundColor: '#e85d4a',
   },
   badgeGreen: { backgroundColor: ACCENT },
+  // On a light header the badge gets a light hairline ring so it reads off the glass.
+  badgeLight: { borderWidth: 1.5, borderColor: '#faf9f7' },
   overlay: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.45)' },
   modal: {
     position: 'absolute', top: '50%', left: 20, right: 20,

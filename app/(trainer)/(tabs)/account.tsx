@@ -15,7 +15,7 @@ import {
   InputAccessoryView,
 } from 'react-native';
 import { GestureDetector, Gesture, ScrollView } from 'react-native-gesture-handler';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { LightHeader, useHeaderHeight } from '@/components/LightHeader';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as ImagePicker from 'expo-image-picker';
 import { useAuth } from '@/context/AuthContext';
@@ -80,6 +80,7 @@ export default function AccountScreen() {
   const { profile, signOut } = useAuth();
   const initial = nameInitial(profile?.name ?? 'V');
   const tabBarH = useTabBarHeight();
+  const headerH = useHeaderHeight();
 
   const [settings, setSettings] = useState<TrainerSettings>(EMPTY);
   const [savedSettings, setSavedSettings] = useState<TrainerSettings>(EMPTY);
@@ -317,19 +318,12 @@ export default function AccountScreen() {
 
   return (
     <View style={styles.root}>
-      <StatusBar barStyle="light-content" backgroundColor="#244e43" />
-      <SafeAreaView style={styles.headerSafe} edges={['top']}>
-        <View style={styles.headerBar}>
-          <TrainerLogoButton />
-          <Text style={styles.headerTitle}>{t.account.title}</Text>
-          <View style={{ width: 37 }} />
-        </View>
-      </SafeAreaView>
+      <StatusBar barStyle="dark-content" />
 
       <View style={styles.outerSafe}>
         <ScrollView
           style={styles.scroll}
-          contentContainerStyle={[styles.scrollContent, { paddingBottom: tabBarH }]}
+          contentContainerStyle={[styles.scrollContent, { paddingTop: headerH + 8, paddingBottom: tabBarH }]}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
@@ -668,6 +662,9 @@ export default function AccountScreen() {
           )}
         </Modal>
       )}
+
+      {/* Solid light header (rendered last so it overlays the content) */}
+      <LightHeader solid left={<TrainerLogoButton light />} title={t.account.title} />
     </View>
   );
 }
@@ -692,19 +689,10 @@ function Sep() {
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: '#244e43' },
-  headerSafe: { backgroundColor: '#244e43' },
-  headerBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 20,
-    paddingVertical: 12,
-  },
-  headerTitle: { color: '#ffffff', fontSize: 17, fontWeight: '600' },
+  root: { flex: 1, backgroundColor: '#faf9f7' },
   outerSafe: { flex: 1, backgroundColor: '#faf9f7' },
   scroll: { flex: 1 },
-  scrollContent: { paddingHorizontal: 16, paddingTop: 16, paddingBottom: 32 },
+  scrollContent: { paddingHorizontal: 16, paddingBottom: 32 },
 
   profileCard: {
     alignItems: 'center',
