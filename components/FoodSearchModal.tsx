@@ -8,6 +8,7 @@ import {
   Modal,
   Platform,
   ScrollView,
+  StatusBar,
   StyleSheet,
   Text,
   TextInput,
@@ -577,10 +578,11 @@ export default function FoodSearchModal({
   return (
     <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
       <View style={s.root}>
-        {/* Header */}
+        <StatusBar barStyle="dark-content" />
+        {/* Header (light — consistent with the app's frosted nav) */}
         <View style={[s.header, { paddingTop: insets.top + 14 }]}>
           <TouchableOpacity onPress={onClose} style={s.closeBtn} hitSlop={8}>
-            <SymbolView name="xmark" size={18} tintColor="rgba(255,255,255,0.85)" />
+            <SymbolView name="xmark" size={19} tintColor={HEADER} weight="semibold" />
           </TouchableOpacity>
           <Text style={s.headerTitle}>{mealLabel}</Text>
           <View style={s.closeBtn} />
@@ -934,8 +936,8 @@ const s = StyleSheet.create({
   root:         { flex: 1, backgroundColor: '#fff' },
   toast:        { position: 'absolute', bottom: 48, alignSelf: 'center', flexDirection: 'row', alignItems: 'center', gap: 7, backgroundColor: 'rgba(26,26,26,0.92)', paddingHorizontal: 16, paddingVertical: 11, borderRadius: 100, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.25, shadowRadius: 12, elevation: 8 },
   toastText:    { color: '#fff', fontSize: 14, fontWeight: '600' },
-  header:       { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingBottom: 14, backgroundColor: HEADER },
-  headerTitle:  { flex: 1, fontSize: 17, fontWeight: '700', color: '#fff', textAlign: 'center' },
+  header:       { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingBottom: 12, backgroundColor: '#faf9f7', borderBottomWidth: 1, borderBottomColor: BORDER },
+  headerTitle:  { flex: 1, fontSize: 17, fontWeight: '700', color: TEXT, textAlign: 'center' },
   closeBtn:     { width: 40, height: 32, alignItems: 'center', justifyContent: 'center' },
 
   searchWrap:   { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 8, gap: 8 },

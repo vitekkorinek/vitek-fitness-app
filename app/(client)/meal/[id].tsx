@@ -442,14 +442,21 @@ export default function MealEditorScreen() {
             </View>
           </View>
 
-          {/* Log this meal — the primary action for a saved meal */}
+          {/* Save meal — finish + keep it (everything auto-persists; this is the
+              explicit "done" affordance). */}
+          <TouchableOpacity style={s.saveBtn} onPress={() => router.back()} activeOpacity={0.85}>
+            <SymbolView name="checkmark" size={16} tintColor="#fff" />
+            <Text style={s.saveBtnText}>Save meal</Text>
+          </TouchableOpacity>
+
+          {/* Log this meal — copies it into today's food diary */}
           <TouchableOpacity
             style={[s.logBtn, meal.ingredients.length === 0 && { opacity: 0.4 }]}
             onPress={() => { setLogDate(new Date()); setLogCat('lunch'); setLogModal(true); }}
             disabled={meal.ingredients.length === 0}
             activeOpacity={0.85}
           >
-            <SymbolView name="plus.circle.fill" size={18} tintColor="#fff" />
+            <SymbolView name="plus.circle.fill" size={18} tintColor={ACCENT} />
             <Text style={s.logBtnText}>Log this meal</Text>
           </TouchableOpacity>
 
@@ -722,8 +729,10 @@ const s = StyleSheet.create({
   visText:      { fontSize: 13, fontWeight: '600', color: MUTED },
   visTextActive:{ color: '#fff' },
 
-  logBtn:        { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: ACCENT, borderRadius: 100, paddingVertical: 14, marginHorizontal: 16, marginTop: 24 },
-  logBtnText:    { fontSize: 15, fontWeight: '700', color: '#fff' },
+  saveBtn:       { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: ACCENT, borderRadius: 100, paddingVertical: 14, marginHorizontal: 16, marginTop: 24 },
+  saveBtnText:   { fontSize: 15, fontWeight: '700', color: '#fff' },
+  logBtn:        { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: 'transparent', borderWidth: 1.5, borderColor: ACCENT, borderRadius: 100, paddingVertical: 13, marginHorizontal: 16, marginTop: 10 },
+  logBtnText:    { fontSize: 15, fontWeight: '700', color: ACCENT },
   deleteBtn:     { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: '#fdecec', borderRadius: 100, paddingVertical: 13, marginHorizontal: 16, marginTop: 10 },
   deleteBtnText: { fontSize: 15, fontWeight: '700', color: CORAL },
 

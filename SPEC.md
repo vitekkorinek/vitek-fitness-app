@@ -59,9 +59,10 @@ The app has two roles: **Trainer** (Vitek) and **Client**. The trainer controls 
 ### Navigation chrome — glass redesign (July 2026)
 The old heavy dark-green (`#244e43`) 62px header + flat welded bottom tab bar are being replaced app-wide by a lighter, more premium "glass" nav (inspired by WhatsApp / iOS 26). Two shared components; iOS-tuned, Android keeps the flat bar via a `Platform.OS` gate. **Design is finalized; rollout is staged.** Full implementation detail in CLAUDE.md → "Nav chrome redesign".
 - **`components/LightHeader.tsx`** — a light glass header floating over the page (content scrolls under it). It uses a **gradient-masked progressive blur** (`@react-native-masked-view/masked-view`) so the blur fades to nothing with no visible bottom edge — the WhatsApp seamless look. Bare brand-green glyphs (no chip circles); black status-bar clock.
-- **`components/FloatingTabBar.tsx`** — a floating frosted capsule pill with a **real iOS 26 Liquid Glass** (`expo-glass-effect`) background. The selection is a near-opaque pale-mint pill that **hugs the active tab's label** and is **gesture-driven** (press expands it, drag carries it, release "grabs" the icon). No center "+" (add actions are contextual).
-- **Native modules** (`expo-glass-effect`, `@react-native-masked-view/masked-view`) mean the glass + masked blur require a **fresh native build** — JS-only tweaks hot-reload, these do not.
-- **Rollout:** ✅ client main tabs + 5 training sub-screens (all-workouts, all-routines, availability, past-sessions, routine detail). ⏳ Next: nutrition section (screens + its own tab bar), then the trainer side. Do Mode / Exercise Detail / Session Intro / client Home keep their own designs.
+- **Tab bar = the REAL native iOS tab bar** (`NativeTabs` from `expo-router/unstable-native-tabs`, backed by `react-native-screens`). The custom JS `components/FloatingTabBar.tsx` was **abandoned** (a JS bar can't do Apple's vibrancy) and is retained only for its `useTabBarHeight()` hook. The native bar gives real iOS 26 Liquid Glass + the morphing selection + vibrancy for free; Apple controls styling (green `tintColor`, SF Symbols). No center "+" (add actions are contextual).
+- **Native modules** (native `NativeTabs`/`react-native-screens`, `@react-native-masked-view/masked-view`) mean the glass + masked blur require a **fresh iOS-26 native build** — JS-only tweaks hot-reload, these do not. Expo Go shows an opaque fallback bar; judge nav only in a real build.
+- **Rollout:** ✅ client main tabs + 5 training sub-screens + **entire client nutrition section** (Food Log / Favourites / Weekly / Grocery tabs → `NativeTabs`; all their headers → `LightHeader`; recipe detail/create + the new meal editor extracted to `(client)` stack routes). ⏳ **Next: the trainer side** (5-tab bar → `NativeTabs`), then retire `FloatingTabBar`. Do Mode / Exercise Detail / Session Intro / client Home keep their own designs.
+- **The key layout rule for glass screens:** any scroll view under a `NativeTabs` bar + absolute `LightHeader` MUST set `contentInsetAdjustmentBehavior="never"` and pad `paddingTop: useHeaderHeight()` / `paddingBottom: useTabBarHeight()` — otherwise iOS auto-insets on top of the manual padding and content starts too low.
 
 ### Button system
 
@@ -537,7 +538,7 @@ notes (text, nullable),
 visibility (text NOT NULL DEFAULT 'private' — 'private' | 'trainer' | 'clients'),
 created_at
 ```
-Client-saved meal combinations. Displayed in Favourites → Meals. `visibility` controls sharing: `'private'` = client only, `'trainer'` = trainer can see, `'clients'` = all trainer's clients can see (Phase 2 enforcement). `meal-covers` storage bucket (public) holds cover photos uploaded via `arrayBuffer()`.
+Client-saved meal combinations. Displayed in Favourites → Meals as **cover-image cards** (same shape as recipe/workout cards). Built/edited on the dedicated **meal editor screen `app/(client)/meal/[id].tsx`** (a `(client)` stack route, frosted `LightHeader`, rounded cover card, name row, kcal/P/C/F, ingredients, notes, share, Save/Log/Delete — extracted from an in-file favourites overlay July 2026; mirrors `recipe/create`). `visibility` controls sharing: `'private'` = client only, `'trainer'` = trainer can see, `'clients'` = all trainer's clients can see (Phase 2 enforcement). `meal-covers` storage bucket (public) holds cover photos uploaded via `arrayBuffer()`.
 
 ### favourite_days
 ```

@@ -862,34 +862,26 @@ export default function FavouritesScreen() {
                       <TouchableOpacity
                         style={mc.card}
                         onPress={() => router.push(`/(client)/meal/${meal.id}` as any)}
-                        activeOpacity={0.85}
+                        activeOpacity={0.88}
                       >
-                        <View style={mc.thumb}>
-                          {meal.cover_photo_url ? (
-                            <Image source={{ uri: meal.cover_photo_url }} style={StyleSheet.absoluteFillObject} resizeMode="cover" />
-                          ) : (
-                            <LinearGradient colors={['#2e4288', '#1d2d6a']} style={StyleSheet.absoluteFillObject} />
-                          )}
-                          {!meal.cover_photo_url && (
-                            <View style={mc.thumbIconWrap}>
-                              <SymbolView name="fork.knife" size={22} tintColor="rgba(255,255,255,0.6)" />
-                            </View>
-                          )}
-                        </View>
+                        {meal.cover_photo_url ? (
+                          <Image source={{ uri: meal.cover_photo_url }} style={mc.cover} resizeMode="cover" />
+                        ) : (
+                          <LinearGradient colors={['#2e4288', '#1d2d6a']} style={mc.cover} />
+                        )}
+                        <LinearGradient colors={['transparent', 'rgba(0,0,0,0.6)']} style={mc.gradient} />
+                        {!meal.cover_photo_url && (
+                          <View style={mc.centerIcon}>
+                            <SymbolView name="fork.knife" size={30} tintColor="rgba(255,255,255,0.35)" />
+                          </View>
+                        )}
                         <View style={mc.info}>
-                          <Text style={[mc.name, !meal.name.trim() && { color: MUTED, fontStyle: 'italic' }]} numberOfLines={1}>
+                          <Text style={[mc.name, !meal.name.trim() && { fontStyle: 'italic', color: 'rgba(255,255,255,0.7)' }]} numberOfLines={1}>
                             {meal.name.trim() ? meal.name : 'Unnamed meal'}
                           </Text>
-                          <Text style={mc.sub}>{meal.ingredients.length} item{meal.ingredients.length !== 1 ? 's' : ''}</Text>
-                          <View style={mc.macroRow}>
-                            <Text style={mc.kcalText}>{kcal} kcal</Text>
-                            <Text style={mc.macroText}>P <Text style={mc.macroVal}>{pro}g</Text></Text>
-                            <Text style={mc.macroText}>C <Text style={mc.macroVal}>{carbs}g</Text></Text>
-                            <Text style={mc.macroText}>F <Text style={mc.macroVal}>{fat}g</Text></Text>
-                          </View>
-                        </View>
-                        <View style={mc.arrow}>
-                          <SymbolView name="chevron.right" size={14} tintColor={MUTED} />
+                          <Text style={mc.sub} numberOfLines={1}>
+                            {meal.ingredients.length} item{meal.ingredients.length !== 1 ? 's' : ''} · {kcal} kcal · P {pro}g · C {carbs}g · F {fat}g
+                          </Text>
                         </View>
                       </TouchableOpacity>
                       </Swipeable>
@@ -1469,23 +1461,16 @@ const s = StyleSheet.create({
 });
 
 // ─── Meal card styles ─────────────────────────────────────────────────────────
+// Meal cards share the RecipeCard / workout cover-card shape (cover image, dark
+// gradient, name + meta overlaid at the bottom) so the whole gallery is uniform.
 const mc = StyleSheet.create({
-  card:      {
-    flexDirection: 'row', alignItems: 'center',
-    backgroundColor: CARD, borderRadius: 14,
-    overflow: 'hidden',
-    shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 8, elevation: 3,
-  },
-  thumb:        { width: 76, height: 76, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
-  thumbIconWrap:{ ...StyleSheet.absoluteFillObject, alignItems: 'center', justifyContent: 'center' },
-  info:         { flex: 1, paddingHorizontal: 12, paddingVertical: 10 },
-  name:         { fontSize: 15, fontWeight: '600', color: TEXT, marginBottom: 2 },
-  sub:          { fontSize: 11, color: MUTED, marginBottom: 5 },
-  macroRow:     { flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' },
-  kcalText:     { fontSize: 11, fontWeight: '700', color: HEADER },
-  macroText:    { fontSize: 11, color: MUTED, fontWeight: '500' },
-  macroVal:     { fontWeight: '700', color: TEXT },
-  arrow:        { paddingRight: 12 },
+  card:       { borderRadius: 14, overflow: 'hidden', height: 130, position: 'relative' },
+  cover:      { ...StyleSheet.absoluteFillObject },
+  gradient:   { ...StyleSheet.absoluteFillObject },
+  centerIcon: { ...StyleSheet.absoluteFillObject, alignItems: 'center', justifyContent: 'center' },
+  info:       { position: 'absolute', bottom: 0, left: 0, right: 0, padding: 12 },
+  name:       { fontSize: 14, fontWeight: '700', color: '#fff', lineHeight: 18 },
+  sub:        { fontSize: 10, color: 'rgba(255,255,255,0.7)', marginTop: 3 },
   swipeDelete:     { width: 84, backgroundColor: '#e05555', alignItems: 'center', justifyContent: 'center', gap: 4, borderRadius: 14, marginLeft: 8 },
   swipeDeleteText: { fontSize: 11, fontWeight: '700', color: '#fff' },
 });
