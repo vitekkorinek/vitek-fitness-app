@@ -12,6 +12,7 @@ import {
 } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { LightHeader, HeaderIcon, HEADER_ICON, useHeaderHeight } from '@/components/LightHeader';
+import { useTabBarHeight } from '@/components/FloatingTabBar';
 import { smartBack } from '@/lib/navHistory';
 import { SymbolView } from 'expo-symbols';
 import { VFIcon } from '@/components/VFIcon';
@@ -191,6 +192,7 @@ export default function AllRoutinesScreen() {
   const { profile } = useAuth();
   const router = useRouter();
   const headerH = useHeaderHeight();
+  const tabBarH = useTabBarHeight();
 
   const [routines, setRoutines] = useState<RoutineRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -261,8 +263,8 @@ export default function AllRoutinesScreen() {
       ) : (
         <ScrollView
           style={styles.scroll}
-          contentContainerStyle={[styles.content, { paddingTop: headerH + 16 }]}
-          scrollIndicatorInsets={{ top: headerH }}
+          contentContainerStyle={[styles.content, { paddingTop: headerH + 16, paddingBottom: tabBarH }]}
+          scrollIndicatorInsets={{ top: headerH, bottom: tabBarH }}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={ACCENT} progressViewOffset={headerH} />}

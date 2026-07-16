@@ -807,7 +807,7 @@ export default function TrainTabScreen() {
               <Text style={sectionStyles.headerEmoji}>🏋️</Text>
               <Text style={sectionStyles.headerLabel}>Workouts</Text>
             </View>
-            <TouchableOpacity onPress={() => router.push('/(client)/all-workouts' as any)} hitSlop={8} activeOpacity={0.7}>
+            <TouchableOpacity onPress={() => router.push('/(client)/(tabs)/train/all-workouts' as any)} hitSlop={8} activeOpacity={0.7}>
               <SymbolView name="chevron.right" size={15} tintColor="#999" weight="semibold" />
             </TouchableOpacity>
           </View>
@@ -856,7 +856,7 @@ export default function TrainTabScreen() {
                 </View>
               </TouchableOpacity>
             ))}
-            <TouchableOpacity style={sectionStyles.seeAllCard} onPress={() => router.push('/(client)/all-workouts' as any)} activeOpacity={0.85}>
+            <TouchableOpacity style={sectionStyles.seeAllCard} onPress={() => router.push('/(client)/(tabs)/train/all-workouts' as any)} activeOpacity={0.85}>
               <Text style={sectionStyles.seeAllArrow}>→</Text>
               <Text style={sectionStyles.seeAllCardText}>See all {workoutCards.length}</Text>
             </TouchableOpacity>
@@ -868,7 +868,7 @@ export default function TrainTabScreen() {
               <RoutineIcon size={18} />
               <Text style={sectionStyles.headerLabel}>Routines</Text>
             </View>
-            <TouchableOpacity onPress={() => router.push('/(client)/all-routines' as any)} hitSlop={8} activeOpacity={0.7}>
+            <TouchableOpacity onPress={() => router.push('/(client)/(tabs)/train/all-routines' as any)} hitSlop={8} activeOpacity={0.7}>
               <SymbolView name="chevron.right" size={15} tintColor="#999" weight="semibold" />
             </TouchableOpacity>
           </View>
@@ -936,7 +936,7 @@ export default function TrainTabScreen() {
                           style={[startModalStyles.option, !hasWorkouts && { opacity: 0.4 }]}
                           activeOpacity={hasWorkouts ? 0.8 : 1}
                           onPress={!hasWorkouts ? undefined : isToday
-                            ? () => { useSessionStore.getState().setPendingLogDate(null); close(() => router.push('/(client)/all-workouts' as any)); }
+                            ? () => { useSessionStore.getState().setPendingLogDate(null); close(() => router.push('/(client)/(tabs)/train/all-workouts' as any)); }
                             : () => setPlanPickerOpen(true)}
                         >
                           <Text style={startModalStyles.optionIcon}>🏋️</Text>
@@ -956,7 +956,7 @@ export default function TrainTabScreen() {
                           style={[startModalStyles.option, !routineEnabled && { opacity: 0.4 }]}
                           activeOpacity={routineEnabled ? 0.8 : 1}
                           onPress={!routineEnabled ? undefined : isToday
-                            ? () => { useSessionStore.getState().setPendingLogDate(null); close(() => router.push('/(client)/all-routines' as any)); }
+                            ? () => { useSessionStore.getState().setPendingLogDate(null); close(() => router.push('/(client)/(tabs)/train/all-routines' as any)); }
                             : () => scheduleWorkout(routineNextUp!)}
                         >
                           <Text style={startModalStyles.optionIcon}>📋</Text>

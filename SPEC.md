@@ -61,8 +61,8 @@ The old heavy dark-green (`#244e43`) 62px header + flat welded bottom tab bar ar
 - **`components/LightHeader.tsx`** — a light glass header floating over the page (content scrolls under it). It uses a **gradient-masked progressive blur** (`@react-native-masked-view/masked-view`) so the blur fades to nothing with no visible bottom edge — the WhatsApp seamless look. Bare brand-green glyphs (no chip circles); black status-bar clock.
 - **Tab bar = the REAL native iOS tab bar** (`NativeTabs` from `expo-router/unstable-native-tabs`, backed by `react-native-screens`). The custom JS `components/FloatingTabBar.tsx` was **abandoned** (a JS bar can't do Apple's vibrancy) and is retained only for its `useTabBarHeight()` hook. The native bar gives real iOS 26 Liquid Glass + the morphing selection + vibrancy for free; Apple controls styling (green `tintColor`, SF Symbols). No center "+" (add actions are contextual).
 - **Native modules** (native `NativeTabs`/`react-native-screens`, `@react-native-masked-view/masked-view`) mean the glass + masked blur require a **fresh iOS-26 native build** — JS-only tweaks hot-reload, these do not. Expo Go shows an opaque fallback bar; judge nav only in a real build.
-- **Rollout:** ✅ client main tabs + 5 training sub-screens + **entire client nutrition section** (Food Log / Favourites / Weekly / Grocery tabs → `NativeTabs`; all their headers → `LightHeader`; recipe detail/create + the new meal editor extracted to `(client)` stack routes). ⏳ **Next: the trainer side** (5-tab bar → `NativeTabs`), then retire `FloatingTabBar`. Do Mode / Exercise Detail / Session Intro / client Home keep their own designs.
-- **The key layout rule for glass screens:** any scroll view under a `NativeTabs` bar + absolute `LightHeader` MUST set `contentInsetAdjustmentBehavior="never"` and pad `paddingTop: useHeaderHeight()` / `paddingBottom: useTabBarHeight()` — otherwise iOS auto-insets on top of the manual padding and content starts too low.
+- **Rollout:** ✅ **entire client side done** — main tabs + 5 training sub-screens + all client nutrition (Food Log / Favourites / Weekly / Grocery → `NativeTabs`; headers → `LightHeader`; recipe detail/create + meal editor as `(client)` stack routes). The **Workouts / Routines "See all" lists keep the native bottom bar** — the Training tab is a nested-stack folder (`(tabs)/train/index.tsx` + `train/all-workouts.tsx` + `train/all-routines.tsx` + `train/_layout.tsx` Stack), so those two lists are pushable screens *inside* the tab (bar stays); opening a workout (session-intro/Do Mode, `(client)` stack routes above the tabs) hides it. ⏳ **Next: the trainer side** (5-tab bar → `NativeTabs`), then retire `FloatingTabBar`. Do Mode / Exercise Detail / Session Intro / client Home keep their own designs.
+- **The key layout rules for glass screens (two hard-won ones):** (1) **Use a plain `<View>` root, NEVER `<SafeAreaView>`** — under `NativeTabs`, `SafeAreaView` (even `edges={[]}`) injects a phantom top inset that pushes content too low (this was the real cause of the Progress/Me "content too low" bug; `train`/`schedule` use plain `View` and are correct). Pad `paddingTop: useHeaderHeight()` / `paddingBottom: useTabBarHeight()`. (2) **To give a native-tab screen deeper pushable sub-screens that keep the bar, make the tab a FOLDER with its own `_layout` Stack** — you CANNOT `router.push` to a hidden `NativeTabs.Trigger` (silent no-op), so hidden-trigger + push does not work for reachable deep screens.
 
 ### Button system
 
@@ -1724,7 +1724,7 @@ Reached from the routine detail screen → + → From Workouts. Query params: `c
   - Change Photo → image picker (16:9) → upload to `workout-covers` bucket
 - Done workouts appear at the bottom within each status filter view
 
-**Client version** (`app/(client)/all-workouts.tsx`):
+**Client version** (`app/(client)/(tabs)/train/all-workouts.tsx` — a nested-stack screen inside the Training tab so the native bottom bar stays visible):
 - Top: **Workouts / Stretching** underline tab switcher (same style as Body composition / Strength in the Progress tab — centered, 17px/600, gap 32, 2px ACCENT underline on active, `#bbb` inactive). NOT a Type 1 pill switcher.
   - Workouts tab: shows non-stretching workouts; filter row has **Category** picker + **Active / Not Active** toggle
   - Stretching tab: shows stretching-category workouts; no status toggle (all stretch sessions shown newest first)
@@ -1755,7 +1755,7 @@ Reached from the routine detail screen → + → From Workouts. Query params: `c
 - Delete: white centered confirm modal (red destructive button)
 - All confirmations use the custom `confirmModal` state pattern — never `Alert.alert()`
 
-**Client version** (`app/(client)/all-routines.tsx`): same Active/Closed switcher, same date range subtitle for closed routines. No ⋯ menu — clients cannot edit routines. Header: 62px height, `#244e43` bg — back chevron left (`router.back()`) · "My Routines" title centered 18px/700 · VFIcon 28px right (→ home). Routine cards with SVG progress ring. Shows **THIS WEEK** label row (same `WeekProgressBar` as all-workouts) when weekly goal is set — no section sorting.
+**Client version** (`app/(client)/(tabs)/train/all-routines.tsx` — nested-stack screen inside the Training tab, native bottom bar stays visible): same Active/Closed switcher, same date range subtitle for closed routines. No ⋯ menu — clients cannot edit routines. Header: glass `LightHeader` (`smartBack` chevron left · "My Routines" title · VFIcon → home right). Routine cards with SVG progress ring. Shows **THIS WEEK** label row (same `WeekProgressBar` as all-workouts) when weekly goal is set — no section sorting.
 
 #### Routine detail screen ✅
 - All workouts in that routine listed as cards; each tappable to open Do Mode
@@ -2357,10 +2357,10 @@ Accessed from the Nutrition entry card on the client home screen. Separate stack
 
 **Food Log tab** (`app/(client)/nutrition/index.tsx`) ✅
 
-**Header (62px, #244e43 bg, defined inline in the screen):**
-- Left: `PearIcon` 32px (`components/icons/PearIcon.tsx`) — SVG outline pear, white, strokeWidth 1.0; 8px ACCENT badge dot when unread nutrition notifications exist; taps to open `NotificationOverlay` (area="nutrition"). Unread count checked on every `useFocusEffect`.
+**Header (glass `LightHeader`, migrated from the old 62px #244e43 bar):**
+- Left: `PearIcon` **size 34, strokeWidth 1.5** (`components/icons/PearIcon.tsx`) — dark-green (`HEADER_ICON`) SVG outline pear sized + weighted to match the training-tab `KettlebellIcon` (same viewBox, so identical thickness — matches the solid VF mark). `HeaderIcon` badge dot when unread nutrition notifications exist; taps to open `NotificationOverlay` (area="nutrition"). Unread count checked on every `useFocusEffect`. (`PearIcon` now takes a `strokeWidth` prop, default `1.0` so the home-hero watermark + overlay pears are unchanged.)
 - Center: date text (tappable → opens Calendar Picker modal)
-- Right: VFIcon 30px → `router.navigate('/(client)')`
+- Right: VFIcon 26 → `router.navigate('/(client)')`; session timer in the `overlay` slot when a session is suspended
 
 **NotificationOverlay** (`components/NotificationOverlay.tsx`):
 - Reusable slide-down sheet (spring animation, `borderBottomLeftRadius:20, borderBottomRightRadius:20`). Accepts `area: 'nutrition' | 'training'`, `visible`, `onClose` props.

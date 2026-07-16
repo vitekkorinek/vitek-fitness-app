@@ -19,6 +19,7 @@ import { smartBack } from '@/lib/navHistory';
 import { SymbolView } from 'expo-symbols';
 import { VFIcon } from '@/components/VFIcon';
 import { LightHeader, HeaderIcon, HEADER_ICON, useHeaderHeight } from '@/components/LightHeader';
+import { useTabBarHeight } from '@/components/FloatingTabBar';
 import { SessionDetailsSheet } from '@/components/SessionDetailsSheet';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/context/AuthContext';
@@ -121,6 +122,7 @@ export default function AllWorkoutsScreen() {
   const { profile } = useAuth();
   const router = useRouter();
   const headerH = useHeaderHeight();
+  const tabBarH = useTabBarHeight();
 
   const [allWorkouts, setAllWorkouts] = useState<WorkoutRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -192,8 +194,8 @@ export default function AllWorkoutsScreen() {
       ) : (
         <ScrollView
           style={styles.scroll}
-          contentContainerStyle={[styles.content, { paddingTop: headerH + 16 }]}
-          scrollIndicatorInsets={{ top: headerH }}
+          contentContainerStyle={[styles.content, { paddingTop: headerH + 16, paddingBottom: tabBarH }]}
+          scrollIndicatorInsets={{ top: headerH, bottom: tabBarH }}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={ACCENT} progressViewOffset={headerH} />}

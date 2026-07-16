@@ -1,5 +1,4 @@
-import { ScrollView, StyleSheet, StatusBar } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { View, ScrollView, StyleSheet, StatusBar } from 'react-native';
 import { useAuth } from '@/context/AuthContext';
 import { useHeaderHeight } from '@/components/LightHeader';
 import { useTabBarHeight } from '@/components/FloatingTabBar';
@@ -11,18 +10,17 @@ export default function ProgressScreen() {
   const tabBarH = useTabBarHeight();
 
   return (
-    <SafeAreaView style={styles.root} edges={[]}>
+    <View style={styles.root}>
       <StatusBar barStyle="dark-content" />
       <ScrollView
         style={styles.scroll}
-        contentInsetAdjustmentBehavior="never"
         contentContainerStyle={[styles.content, { paddingTop: headerH, paddingBottom: tabBarH }]}
         showsVerticalScrollIndicator={false}
         scrollIndicatorInsets={{ top: headerH, bottom: tabBarH }}
       >
         <ProgressTab clientId={profile?.id ?? ''} client={profile} variant="client" />
       </ScrollView>
-    </SafeAreaView>
+    </View>
   );
 }
 

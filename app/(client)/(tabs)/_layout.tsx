@@ -16,6 +16,10 @@ const ACCENT = '#24ac88';
 const TEXT   = '#1a1a1a';
 const MUTED  = '#999';
 
+// Routes inside the tab group that render their own header (so the shared
+// glass header must NOT overlay them).
+const NO_SHARED_HEADER = new Set(['all-workouts', 'all-routines']);
+
 const TITLE_MAP: Record<string, string> = {
   overview: 'Overview',
   train:    'Training',
@@ -80,11 +84,16 @@ export default function ClientTabsLayout() {
 
   // Active tab is derived from the route segments (NativeTabs has no
   // `screenListeners`). The segment right after `(tabs)` is the focused tab.
-  const activeRoute = useMemo(() => {
+  const rawRoute = useMemo(() => {
     const i = segments.lastIndexOf('(tabs)' as never);
-    const r = i >= 0 ? (segments[i + 1] as string | undefined) : undefined;
-    return r && TITLE_MAP[r] ? r : 'train';
+    return i >= 0 ? (segments[i + 1] as string | undefined) : undefined;
   }, [segments]);
+  // The deepest segment: inside the Training tab's nested stack this is
+  // `all-workouts` / `all-routines`, which own their own header — so the shared
+  // glass header must NOT overlay them.
+  const leafRoute = segments[segments.length - 1] as string | undefined;
+  const showSharedHeader = !leafRoute || !NO_SHARED_HEADER.has(leafRoute);
+  const activeRoute = rawRoute && TITLE_MAP[rawRoute] ? rawRoute : 'train';
   const title = TITLE_MAP[activeRoute] ?? 'Training';
 
   const [trainingNotifOverlay, setTrainingNotifOverlay] = useState(false);
@@ -204,18 +213,21 @@ export default function ClientTabsLayout() {
         <NativeTabs.Trigger name="overview" hidden />
       </NativeTabs>
 
-      {/* Glass header — rendered last so it overlays the (native) tab content */}
-      <ClientTabHeader
-        title={title}
-        showBack={activeRoute !== 'train'}
-        onBack={() => smartBack(router)}
-        isTraining={activeRoute === 'train'}
-        hasUnreadTraining={hasUnreadTraining}
-        onTrainingBell={handleKettlebellTap}
-        hasSession={hasSession}
-        sessionElapsed={sessionElapsed}
-        onSessionTap={() => setSessionModalVisible(true)}
-      />
+      {/* Glass header — rendered last so it overlays the (native) tab content.
+          Suppressed on the list screens, which own their own header. */}
+      {showSharedHeader && (
+        <ClientTabHeader
+          title={title}
+          showBack={activeRoute !== 'train'}
+          onBack={() => smartBack(router)}
+          isTraining={activeRoute === 'train'}
+          hasUnreadTraining={hasUnreadTraining}
+          onTrainingBell={handleKettlebellTap}
+          hasSession={hasSession}
+          sessionElapsed={sessionElapsed}
+          onSessionTap={() => setSessionModalVisible(true)}
+        />
+      )}
     </View>
   );
 }

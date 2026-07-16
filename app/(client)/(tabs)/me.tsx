@@ -16,7 +16,6 @@ import {
   Linking,
   StatusBar,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { SymbolView } from 'expo-symbols';
 import { useFocusEffect } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
@@ -317,7 +316,7 @@ export default function MeScreen() {
   // ── Render ──────────────────────────────────────────────────────────────────
 
   return (
-    <SafeAreaView style={styles.root} edges={[]}>
+    <View style={styles.root}>
       <StatusBar barStyle="dark-content" backgroundColor="#faf9f7" />
 
       <ScrollView
@@ -690,7 +689,7 @@ export default function MeScreen() {
           <Text style={styles.toastText}>{t.clientMe.passwordUpdated}</Text>
         </View>
       )}
-    </SafeAreaView>
+    </View>
   );
 }
 

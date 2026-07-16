@@ -1805,7 +1805,7 @@ export default function NutritionDailyScreen() {
       <LightHeader
         left={
           <HeaderIcon onPress={() => setNotifOverlay(true)} badge={hasUnreadNotifs}>
-            <PearIcon size={30} color={HEADER_ICON} />
+            <PearIcon size={34} color={HEADER_ICON} strokeWidth={1.5} />
           </HeaderIcon>
         }
         title="Food Log"
