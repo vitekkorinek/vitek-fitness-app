@@ -15,6 +15,7 @@ export default function ProgressScreen() {
       <StatusBar barStyle="dark-content" />
       <ScrollView
         style={styles.scroll}
+        contentInsetAdjustmentBehavior="never"
         contentContainerStyle={[styles.content, { paddingTop: headerH, paddingBottom: tabBarH }]}
         showsVerticalScrollIndicator={false}
         scrollIndicatorInsets={{ top: headerH, bottom: tabBarH }}

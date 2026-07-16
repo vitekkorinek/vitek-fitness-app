@@ -1,70 +1,33 @@
-import { Tabs } from 'expo-router';
-import { SymbolView } from 'expo-symbols';
+import { NativeTabs, Icon, Label } from 'expo-router/unstable-native-tabs';
 
 const ACCENT = '#24ac88';
-const MUTED  = '#999';
-const BG     = '#faf9f7';
 
 export default function NutritionLayout() {
   return (
-    <Tabs
-      backBehavior="none"
-      screenOptions={{
-        headerShown: false,
-        tabBarActiveTintColor: ACCENT,
-        tabBarInactiveTintColor: MUTED,
-        tabBarStyle: {
-          backgroundColor: BG,
-          borderTopColor: '#e8e8e4',
-          borderTopWidth: 1,
-        },
-        tabBarLabelStyle: {
-          fontSize: 11,
-          fontWeight: '600',
-        },
-      }}
-    >
-      <Tabs.Screen
-        name="index"
-        options={{
-          title: 'Food Log',
-          tabBarIcon: ({ color }) => (
-            <SymbolView name="fork.knife" size={22} tintColor={color} />
-          ),
-        }}
-      />
-      <Tabs.Screen
-        name="favourites"
-        options={{
-          title: 'Favourites',
-          tabBarIcon: ({ color, focused }) => (
-            <SymbolView name={focused ? 'heart.fill' : 'heart'} size={22} tintColor={color} />
-          ),
-        }}
-      />
-      <Tabs.Screen
-        name="weekly"
-        options={{
-          title: 'Weekly',
-          tabBarIcon: ({ color, focused }) => (
-            <SymbolView name={focused ? 'chart.bar.fill' : 'chart.bar'} size={22} tintColor={color} />
-          ),
-        }}
-      />
-      <Tabs.Screen
-        name="grocery-list"
-        options={{
-          title: 'Grocery',
-          tabBarIcon: ({ color, focused }) => (
-            <SymbolView name={focused ? 'cart.fill' : 'cart'} size={22} tintColor={color} />
-          ),
-        }}
-      />
-      <Tabs.Screen name="tips" options={{ href: null }} />
-      <Tabs.Screen name="recipes" options={{ href: null }} />
-      <Tabs.Screen name="recommendations" options={{ href: null }} />
-      <Tabs.Screen name="recipe/create" options={{ href: null }} />
-      <Tabs.Screen name="recipe/[id]" options={{ href: null }} />
-    </Tabs>
+    <NativeTabs tintColor={ACCENT} backBehavior="none">
+      <NativeTabs.Trigger name="index">
+        <Label>Food Log</Label>
+        <Icon sf="fork.knife" />
+      </NativeTabs.Trigger>
+      <NativeTabs.Trigger name="favourites">
+        <Label>Favourites</Label>
+        <Icon sf={{ default: 'heart', selected: 'heart.fill' }} />
+      </NativeTabs.Trigger>
+      <NativeTabs.Trigger name="weekly">
+        <Label>Weekly</Label>
+        <Icon sf={{ default: 'chart.bar', selected: 'chart.bar.fill' }} />
+      </NativeTabs.Trigger>
+      <NativeTabs.Trigger name="grocery-list">
+        <Label>Grocery</Label>
+        <Icon sf={{ default: 'cart', selected: 'cart.fill' }} />
+      </NativeTabs.Trigger>
+
+      {/* Suppressed routes — mounted but hidden from the bar */}
+      <NativeTabs.Trigger name="tips" hidden />
+      <NativeTabs.Trigger name="recipes" hidden />
+      <NativeTabs.Trigger name="recommendations" hidden />
+      <NativeTabs.Trigger name="recipe/create" hidden />
+      <NativeTabs.Trigger name="recipe/[id]" hidden />
+    </NativeTabs>
   );
 }

@@ -10,6 +10,7 @@ import {
   Platform,
   Pressable,
   ScrollView,
+  StatusBar,
   StyleSheet,
   Text,
   TextInput,
@@ -19,8 +20,9 @@ import {
 } from 'react-native';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useFocusEffect, useNavigation, useRouter } from 'expo-router';
-import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
+import { useFocusEffect, useRouter } from 'expo-router';
+import { useTabBarHeight } from '@/components/FloatingTabBar';
+import { LightHeader, HeaderIcon, HEADER_ICON, useHeaderHeight } from '@/components/LightHeader';
 import { BottomSheet } from '@/components/BottomSheet';
 import { SymbolView } from 'expo-symbols';
 import Svg, { Defs, LinearGradient as SvgLinearGradient, Path as SvgPath, Stop } from 'react-native-svg';
@@ -570,9 +572,9 @@ function LiquidPip({
 export default function NutritionDailyScreen() {
   const { profile }  = useAuth();
   const router       = useRouter();
-  const navigation   = useNavigation();
   const insets       = useSafeAreaInsets();
-  const tabBarH      = useBottomTabBarHeight();
+  const tabBarH      = useTabBarHeight();
+  const headerH      = useHeaderHeight();
 
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [weekStart, setWeekStart]       = useState<Date>(() => mondayOf(new Date()));
@@ -1098,16 +1100,9 @@ export default function NutritionDailyScreen() {
     if (editEntry) setEditAmount(String(editEntry.portion_amount ?? ''));
   }, [editEntry?.id]);
 
-  // Hide/show nutrition tab bar while in selection mode. (The add-picker popover
-  // does NOT hide it — it dims it via a full-screen Modal backdrop instead, so the
-  // FAB stays put; hiding the bar expands the screen and drops the FAB.)
-  const defaultTabBarStyle = { backgroundColor: SCREEN_BG, borderTopColor: '#e8e8e4', borderTopWidth: 1 };
-  useEffect(() => {
-    navigation.setOptions({
-      tabBarStyle: selectedIds.size > 0 ? { display: 'none' } : defaultTabBarStyle,
-    });
-    return () => { navigation.setOptions({ tabBarStyle: defaultTabBarStyle }); };
-  }, [selectedIds.size, navigation]);
+  // (Selection mode used to hide the JS tab bar; under the native tab bar we can't
+  // toggle it, so the selection panel is rendered in a Modal that covers it — see
+  // the `selectedIds.size > 0` Modal near the bottom of the render.)
 
   const handleSaveDay = async () => {
     if (!saveDayName.trim() || savingDay) return;
@@ -1157,35 +1152,7 @@ export default function NutritionDailyScreen() {
 
   return (
     <View style={styles.root}>
-      {/* ── Header ──────────────────────────────────────────────────────── */}
-      <View style={[styles.header, { paddingTop: insets.top }]}>
-        <View style={styles.headerRow}>
-          <TouchableOpacity
-            onPress={() => setNotifOverlay(true)}
-            style={styles.hdrSide}
-            hitSlop={8}
-          >
-            <PearIcon size={32} color="rgba(255,255,255,0.85)" badge={hasUnreadNotifs} />
-          </TouchableOpacity>
-          <Text style={styles.hdrTitle}>Food Log</Text>
-          {hasSession && (
-            <TouchableOpacity style={styles.hdrSessIndicator} onPress={() => setSessionModalVisible(true)} hitSlop={12} activeOpacity={0.8}>
-              <SymbolView name="timer" size={13} tintColor="#24ac88" />
-              <Text style={styles.hdrSessTimer}>
-                {String(Math.floor(sessionElapsed / 60)).padStart(2, '0')}:{String(sessionElapsed % 60).padStart(2, '0')}
-              </Text>
-            </TouchableOpacity>
-          )}
-          <TouchableOpacity
-            onPress={() => router.navigate('/(client)' as any)}
-            style={[styles.hdrSide, styles.hdrRight]}
-            hitSlop={8}
-          >
-            <VFIcon size={30} color="rgba(255,255,255,0.85)" />
-          </TouchableOpacity>
-        </View>
-      </View>
-
+      <StatusBar barStyle="dark-content" />
       <NotificationOverlay
         area="nutrition"
         visible={notifOverlay}
@@ -1212,7 +1179,9 @@ export default function NutritionDailyScreen() {
       ) : (
         <ScrollView
           style={styles.scroll}
-          contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom + (selectedIds.size > 0 ? 160 : 100) }]}
+          contentInsetAdjustmentBehavior="never"
+          contentContainerStyle={[styles.scrollContent, { paddingTop: headerH + 16, paddingBottom: tabBarH + (selectedIds.size > 0 ? 90 : 16) }]}
+          scrollIndicatorInsets={{ top: headerH, bottom: tabBarH }}
           showsVerticalScrollIndicator={false}
         >
           {/* ── Gauge + pips + week strip (flat, no card) ─────────────── */}
@@ -1460,9 +1429,9 @@ export default function NutritionDailyScreen() {
               {
                 // Bottom-right corner tucks right into the FAB so the card reads
                 // as growing out of the + button (the ✕ sits at the corner).
-                // +tabBarH: inside the full-screen Modal, bottom is measured from the
-                // physical screen bottom, so add the tab-bar height to land above it.
-                bottom: tabBarH + insets.bottom + 42,
+                // Sits `tabBarH` above the physical bottom so it clears the native
+                // glass tab bar, matching the resting FAB.
+                bottom: tabBarH + 40,
                 opacity: popAnim,
                 transform: [
                   { translateX: POP_W / 2 },
@@ -1553,7 +1522,7 @@ export default function NutritionDailyScreen() {
           {/* ✕ button — lives in the Modal (above the dimmed tab bar), at the same
               spot as the resting +, morphing via the same rotation. */}
           <TouchableOpacity
-            style={[styles.fab, { bottom: tabBarH + insets.bottom + 2 }]}
+            style={[styles.fab, { bottom: tabBarH }]}
             onPress={closePicker}
             activeOpacity={0.85}
           >
@@ -1566,7 +1535,7 @@ export default function NutritionDailyScreen() {
       {/* ── Floating add button (+) — closed state; the ✕ lives in the Modal ── */}
       {!loading && selectedIds.size === 0 && !mealPickerVisible && (
         <TouchableOpacity
-          style={[styles.fab, { bottom: insets.bottom + 2 }]}
+          style={[styles.fab, { bottom: tabBarH }]}
           onPress={openPicker}
           activeOpacity={0.85}
         >
@@ -1804,7 +1773,7 @@ export default function NutritionDailyScreen() {
 
       {/* ── Selection bottom bar ──────────────────────────────────────── */}
       {selectedIds.size > 0 && (
-        <View style={[styles.selBar, { paddingBottom: insets.bottom + 6 }]}>
+        <View style={[styles.selBar, { bottom: tabBarH, paddingBottom: 14 }]}>
           <View style={styles.selBarTop}>
             <Text style={styles.selBarCount}>{selectedIds.size} item{selectedIds.size > 1 ? 's' : ''} selected</Text>
             <TouchableOpacity onPress={() => setSelectedIds(new Set())} hitSlop={8}>
@@ -1831,6 +1800,31 @@ export default function NutritionDailyScreen() {
           </View>
         </View>
       )}
+
+      {/* Glass header — rendered last so it overlays the scrolling content */}
+      <LightHeader
+        left={
+          <HeaderIcon onPress={() => setNotifOverlay(true)} badge={hasUnreadNotifs}>
+            <PearIcon size={30} color={HEADER_ICON} />
+          </HeaderIcon>
+        }
+        title="Food Log"
+        right={
+          <HeaderIcon onPress={() => router.navigate('/(client)' as any)}>
+            <VFIcon size={26} color={HEADER_ICON} />
+          </HeaderIcon>
+        }
+        overlay={
+          hasSession ? (
+            <TouchableOpacity style={styles.hdrSessIndicator} onPress={() => setSessionModalVisible(true)} hitSlop={12} activeOpacity={0.8}>
+              <SymbolView name="timer" size={13} tintColor="#24ac88" />
+              <Text style={styles.hdrSessTimer}>
+                {String(Math.floor(sessionElapsed / 60)).padStart(2, '0')}:{String(sessionElapsed % 60).padStart(2, '0')}
+              </Text>
+            </TouchableOpacity>
+          ) : null
+        }
+      />
     </View>
   );
 }
@@ -1841,12 +1835,7 @@ const styles = StyleSheet.create({
   root:   { flex: 1, backgroundColor: SCREEN_BG },
   loader: { flex: 1, alignItems: 'center', justifyContent: 'center' },
 
-  header:    { backgroundColor: HEADER },
-  headerRow: { height: 62, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20 },
-  hdrSide:   { width: 48, alignItems: 'flex-start', justifyContent: 'center' },
-  hdrRight:  { alignItems: 'flex-end' },
-  hdrTitle:  { flex: 1, fontSize: 18, fontWeight: '700', color: '#fff', textAlign: 'center' },
-  hdrSessIndicator: { position: 'absolute', right: 56, top: 0, bottom: 0, flexDirection: 'row', alignItems: 'center', gap: 4 },
+  hdrSessIndicator: { position: 'absolute', right: 66, top: 0, bottom: 0, flexDirection: 'row', alignItems: 'center', gap: 4 },
   hdrSessTimer: { fontSize: 11, fontWeight: '700', color: '#24ac88', fontVariant: ['tabular-nums'] as any },
 
   scroll:        { backgroundColor: SCREEN_BG },

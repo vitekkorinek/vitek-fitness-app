@@ -1,6 +1,7 @@
 import {
   ActivityIndicator,
   ScrollView,
+  StatusBar,
   StyleSheet,
   Text,
   TextInput,
@@ -9,13 +10,14 @@ import {
 } from 'react-native';
 import { BottomSheet } from '@/components/BottomSheet';
 import { useCallback, useState } from 'react';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { smartBack } from '@/lib/navHistory';
 import { SymbolView } from 'expo-symbols';
 import { LinearGradient } from 'expo-linear-gradient';
 import { supabase } from '@/lib/supabase';
 import { VFIcon } from '@/components/VFIcon';
+import { useTabBarHeight } from '@/components/FloatingTabBar';
+import { LightHeader, HeaderIcon, HEADER_ICON, useHeaderHeight } from '@/components/LightHeader';
 
 const BG     = '#faf9f7';
 const CARD   = '#ffffff';
@@ -36,8 +38,9 @@ interface Recommendation {
 }
 
 export default function RecommendationsScreen() {
-  const insets = useSafeAreaInsets();
   const router = useRouter();
+  const headerH = useHeaderHeight();
+  const tabBarH = useTabBarHeight();
 
   const [items, setItems]               = useState<Recommendation[]>([]);
   const [loading, setLoading]           = useState(true);
@@ -66,25 +69,10 @@ export default function RecommendationsScreen() {
 
   return (
     <View style={s.root}>
-      {/* Header */}
-      <View style={[s.header, { paddingTop: insets.top }]}>
-        <View style={s.headerRow}>
-          <TouchableOpacity style={s.hdrSide} onPress={() => smartBack(router)} hitSlop={8}>
-            <SymbolView name="chevron.left" size={22} tintColor="rgba(255,255,255,0.85)" />
-          </TouchableOpacity>
-          <Text style={s.hdrTitle}>Recommendations</Text>
-          <TouchableOpacity
-            style={[s.hdrSide, s.hdrRight]}
-            onPress={() => router.navigate('/(client)' as any)}
-            hitSlop={8}
-          >
-            <VFIcon size={28} color="#fff" />
-          </TouchableOpacity>
-        </View>
-      </View>
+      <StatusBar barStyle="dark-content" />
 
       {/* Search */}
-      <View style={s.toolbar}>
+      <View style={[s.toolbar, { paddingTop: headerH + 8 }]}>
         <View style={s.searchBar}>
           <SymbolView name="magnifyingglass" size={15} tintColor={MUTED} />
           <TextInput
@@ -112,7 +100,9 @@ export default function RecommendationsScreen() {
         </View>
       ) : (
         <ScrollView
-          contentContainerStyle={[s.list, { paddingBottom: insets.bottom + 80 }]}
+          contentInsetAdjustmentBehavior="never"
+          contentContainerStyle={[s.list, { paddingBottom: tabBarH + 16 }]}
+          scrollIndicatorInsets={{ bottom: tabBarH }}
           showsVerticalScrollIndicator={false}
         >
           {filtered.map(r => (
@@ -160,6 +150,12 @@ export default function RecommendationsScreen() {
           )}
         </BottomSheet>
       )}
+
+      <LightHeader
+        left={<HeaderIcon onPress={() => smartBack(router)}><SymbolView name="chevron.left" size={24} tintColor={HEADER_ICON} weight="semibold" /></HeaderIcon>}
+        title="Recommendations"
+        right={<HeaderIcon onPress={() => router.navigate('/(client)' as any)}><VFIcon size={26} color={HEADER_ICON} /></HeaderIcon>}
+      />
     </View>
   );
 }
@@ -167,12 +163,6 @@ export default function RecommendationsScreen() {
 const s = StyleSheet.create({
   root:   { flex: 1, backgroundColor: BG },
   loader: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-
-  header:    { backgroundColor: HEADER },
-  headerRow: { height: 62, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20 },
-  hdrSide:   { width: 48, alignItems: 'flex-start', justifyContent: 'center' },
-  hdrRight:  { alignItems: 'flex-end' },
-  hdrTitle:  { flex: 1, fontSize: 18, fontWeight: '700', color: '#fff', textAlign: 'center' },
 
   toolbar:    { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 12 },
   searchBar:  { flex: 1, flexDirection: 'row', alignItems: 'center', backgroundColor: CARD, borderRadius: 10, paddingHorizontal: 10, paddingVertical: 9, gap: 8, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.06, shadowRadius: 4, elevation: 2 },

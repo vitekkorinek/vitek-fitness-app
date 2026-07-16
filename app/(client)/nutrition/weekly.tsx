@@ -1,6 +1,7 @@
 import {
   ActivityIndicator,
   ScrollView,
+  StatusBar,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -8,8 +9,9 @@ import {
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect, useRouter } from 'expo-router';
+import { useTabBarHeight } from '@/components/FloatingTabBar';
+import { LightHeader, HeaderIcon, HEADER_ICON, useHeaderHeight } from '@/components/LightHeader';
 import { smartBack } from '@/lib/navHistory';
 import { SymbolView } from 'expo-symbols';
 import { useAuth } from '@/context/AuthContext';
@@ -182,7 +184,8 @@ interface Props { readOnly?: boolean; clientId?: string; }
 export default function WeeklyInsightsScreen({ readOnly = false, clientId: propClientId }: Props) {
   const { profile } = useAuth();
   const router      = useRouter();
-  const insets      = useSafeAreaInsets();
+  const headerH     = useHeaderHeight();
+  const tabBarH     = useTabBarHeight();
 
   const clientId = propClientId ?? profile?.id ?? '';
 
@@ -296,47 +299,34 @@ export default function WeeklyInsightsScreen({ readOnly = false, clientId: propC
 
   return (
     <View style={s.root}>
-      {/* ── Header ──────────────────────────────────────────────────── */}
-      <View style={[s.header, { paddingTop: insets.top }]}>
-        <View style={s.headerRow}>
-          <TouchableOpacity style={s.hdrSide} onPress={() => smartBack(router)} hitSlop={8}>
-            <SymbolView name="chevron.left" size={22} tintColor="rgba(255,255,255,0.85)" />
-          </TouchableOpacity>
-          <Text style={s.hdrTitle}>Weekly Report</Text>
-          <TouchableOpacity
-            onPress={() => router.navigate('/(client)' as any)}
-            style={[s.hdrSide, s.hdrRight]}
-            hitSlop={8}
-          >
-            <VFIcon size={28} color="#fff" />
-          </TouchableOpacity>
-        </View>
-      </View>
-
-      {/* ── Week selector ───────────────────────────────────────────── */}
-      <View style={s.weekSelBar}>
-        <TouchableOpacity onPress={() => setWeekStart(ws => addWeeks(ws, -1))} hitSlop={8}>
-          <SymbolView name="chevron.left" size={18} tintColor={HEADER} />
-        </TouchableOpacity>
-        <Text style={s.weekSelLabel}>
-          {isCurrent ? 'This week · ' : ''}{formatWeekRange(weekStart)}
-        </Text>
-        <TouchableOpacity
-          onPress={() => { if (!isCurrent) setWeekStart(ws => addWeeks(ws, 1)); }}
-          hitSlop={8}
-          disabled={isCurrent}
-        >
-          <SymbolView name="chevron.right" size={18} tintColor={isCurrent ? '#ccc' : HEADER} />
-        </TouchableOpacity>
-      </View>
+      <StatusBar barStyle="dark-content" />
 
       {loading ? (
-        <View style={s.loader}><ActivityIndicator color={ACCENT} size="large" /></View>
+        <View style={[s.loader, { paddingTop: headerH }]}><ActivityIndicator color={ACCENT} size="large" /></View>
       ) : (
         <ScrollView
-          contentContainerStyle={[s.content, { paddingBottom: insets.bottom + 80 }]}
+          contentInsetAdjustmentBehavior="never"
+          contentContainerStyle={[s.content, { paddingTop: headerH + 8, paddingBottom: tabBarH + 16 }]}
+          scrollIndicatorInsets={{ top: headerH, bottom: tabBarH }}
           showsVerticalScrollIndicator={false}
         >
+          {/* ── Week selector (in-screen, scrolls with content) ───── */}
+          <View style={s.weekSelBar}>
+            <TouchableOpacity onPress={() => setWeekStart(ws => addWeeks(ws, -1))} hitSlop={8}>
+              <SymbolView name="chevron.left" size={18} tintColor={HEADER} />
+            </TouchableOpacity>
+            <Text style={s.weekSelLabel}>
+              {isCurrent ? 'This week · ' : ''}{formatWeekRange(weekStart)}
+            </Text>
+            <TouchableOpacity
+              onPress={() => { if (!isCurrent) setWeekStart(ws => addWeeks(ws, 1)); }}
+              hitSlop={8}
+              disabled={isCurrent}
+            >
+              <SymbolView name="chevron.right" size={18} tintColor={isCurrent ? '#ccc' : HEADER} />
+            </TouchableOpacity>
+          </View>
+
           {/* ── Trainer note ─────────────────────────────────────── */}
           {trainerNote && (
             <View style={s.noteCard}>
@@ -617,6 +607,12 @@ export default function WeeklyInsightsScreen({ readOnly = false, clientId: propC
           )}
         </ScrollView>
       )}
+
+      <LightHeader
+        left={<HeaderIcon onPress={() => smartBack(router)}><SymbolView name="chevron.left" size={24} tintColor={HEADER_ICON} weight="semibold" /></HeaderIcon>}
+        title="Weekly Report"
+        right={<HeaderIcon onPress={() => router.navigate('/(client)' as any)}><VFIcon size={26} color={HEADER_ICON} /></HeaderIcon>}
+      />
     </View>
   );
 }
@@ -625,12 +621,6 @@ const s = StyleSheet.create({
   root:    { flex: 1, backgroundColor: BG },
   loader:  { flex: 1, alignItems: 'center', justifyContent: 'center' },
   content: { paddingHorizontal: 16, paddingTop: 10, paddingBottom: 0, gap: 12 },
-
-  header:    { backgroundColor: HEADER },
-  headerRow: { height: 62, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20 },
-  hdrSide:   { width: 48, alignItems: 'flex-start', justifyContent: 'center' },
-  hdrRight:  { alignItems: 'flex-end' },
-  hdrTitle:  { flex: 1, fontSize: 18, fontWeight: '700', color: '#fff', textAlign: 'center' },
 
   weekSelBar:   { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 12, backgroundColor: BG, paddingTop: 16, paddingBottom: 8 },
   weekSelLabel: { fontSize: 13, fontWeight: '600', color: HEADER },

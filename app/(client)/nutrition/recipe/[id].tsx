@@ -16,6 +16,7 @@ import { SymbolView } from 'expo-symbols';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useAuth } from '@/context/AuthContext';
 import { supabase } from '@/lib/supabase';
+import { useTabBarHeight } from '@/components/FloatingTabBar';
 
 const BG     = '#faf9f7';
 const CARD   = '#ffffff';
@@ -68,6 +69,7 @@ export default function RecipeDetailScreen() {
   const { profile }  = useAuth();
   const router       = useRouter();
   const insets       = useSafeAreaInsets();
+  const tabBarH      = useTabBarHeight();
 
   const [recipe, setRecipe]           = useState<Recipe | null>(null);
   const [ingredients, setIngredients] = useState<Ingredient[]>([]);
@@ -171,7 +173,7 @@ export default function RecipeDetailScreen() {
 
   return (
     <View style={s.root}>
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: insets.bottom + 24 }}>
+      <ScrollView showsVerticalScrollIndicator={false} contentInsetAdjustmentBehavior="never" contentContainerStyle={{ paddingBottom: tabBarH + 24 }} scrollIndicatorInsets={{ bottom: tabBarH }}>
         {/* ── Cover header ────────────────────────────────────────── */}
         <View style={[s.coverWrap, { paddingTop: insets.top }]}>
           {recipe.cover_photo_url ? (

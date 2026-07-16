@@ -2,6 +2,7 @@ import {
   ActivityIndicator,
   Modal,
   ScrollView,
+  StatusBar,
   StyleSheet,
   Text,
   TextInput,
@@ -9,7 +10,6 @@ import {
   View,
 } from 'react-native';
 import { useCallback, useRef, useState } from 'react';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { smartBack } from '@/lib/navHistory';
 import { SymbolView } from 'expo-symbols';
@@ -18,6 +18,8 @@ import { useAuth } from '@/context/AuthContext';
 import { supabase } from '@/lib/supabase';
 import { VFIcon } from '@/components/VFIcon';
 import { BottomSheet } from '@/components/BottomSheet';
+import { useTabBarHeight } from '@/components/FloatingTabBar';
+import { LightHeader, HeaderIcon, HEADER_ICON, useHeaderHeight } from '@/components/LightHeader';
 
 const BG     = '#faf9f7';
 const CARD   = '#ffffff';
@@ -169,7 +171,8 @@ const st = StyleSheet.create({
 export default function GroceryListScreen() {
   const { profile } = useAuth();
   const router      = useRouter();
-  const insets      = useSafeAreaInsets();
+  const headerH     = useHeaderHeight();
+  const tabBarH     = useTabBarHeight();
   const clientId    = profile?.id ?? '';
 
   const [items, setItems]     = useState<GroceryItem[]>([]);
@@ -265,25 +268,10 @@ export default function GroceryListScreen() {
 
   return (
     <View style={s.root}>
-      {/* ── Header ──────────────────────────────────────────────────── */}
-      <View style={[s.header, { paddingTop: insets.top }]}>
-        <View style={s.headerRow}>
-          <TouchableOpacity style={s.hdrSide} onPress={() => smartBack(router)} hitSlop={8}>
-            <SymbolView name="chevron.left" size={22} tintColor="rgba(255,255,255,0.85)" />
-          </TouchableOpacity>
-          <Text style={s.hdrTitle}>Grocery List</Text>
-          <TouchableOpacity
-            style={[s.hdrSide, s.hdrRight]}
-            onPress={() => router.navigate('/(client)' as any)}
-            hitSlop={8}
-          >
-            <VFIcon size={28} color="#fff" />
-          </TouchableOpacity>
-        </View>
-      </View>
+      <StatusBar barStyle="dark-content" />
 
       {/* ── Toolbar ─────────────────────────────────────────────────── */}
-      <View style={s.toolbar}>
+      <View style={[s.toolbar, { paddingTop: headerH + 8 }]}>
         <TouchableOpacity style={s.addBtn} onPress={() => setAddModal(true)} activeOpacity={0.8}>
           <SymbolView name="plus" size={15} tintColor="#fff" />
           <Text style={s.addBtnText}>Add item</Text>
@@ -304,7 +292,9 @@ export default function GroceryListScreen() {
         </View>
       ) : (
         <ScrollView
-          contentContainerStyle={[s.list, { paddingBottom: insets.bottom + 80 }]}
+          contentInsetAdjustmentBehavior="never"
+          contentContainerStyle={[s.list, { paddingBottom: tabBarH + 16 }]}
+          scrollIndicatorInsets={{ bottom: tabBarH }}
           showsVerticalScrollIndicator={false}
         >
           {/* ── To buy ────────────────────────────────────────────── */}
@@ -396,6 +386,12 @@ export default function GroceryListScreen() {
           </TouchableOpacity>
         </TouchableOpacity>
       </Modal>
+
+      <LightHeader
+        left={<HeaderIcon onPress={() => smartBack(router)}><SymbolView name="chevron.left" size={24} tintColor={HEADER_ICON} weight="semibold" /></HeaderIcon>}
+        title="Grocery List"
+        right={<HeaderIcon onPress={() => router.navigate('/(client)' as any)}><VFIcon size={26} color={HEADER_ICON} /></HeaderIcon>}
+      />
     </View>
   );
 }
@@ -405,12 +401,6 @@ export default function GroceryListScreen() {
 const s = StyleSheet.create({
   root:   { flex: 1, backgroundColor: BG },
   loader: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-
-  header:    { backgroundColor: HEADER },
-  headerRow: { height: 62, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20 },
-  hdrSide:   { width: 48, alignItems: 'flex-start', justifyContent: 'center' },
-  hdrRight:  { alignItems: 'flex-end' },
-  hdrTitle:  { flex: 1, fontSize: 18, fontWeight: '700', color: '#fff', textAlign: 'center' },
 
   toolbar:    { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingTop: 14, paddingBottom: 8 },
   addBtn:     { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: ACCENT, borderRadius: 100, paddingHorizontal: 16, paddingVertical: 8 },

@@ -8,6 +8,7 @@ import {
   Platform,
   Pressable,
   ScrollView,
+  StatusBar,
   StyleSheet,
   Text,
   TextInput,
@@ -30,6 +31,8 @@ import FoodSearchModal from '@/components/FoodSearchModal';
 import type { FoodConfirmResult } from '@/components/FoodSearchModal';
 import EditPortionSheet from '@/components/EditPortionSheet';
 import { BottomSheet } from '@/components/BottomSheet';
+import { useTabBarHeight } from '@/components/FloatingTabBar';
+import { LightHeader, HeaderIcon, HEADER_ICON, useHeaderHeight } from '@/components/LightHeader';
 import type { FoodResult } from '@/lib/foodApi';
 
 const BG     = '#faf9f7';
@@ -296,6 +299,8 @@ export default function FavouritesScreen() {
   const { profile } = useAuth();
   const router      = useRouter();
   const insets      = useSafeAreaInsets();
+  const headerH     = useHeaderHeight();
+  const tabBarH     = useTabBarHeight();
   const clientId    = profile?.id ?? '';
   const { tab: tabParam, insertMode: insertModeParam } = useLocalSearchParams<{ tab?: string; insertMode?: string }>();
   const isInsertMode = insertModeParam === 'true';
@@ -901,36 +906,13 @@ export default function FavouritesScreen() {
 
   return (
     <View style={s.root}>
-      {/* ── Header ──────────────────────────────────────────────────── */}
-      <View style={[s.header, { paddingTop: insets.top }]}>
-        <View style={s.headerRow}>
-          <TouchableOpacity
-            style={s.hdrSide}
-            onPress={() => {
-              // In insert mode the user came straight from the Food Log FAB → return there.
-              if (foodSelectMode) { exitFoodSelect(); return; }
-              if (isInsertMode) { router.navigate('/(client)/nutrition' as any); return; }
-              view === 'landing' ? smartBack(router) : setView('landing');
-            }}
-            hitSlop={8}
-          >
-            <SymbolView name="chevron.left" size={22} tintColor="rgba(255,255,255,0.85)" />
-          </TouchableOpacity>
-          <Text style={s.hdrTitle}>{headerTitle}</Text>
-          <TouchableOpacity
-            style={[s.hdrSide, s.hdrRight]}
-            onPress={() => router.navigate('/(client)' as any)}
-            hitSlop={8}
-          >
-            <VFIcon size={28} color="#fff" />
-          </TouchableOpacity>
-        </View>
-      </View>
+      <StatusBar barStyle="dark-content" />
 
       {/* ── Landing: 3 category cards ────────────────────────────────── */}
       {view === 'landing' && (
         <ScrollView
-          contentContainerStyle={[s.landingContent, { paddingBottom: insets.bottom + 80 }]}
+          contentInsetAdjustmentBehavior="never"
+          contentContainerStyle={[s.landingContent, { paddingTop: headerH + 16, paddingBottom: tabBarH + 16 }]}
           showsVerticalScrollIndicator={false}
         >
           <FullWidthCard
@@ -988,7 +970,7 @@ export default function FavouritesScreen() {
 
       {/* ── Recipes ─────────────────────────────────────────────────── */}
       {view === 'recipes' && (
-        <View style={{ flex: 1 }}>
+        <View style={{ flex: 1, paddingTop: headerH + 8 }}>
           <View style={s.recipeToolbar}>
             <View style={s.searchBar}>
               <SymbolView name="magnifyingglass" size={15} tintColor={MUTED} />
@@ -1038,7 +1020,8 @@ export default function FavouritesScreen() {
             </View>
           ) : (
             <ScrollView
-              contentContainerStyle={[s.list, { paddingBottom: insets.bottom + 80 }]}
+              contentInsetAdjustmentBehavior="never"
+              contentContainerStyle={[s.list, { paddingBottom: tabBarH + 16 }]}
               showsVerticalScrollIndicator={false}
             >
               {filteredRecipes.map(r => (
@@ -1055,7 +1038,7 @@ export default function FavouritesScreen() {
 
       {/* ── Meals ───────────────────────────────────────────────────── */}
       {view === 'meals' && (
-        <View style={{ flex: 1 }}>
+        <View style={{ flex: 1, paddingTop: headerH + 8 }}>
           {mealsLoading ? (
             <View style={s.loader}><ActivityIndicator color={ACCENT} /></View>
           ) : meals.length === 0 ? (
@@ -1111,7 +1094,8 @@ export default function FavouritesScreen() {
                 </View>
               ) : (
                 <ScrollView
-                  contentContainerStyle={[s.list, { paddingBottom: insets.bottom + 80 }]}
+                  contentInsetAdjustmentBehavior="never"
+                  contentContainerStyle={[s.list, { paddingBottom: tabBarH + 16 }]}
                   showsVerticalScrollIndicator={false}
                 >
                   {filteredMeals.map(meal => {
@@ -1178,7 +1162,7 @@ export default function FavouritesScreen() {
 
       {/* ── Foods ───────────────────────────────────────────────────── */}
       {view === 'foods' && (
-        <View style={{ flex: 1 }}>
+        <View style={{ flex: 1, paddingTop: headerH + 8 }}>
           {favFoodsLoading ? (
             <View style={s.loader}><ActivityIndicator color={ACCENT} /></View>
           ) : favFoods.length === 0 ? (
@@ -1218,7 +1202,8 @@ export default function FavouritesScreen() {
                 </View>
               ) : (
                 <ScrollView
-                  contentContainerStyle={[s.list, { paddingBottom: insets.bottom + (foodSelectMode ? 160 : 80) }]}
+                  contentInsetAdjustmentBehavior="never"
+                  contentContainerStyle={[s.list, { paddingBottom: tabBarH + (foodSelectMode ? 90 : 16) }]}
                   showsVerticalScrollIndicator={false}
                 >
                   {filteredFoods.map(f => {
@@ -1277,7 +1262,7 @@ export default function FavouritesScreen() {
           {/* Selection action bar — actions depend on how many are selected
               (1 → Remove · 2+ → Make meal or Remove), mirroring the Food Log. */}
           {foodSelectMode && (
-            <View style={[ff.selBar, { paddingBottom: insets.bottom + 12 }]}>
+            <View style={[ff.selBar, { bottom: tabBarH, paddingBottom: 14 }]}>
               <View style={ff.selTopRow}>
                 <Text style={ff.selCount}>
                   {selectedFoodIds.size === 0
@@ -1322,7 +1307,8 @@ export default function FavouritesScreen() {
             </View>
           ) : (
             <ScrollView
-              contentContainerStyle={[s.list, { paddingBottom: insets.bottom + 80 }]}
+              contentInsetAdjustmentBehavior="never"
+              contentContainerStyle={[s.list, { paddingTop: headerH + 4, paddingBottom: tabBarH + 16 }]}
               showsVerticalScrollIndicator={false}
             >
               {days.map(day => {
@@ -1406,7 +1392,7 @@ export default function FavouritesScreen() {
 
       {/* ── Recommendations ─────────────────────────────────────────── */}
       {view === 'recommendations' && (
-        <View style={{ flex: 1 }}>
+        <View style={{ flex: 1, paddingTop: headerH + 8 }}>
           <View style={s.recommTabBar}>
             {(['supplement', 'tip'] as const).map(tab => (
               <TouchableOpacity
@@ -1441,7 +1427,8 @@ export default function FavouritesScreen() {
             );
             return (
               <ScrollView
-                contentContainerStyle={[s.list, { paddingBottom: insets.bottom + 80 }]}
+                contentInsetAdjustmentBehavior="never"
+                contentContainerStyle={[s.list, { paddingBottom: tabBarH + 16 }]}
                 showsVerticalScrollIndicator={false}
               >
                 {items.map(r => (
@@ -1992,6 +1979,27 @@ export default function FavouritesScreen() {
           </Pressable>
         </Pressable>
       </Modal>
+
+      {/* Glass header — hidden while the full-screen meal editor is open (that
+          overlay has its own header). */}
+      {!mealDetail && (
+        <LightHeader
+          left={
+            <HeaderIcon
+              onPress={() => {
+                // In insert mode the user came straight from the Food Log FAB → return there.
+                if (foodSelectMode) { exitFoodSelect(); return; }
+                if (isInsertMode) { router.navigate('/(client)/nutrition' as any); return; }
+                view === 'landing' ? smartBack(router) : setView('landing');
+              }}
+            >
+              <SymbolView name="chevron.left" size={24} tintColor={HEADER_ICON} weight="semibold" />
+            </HeaderIcon>
+          }
+          title={headerTitle}
+          right={<HeaderIcon onPress={() => router.navigate('/(client)' as any)}><VFIcon size={26} color={HEADER_ICON} /></HeaderIcon>}
+        />
+      )}
     </View>
   );
 }
@@ -1999,12 +2007,6 @@ export default function FavouritesScreen() {
 const s = StyleSheet.create({
   root:   { flex: 1, backgroundColor: BG },
   loader: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingTop: 60 },
-
-  header:    { backgroundColor: HEADER },
-  headerRow: { height: 62, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20 },
-  hdrSide:   { width: 48, alignItems: 'flex-start', justifyContent: 'center' },
-  hdrRight:  { alignItems: 'flex-end' },
-  hdrTitle:  { flex: 1, fontSize: 18, fontWeight: '700', color: '#fff', textAlign: 'center' },
 
   landingContent: { padding: 16, paddingTop: 16, gap: 12 },
 
