@@ -1,89 +1,36 @@
-import { Tabs } from 'expo-router';
-import { SymbolView } from 'expo-symbols';
+import { NativeTabs, Icon, Label } from 'expo-router/unstable-native-tabs';
+
+const ACCENT = '#24ac88';
 
 export default function TrainerTabsLayout() {
   return (
-    <Tabs
-      screenOptions={{
-        headerShown: false,
-        tabBarActiveTintColor: '#244e43',
-        tabBarInactiveTintColor: '#aaa',
-        tabBarStyle: {
-          backgroundColor: '#ffffff',
-          borderTopColor: '#ebebeb',
-          borderTopWidth: 1,
-        },
-        tabBarLabelStyle: {
-          fontSize: 11,
-          fontWeight: '500',
-        },
-      }}
-    >
-      <Tabs.Screen
-        name="clients"
-        options={{
-          title: 'Clients',
-          tabBarIcon: ({ color, focused }) => (
-            <SymbolView
-              name={focused ? 'person.2.fill' : 'person.2'}
-              size={22}
-              tintColor={color}
-            />
-          ),
-        }}
-      />
-      <Tabs.Screen
-        name="schedule"
-        options={{
-          title: 'Schedule',
-          tabBarIcon: ({ color }) => (
-            <SymbolView
-              name="calendar"
-              size={22}
-              tintColor={color}
-            />
-          ),
-        }}
-      />
-      <Tabs.Screen
-        name="library"
-        options={{
-          title: 'Library',
-          tabBarIcon: ({ color, focused }) => (
-            <SymbolView
-              name={focused ? 'rectangle.stack.fill' : 'rectangle.stack'}
-              size={22}
-              tintColor={color}
-            />
-          ),
-        }}
-      />
-      <Tabs.Screen
-        name="finance"
-        options={{
-          title: 'Finance',
-          tabBarIcon: ({ color, focused }) => (
-            <SymbolView
-              name={focused ? 'chart.bar.fill' : 'chart.bar'}
-              size={22}
-              tintColor={color}
-            />
-          ),
-        }}
-      />
-      <Tabs.Screen
-        name="account"
-        options={{
-          title: 'Account',
-          tabBarIcon: ({ color, focused }) => (
-            <SymbolView
-              name={focused ? 'person.circle.fill' : 'person.circle'}
-              size={22}
-              tintColor={color}
-            />
-          ),
-        }}
-      />
-    </Tabs>
+    // Native iOS tab bar (real Liquid Glass + vibrancy on iOS 26). The accent-green
+    // `tintColor` is the active tint (matching the client side); iOS adapts the
+    // inactive glyph/label colour to the content behind the bar automatically. Each
+    // trainer tab screen renders its OWN header, so — unlike the client tabs — there
+    // is no shared glass header to overlay here.
+    <NativeTabs tintColor={ACCENT}>
+      <NativeTabs.Trigger name="clients">
+        <Label>Clients</Label>
+        <Icon sf={{ default: 'person.2', selected: 'person.2.fill' }} />
+      </NativeTabs.Trigger>
+      {/* `calendar.fill` does not exist as an SF Symbol — use `calendar` for both states */}
+      <NativeTabs.Trigger name="schedule">
+        <Label>Schedule</Label>
+        <Icon sf="calendar" />
+      </NativeTabs.Trigger>
+      <NativeTabs.Trigger name="library">
+        <Label>Library</Label>
+        <Icon sf={{ default: 'rectangle.stack', selected: 'rectangle.stack.fill' }} />
+      </NativeTabs.Trigger>
+      <NativeTabs.Trigger name="finance">
+        <Label>Finance</Label>
+        <Icon sf={{ default: 'chart.bar', selected: 'chart.bar.fill' }} />
+      </NativeTabs.Trigger>
+      <NativeTabs.Trigger name="account">
+        <Label>Account</Label>
+        <Icon sf={{ default: 'person.circle', selected: 'person.circle.fill' }} />
+      </NativeTabs.Trigger>
+    </NativeTabs>
   );
 }

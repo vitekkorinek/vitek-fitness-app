@@ -22,6 +22,7 @@ import { useAuth } from '@/context/AuthContext';
 import { supabase } from '@/lib/supabase';
 import { VFIcon } from '@/components/VFIcon';
 import { TrainerLogoButton } from '@/components/TrainerLogoButton';
+import { useTabBarHeight } from '@/components/FloatingTabBar';
 import { nameInitial } from '@/lib/utils';
 import t from '@/i18n/en';
 
@@ -78,6 +79,7 @@ const EMPTY: TrainerSettings = {
 export default function AccountScreen() {
   const { profile, signOut } = useAuth();
   const initial = nameInitial(profile?.name ?? 'V');
+  const tabBarH = useTabBarHeight();
 
   const [settings, setSettings] = useState<TrainerSettings>(EMPTY);
   const [savedSettings, setSavedSettings] = useState<TrainerSettings>(EMPTY);
@@ -324,10 +326,10 @@ export default function AccountScreen() {
         </View>
       </SafeAreaView>
 
-      <SafeAreaView style={styles.outerSafe} edges={['bottom']}>
+      <View style={styles.outerSafe}>
         <ScrollView
           style={styles.scroll}
-          contentContainerStyle={styles.scrollContent}
+          contentContainerStyle={[styles.scrollContent, { paddingBottom: tabBarH }]}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
@@ -624,7 +626,7 @@ export default function AccountScreen() {
             <Text style={styles.signOutText}>{t.common.signOut}</Text>
           </TouchableOpacity>
         </ScrollView>
-      </SafeAreaView>
+      </View>
 
       {/* Field edit modal */}
       {fieldModal && (

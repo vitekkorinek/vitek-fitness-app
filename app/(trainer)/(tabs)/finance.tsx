@@ -21,6 +21,7 @@ import { useAuth } from '@/context/AuthContext';
 import { nameInitial } from '@/lib/utils';
 import { VFIcon } from '@/components/VFIcon';
 import { TrainerLogoButton } from '@/components/TrainerLogoButton';
+import { useTabBarHeight } from '@/components/FloatingTabBar';
 import { BottomSheet } from '@/components/BottomSheet';
 import t from '@/i18n/en';
 import type { FinanceManualEntry, Invoice, InvoiceStatus } from '@/types/database';
@@ -421,6 +422,7 @@ const INV_YEAR_OPTIONS = (() => {
 export default function FinanceScreen() {
   const { profile } = useAuth();
   const router = useRouter();
+  const tabBarH = useTabBarHeight();
 
   // Tab state
   const [activeTab, setActiveTab] = useState<ActiveTab>('invoices');
@@ -583,7 +585,7 @@ export default function FinanceScreen() {
           data={filteredInvoices}
           keyExtractor={inv => inv.id}
           style={st.invList}
-          contentContainerStyle={st.invListContent}
+          contentContainerStyle={[st.invListContent, { paddingBottom: tabBarH }]}
           showsVerticalScrollIndicator={false}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={ACCENT} />}
           ListEmptyComponent={
@@ -623,7 +625,7 @@ export default function FinanceScreen() {
         /* ── Earnings tab ── */
         <ScrollView
           style={st.scroll}
-          contentContainerStyle={st.scrollContent}
+          contentContainerStyle={[st.scrollContent, { paddingBottom: tabBarH }]}
           showsVerticalScrollIndicator={false}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={ACCENT} />}
         >

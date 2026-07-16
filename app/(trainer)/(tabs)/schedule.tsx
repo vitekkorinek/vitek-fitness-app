@@ -12,6 +12,7 @@ import { SymbolView } from 'expo-symbols';
 import { useAuth } from '@/context/AuthContext';
 import { supabase } from '@/lib/supabase';
 import { TrainerLogoButton } from '@/components/TrainerLogoButton';
+import { useTabBarHeight } from '@/components/FloatingTabBar';
 import { BottomSheet } from '@/components/BottomSheet';
 
 const makeUUID = () => 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
@@ -271,6 +272,7 @@ function AppointmentCard({
 // ─── Schedule Screen ──────────────────────────────────────────────────────────
 export default function ScheduleScreen() {
   const { profile } = useAuth();
+  const tabBarH = useTabBarHeight();
   const scrollRef       = useRef<ScrollView>(null);
   const initScrollDone  = useRef(false);
   const scrollOffsetRef = useRef(0);
@@ -724,7 +726,7 @@ export default function ScheduleScreen() {
           <View style={cal.dowRow}>
             {DAY_LABELS.map(d => <Text key={d} style={cal.dowLabel}>{d}</Text>)}
           </View>
-          <View style={cal.grid}>
+          <View style={[cal.grid, { paddingBottom: tabBarH }]}>
             {buildMonthGrid(calModalYear, calModalMonth).map((week, wi) => (
               <View key={wi} style={cal.weekRow}>
                 {week.map((day, di) => {
@@ -851,7 +853,7 @@ export default function ScheduleScreen() {
             ref={scrollRef}
             scrollEventThrottle={16}
             showsVerticalScrollIndicator={false}
-            contentContainerStyle={{ paddingBottom:8 }}
+            contentContainerStyle={{ paddingBottom: tabBarH }}
             scrollEnabled={!draggingId}
             onScroll={e => { scrollOffsetRef.current = e.nativeEvent.contentOffset.y; }}
             onLayout={() => {
@@ -1193,6 +1195,7 @@ function WeekView({
   onTapEmpty: (date: string, time: string) => void;
   onMoveAppt: (a: Appointment, newDate: string, newTime: string) => void;
 }) {
+  const tabBarH     = useTabBarHeight();
   const scrollRef   = useRef<ScrollView>(null);
   const initDone    = useRef(false);
   const gridHeight  = 24 * WEEK_HOUR_H;
@@ -1255,6 +1258,7 @@ function WeekView({
         showsVerticalScrollIndicator={false}
         scrollEventThrottle={16}
         scrollEnabled={!dragId}
+        contentContainerStyle={{ paddingBottom: tabBarH }}
         onScroll={e => { scrollOffsetRef.current = e.nativeEvent.contentOffset.y; }}
         onLayout={() => {
           if (!initDone.current) {

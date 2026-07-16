@@ -18,6 +18,7 @@ import { SymbolView } from 'expo-symbols';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/context/AuthContext';
 import { TrainerLogoButton } from '@/components/TrainerLogoButton';
+import { useTabBarHeight } from '@/components/FloatingTabBar';
 import { BottomSheet } from '@/components/BottomSheet';
 import { relativeTime, isInactiveClient, nameInitial } from '@/lib/utils';
 import t from '@/i18n/en';
@@ -80,6 +81,7 @@ function fmtApptFull(dateStr: string): string {
 export default function ClientsScreen() {
   const { profile } = useAuth();
   const router = useRouter();
+  const tabBarH = useTabBarHeight();
 
   const [clients, setClients] = useState<ClientRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -262,7 +264,7 @@ export default function ClientsScreen() {
             style={styles.list}
             data={filtered}
             keyExtractor={item => item.id}
-            contentContainerStyle={filtered.length === 0 ? styles.emptyContainer : styles.listContent}
+            contentContainerStyle={[filtered.length === 0 ? styles.emptyContainer : styles.listContent, { paddingBottom: tabBarH }]}
             showsVerticalScrollIndicator={false}
             refreshControl={
               <RefreshControl

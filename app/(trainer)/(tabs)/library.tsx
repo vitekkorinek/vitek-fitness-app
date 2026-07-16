@@ -29,6 +29,7 @@ import { useAuth } from '@/context/AuthContext';
 import { loadTrainerFoods, type TrainerFoodRow } from '@/lib/foodApi';
 import { VFIcon } from '@/components/VFIcon';
 import { TrainerLogoButton } from '@/components/TrainerLogoButton';
+import { useTabBarHeight } from '@/components/FloatingTabBar';
 import { ExerciseFilterSheet } from '@/components/ExerciseFilterSheet';
 import { BottomSheet } from '@/components/BottomSheet';
 import {
@@ -204,6 +205,7 @@ async function fetchLibraryTemplates(trainerId: string): Promise<LibraryTemplate
 export default function LibraryScreen() {
   const router = useRouter();
   const { user } = useAuth();
+  const tabBarH = useTabBarHeight();
 
   const [segment, setSegment] = useState<Segment>('exercises');
   const [exercises, setExercises] = useState<Exercise[]>([]);
@@ -405,7 +407,7 @@ export default function LibraryScreen() {
               keyExtractor={item => item.id}
               stickySectionHeadersEnabled
               showsVerticalScrollIndicator={false}
-              contentContainerStyle={styles.listContent}
+              contentContainerStyle={[styles.listContent, { paddingBottom: tabBarH }]}
               refreshControl={
                 <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={ACCENT} />
               }
@@ -546,6 +548,7 @@ function NutritionTipsTab({
   addTick: number;
 }) {
   const insets = useSafeAreaInsets();
+  const tabBarH = useTabBarHeight();
 
   const [tips, setTips]             = useState<NutritionTip[]>([]);
   const [loading, setLoading]       = useState(true);
@@ -717,7 +720,7 @@ function NutritionTipsTab({
       ) : (
         <ScrollView
           showsVerticalScrollIndicator={false}
-          contentContainerStyle={nutStyles.listContent}
+          contentContainerStyle={[nutStyles.listContent, { paddingBottom: tabBarH }]}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={ACCENT} />}
         >
           {/* ── Tips: system tips section ─────────────────────────── */}
@@ -937,7 +940,7 @@ function FoodsTab({
   trainerId: string;
   addTick: number;
 }) {
-  const insets = useSafeAreaInsets();
+  const tabBarH = useTabBarHeight();
   const [rows, setRows]         = useState<TrainerFoodRow[]>([]);
   const [loading, setLoading]   = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -1038,7 +1041,7 @@ function FoodsTab({
       ) : (
         <ScrollView
           showsVerticalScrollIndicator={false}
-          contentContainerStyle={recStyles.listContent}
+          contentContainerStyle={[recStyles.listContent, { paddingBottom: tabBarH + 40 }]}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={ACCENT} />}
         >
           {filtered.map(row => (
@@ -1049,7 +1052,7 @@ function FoodsTab({
 
       {/* Floating + button */}
       <TouchableOpacity
-        style={[foodStyles.fab, { bottom: insets.bottom + 16 }]}
+        style={[foodStyles.fab, { bottom: tabBarH + 16 }]}
         onPress={() => { setEditRow(null); setCreateOpen(true); }}
         activeOpacity={0.85}
       >
@@ -1211,6 +1214,7 @@ function RecipesTab({
   router: ReturnType<typeof useRouter>;
   addTick: number;
 }) {
+  const tabBarH = useTabBarHeight();
   const [recipes, setRecipes] = useState<Recipe[]>([]);
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
@@ -1308,7 +1312,7 @@ function RecipesTab({
       ) : (
         <ScrollView
           showsVerticalScrollIndicator={false}
-          contentContainerStyle={recStyles.listContent}
+          contentContainerStyle={[recStyles.listContent, { paddingBottom: tabBarH }]}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={ACCENT} />}
         >
           {filtered.map(recipe => (
@@ -1536,6 +1540,7 @@ function WorkoutsTab({
   workoutSubTab: 'workouts' | 'templates';
   setWorkoutSubTab: (v: 'workouts' | 'templates') => void;
 }) {
+  const tabBarH = useTabBarHeight();
   const [allWorkouts, setAllWorkouts] = useState<LibraryWorkout[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -1812,7 +1817,7 @@ function WorkoutsTab({
         <ScrollView
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
-          contentContainerStyle={wStyles.listContent}
+          contentContainerStyle={[wStyles.listContent, { paddingBottom: tabBarH }]}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={ACCENT} />}
         >
           {templates.length === 0 ? (
@@ -1845,7 +1850,7 @@ function WorkoutsTab({
       <ScrollView
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
-        contentContainerStyle={wStyles.listContent}
+        contentContainerStyle={[wStyles.listContent, { paddingBottom: tabBarH }]}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={ACCENT} />}
       >
         {/* Search bar */}
