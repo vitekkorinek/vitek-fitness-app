@@ -1,9 +1,10 @@
 import {
   ActivityIndicator,
-  Alert,
   Image,
   Modal,
+  Pressable,
   ScrollView,
+  StatusBar,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -16,6 +17,9 @@ import { SymbolView } from 'expo-symbols';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useAuth } from '@/context/AuthContext';
 import { supabase } from '@/lib/supabase';
+import { VFIcon } from '@/components/VFIcon';
+import { BottomSheet } from '@/components/BottomSheet';
+import { LightHeader, HeaderIcon, HEADER_ICON, useHeaderHeight } from '@/components/LightHeader';
 
 const BG     = '#faf9f7';
 const CARD   = '#ffffff';
@@ -24,6 +28,7 @@ const HEADER = '#244e43';
 const ACCENT = '#24ac88';
 const TEXT   = '#1a1a1a';
 const MUTED  = '#999';
+const CORAL  = '#e05555';
 
 interface Ingredient {
   id: string;
@@ -68,6 +73,7 @@ export default function RecipeDetailScreen() {
   const { profile }  = useAuth();
   const router       = useRouter();
   const insets       = useSafeAreaInsets();
+  const headerH      = useHeaderHeight();
 
   const [recipe, setRecipe]           = useState<Recipe | null>(null);
   const [ingredients, setIngredients] = useState<Ingredient[]>([]);
@@ -75,7 +81,8 @@ export default function RecipeDetailScreen() {
   const [portions, setPortions]       = useState(1);
   const [logModal, setLogModal]       = useState(false);
   const [logMeal, setLogMeal]         = useState<string>('breakfast');
-  const [menuModal, setMenuModal]     = useState(false);
+  const [menuOpen, setMenuOpen]       = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const [logging, setLogging]         = useState(false);
 
   const clientId = profile?.id ?? '';
@@ -136,21 +143,14 @@ export default function RecipeDetailScreen() {
     }
     setLogging(false);
     setLogModal(false);
-    Alert.alert('Added', `${recipe.name} added to ${MEALS.find(m => m.key === logMeal)?.label ?? logMeal}`);
   };
 
-  const handleDelete = async () => {
+  const doDelete = async () => {
     if (!recipe) return;
-    Alert.alert('Delete recipe?', `"${recipe.name}" will be permanently deleted.`, [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Delete', style: 'destructive',
-        onPress: async () => {
-          await supabase.from('recipes').delete().eq('id', recipe.id);
-          router.back();
-        },
-      },
-    ]);
+    await supabase.from('recipe_ingredients').delete().eq('recipe_id', recipe.id);
+    await supabase.from('recipes').delete().eq('id', recipe.id);
+    setConfirmDelete(false);
+    router.back();
   };
 
   const handleToggleShare = async () => {
@@ -158,123 +158,123 @@ export default function RecipeDetailScreen() {
     const next = !recipe.is_shared_to_trainer;
     await supabase.from('recipes').update({ is_shared_to_trainer: next }).eq('id', recipe.id);
     setRecipe(r => r ? { ...r, is_shared_to_trainer: next } : r);
-    setMenuModal(false);
   };
 
-  if (loading || !recipe) {
-    return (
-      <View style={s.loader}>
-        <ActivityIndicator color={ACCENT} size="large" />
-      </View>
-    );
-  }
+  const portionLabel = Number.isInteger(portions) ? String(portions) : portions.toFixed(1);
+  const title = recipe?.name?.trim() || 'Recipe';
 
   return (
     <View style={s.root}>
-      <ScrollView showsVerticalScrollIndicator={false} contentInsetAdjustmentBehavior="never" contentContainerStyle={{ paddingBottom: insets.bottom + 24 }}>
-        {/* ── Cover header ────────────────────────────────────────── */}
-        <View style={[s.coverWrap, { paddingTop: insets.top }]}>
-          {recipe.cover_photo_url ? (
-            <Image source={{ uri: recipe.cover_photo_url }} style={StyleSheet.absoluteFill} resizeMode="cover" />
-          ) : (
-            <LinearGradient colors={['#3a7d6b','#244e43']} style={StyleSheet.absoluteFill} />
-          )}
-          <LinearGradient colors={['rgba(0,0,0,0.55)','rgba(0,0,0,0.15)','rgba(0,0,0,0.6)']} style={StyleSheet.absoluteFill} />
+      <StatusBar barStyle="dark-content" />
 
-          {/* Nav bar */}
-          <View style={s.navRow}>
-            <TouchableOpacity onPress={() => router.back()} style={s.navBtn} hitSlop={8}>
-              <SymbolView name="chevron.left" size={22} tintColor="#fff" />
-            </TouchableOpacity>
-            {isOwner && (
-              <TouchableOpacity onPress={() => setMenuModal(true)} style={s.navBtn} hitSlop={8}>
-                <SymbolView name="ellipsis" size={22} tintColor="#fff" />
-              </TouchableOpacity>
+      {loading || !recipe ? (
+        <View style={[s.loader, { paddingTop: headerH }]}><ActivityIndicator color={ACCENT} size="large" /></View>
+      ) : (
+        <ScrollView
+          contentInsetAdjustmentBehavior="never"
+          contentContainerStyle={{ paddingTop: headerH, paddingBottom: insets.bottom + 32 }}
+          scrollIndicatorInsets={{ top: headerH }}
+          showsVerticalScrollIndicator={false}
+        >
+          {/* Cover — rounded card that starts BELOW the header (scrolls under
+              the frosted glass), matching the meal editor. */}
+          <View style={s.coverWrap}>
+            {recipe.cover_photo_url ? (
+              <Image source={{ uri: recipe.cover_photo_url }} style={StyleSheet.absoluteFill} resizeMode="cover" />
+            ) : (
+              <LinearGradient colors={['#3a7d6b', '#244e43']} style={[StyleSheet.absoluteFill, { alignItems: 'center', justifyContent: 'center' }]}>
+                <SymbolView name="book.closed.fill" size={44} tintColor="rgba(255,255,255,0.45)" />
+              </LinearGradient>
             )}
           </View>
 
-          {/* Recipe info */}
-          <View style={s.coverInfo}>
-            <Text style={s.coverName}>{recipe.name}</Text>
-            <Text style={s.coverSub}>{recipe.portions} portion{recipe.portions !== 1 ? 's' : ''}</Text>
+          {/* Portions adjuster */}
+          <View style={[s.card, s.portionsRow]}>
+            <TouchableOpacity
+              onPress={() => setPortions(p => Math.max(0.5, p - (p > 1 ? 1 : 0.5)))}
+              style={s.portBtn}
+              hitSlop={8}
+            >
+              <SymbolView name="minus" size={18} tintColor={ACCENT} />
+            </TouchableOpacity>
+            <Text style={s.portLabel}>
+              {portionLabel} portion{portions !== 1 ? 's' : ''}
+            </Text>
+            <TouchableOpacity onPress={() => setPortions(p => p + 1)} style={s.portBtn} hitSlop={8}>
+              <SymbolView name="plus" size={18} tintColor={ACCENT} />
+            </TouchableOpacity>
           </View>
-        </View>
 
-        {/* ── Portions adjuster ─────────────────────────────────── */}
-        <View style={[s.card, s.portionsRow]}>
-          <TouchableOpacity
-            onPress={() => setPortions(p => Math.max(0.5, p - (p > 1 ? 1 : 0.5)))}
-            style={s.portBtn}
-            hitSlop={8}
-          >
-            <Text style={s.portBtnText}>−</Text>
+          {/* Log button */}
+          <TouchableOpacity style={s.logBtn} onPress={() => setLogModal(true)} activeOpacity={0.85}>
+            <Text style={s.logBtnText}>Log this recipe</Text>
           </TouchableOpacity>
-          <Text style={s.portLabel}>
-            {Number.isInteger(portions) ? portions : portions.toFixed(1)} portion{portions !== 1 ? 's' : ''}
-          </Text>
-          <TouchableOpacity onPress={() => setPortions(p => p + 1)} style={s.portBtn} hitSlop={8}>
-            <Text style={s.portBtnText}>+</Text>
-          </TouchableOpacity>
-        </View>
 
-        {/* ── Log button ─────────────────────────────────────────── */}
-        <TouchableOpacity style={s.logBtn} onPress={() => setLogModal(true)} activeOpacity={0.85}>
-          <Text style={s.logBtnText}>Log this recipe</Text>
-        </TouchableOpacity>
-
-        {/* ── Macro summary ──────────────────────────────────────── */}
-        <View style={s.card}>
-          <Text style={s.cardTitle}>Nutrition per {Number.isInteger(portions) ? portions : portions.toFixed(1)} portion{portions !== 1 ? 's' : ''}</Text>
-          <View style={s.macroGrid}>
-            <MacroCell label="Calories" value={Math.round(totals.cal).toString()} />
-            <MacroCell label="Protein"  value={totals.pro.toFixed(1)+'g'} />
-            <MacroCell label="Carbs"    value={totals.carbs.toFixed(1)+'g'} />
-            <MacroCell label="Fat"      value={totals.fat.toFixed(1)+'g'} />
-            <MacroCell label="Fiber"    value={totals.fiber.toFixed(1)+'g'} />
-            <MacroCell label="Sugar"    value={totals.sugar.toFixed(1)+'g'} />
-            <MacroCell label="Salt"     value={totals.salt.toFixed(2)+'g'} />
+          {/* Macro summary */}
+          <View style={s.card}>
+            <Text style={s.cardTitle}>Nutrition per {portionLabel} portion{portions !== 1 ? 's' : ''}</Text>
+            <View style={s.macroGrid}>
+              <MacroCell label="Calories" value={Math.round(totals.cal).toString()} />
+              <MacroCell label="Protein"  value={totals.pro.toFixed(1)+'g'} />
+              <MacroCell label="Carbs"    value={totals.carbs.toFixed(1)+'g'} />
+              <MacroCell label="Fat"      value={totals.fat.toFixed(1)+'g'} />
+              <MacroCell label="Fiber"    value={totals.fiber.toFixed(1)+'g'} />
+              <MacroCell label="Sugar"    value={totals.sugar.toFixed(1)+'g'} />
+              <MacroCell label="Salt"     value={totals.salt.toFixed(2)+'g'} />
+            </View>
           </View>
-        </View>
 
-        {/* ── Ingredients ────────────────────────────────────────── */}
-        <View style={s.card}>
-          <Text style={s.cardTitle}>Ingredients</Text>
-          {ingredients.length === 0 ? (
-            <Text style={s.emptyText}>No ingredients added</Text>
-          ) : (
-            ingredients.map(ing => (
-              <View key={ing.id} style={s.ingRow}>
-                <Text style={s.ingName}>{ing.food_name}</Text>
-                <Text style={s.ingAmount}>
-                  {(ing.portion_amount * scale % 1 === 0
-                    ? (ing.portion_amount * scale).toString()
-                    : (ing.portion_amount * scale).toFixed(1))}{ing.portion_unit}
-                </Text>
-              </View>
-            ))
-          )}
-        </View>
+          {/* Ingredients */}
+          <View style={s.card}>
+            <Text style={s.cardTitle}>Ingredients</Text>
+            {ingredients.length === 0 ? (
+              <Text style={s.emptyText}>No ingredients added</Text>
+            ) : (
+              ingredients.map(ing => (
+                <View key={ing.id} style={s.ingRow}>
+                  <Text style={s.ingName}>{ing.food_name}</Text>
+                  <Text style={s.ingAmount}>
+                    {(ing.portion_amount * scale % 1 === 0
+                      ? (ing.portion_amount * scale).toString()
+                      : (ing.portion_amount * scale).toFixed(1))}{ing.portion_unit}
+                  </Text>
+                </View>
+              ))
+            )}
+          </View>
 
-        {/* ── Instructions ───────────────────────────────────────── */}
-        <View style={s.card}>
-          <Text style={s.cardTitle}>Instructions</Text>
-          {recipe.instructions ? (
-            <Text style={s.instructions}>{recipe.instructions}</Text>
-          ) : (
-            <Text style={s.emptyText}>No instructions added</Text>
-          )}
-        </View>
-      </ScrollView>
+          {/* Instructions */}
+          <View style={s.card}>
+            <Text style={s.cardTitle}>Instructions</Text>
+            {recipe.instructions ? (
+              <Text style={s.instructions}>{recipe.instructions}</Text>
+            ) : (
+              <Text style={s.emptyText}>No instructions added</Text>
+            )}
+          </View>
+        </ScrollView>
+      )}
 
-      {/* ── Log modal ──────────────────────────────────────────────── */}
-      <Modal visible={logModal} transparent animationType="fade">
-        <TouchableOpacity style={s.overlay} onPress={() => setLogModal(false)} activeOpacity={1}>
-          <TouchableOpacity activeOpacity={1} style={s.modalCard}>
+      {/* Frosted glass header — last so it overlays the cover */}
+      <LightHeader
+        left={<HeaderIcon onPress={() => router.back()}><SymbolView name="chevron.left" size={24} tintColor={HEADER_ICON} weight="semibold" /></HeaderIcon>}
+        title={title}
+        right={
+          isOwner
+            ? <HeaderIcon onPress={() => setMenuOpen(true)}><SymbolView name="ellipsis" size={22} tintColor={HEADER_ICON} weight="semibold" /></HeaderIcon>
+            : <HeaderIcon onPress={() => router.navigate('/(client)' as any)}><VFIcon size={26} color={HEADER_ICON} /></HeaderIcon>
+        }
+      />
+
+      {/* ── Log modal (centered) ───────────────────────────────────── */}
+      <Modal visible={logModal} transparent animationType="fade" onRequestClose={() => setLogModal(false)}>
+        <Pressable style={s.overlay} onPress={() => setLogModal(false)}>
+          <Pressable style={s.modalCard} onPress={() => {}}>
             <Text style={s.modalTitle}>Add to meal</Text>
             {MEALS.map(m => (
               <TouchableOpacity
                 key={m.key}
-                style={[s.mealOption, logMeal === m.key && s.mealOptionActive]}
+                style={s.mealOption}
                 onPress={() => setLogMeal(m.key)}
               >
                 <Text style={[s.mealOptionText, logMeal === m.key && s.mealOptionTextActive]}>
@@ -293,36 +293,60 @@ export default function RecipeDetailScreen() {
             <TouchableOpacity onPress={() => setLogModal(false)} style={s.cancelLink}>
               <Text style={s.cancelText}>Cancel</Text>
             </TouchableOpacity>
-          </TouchableOpacity>
-        </TouchableOpacity>
+          </Pressable>
+        </Pressable>
       </Modal>
 
-      {/* ── Owner menu modal ───────────────────────────────────────── */}
-      <Modal visible={menuModal} transparent animationType="fade">
-        <TouchableOpacity style={s.overlay} onPress={() => setMenuModal(false)} activeOpacity={1}>
-          <TouchableOpacity activeOpacity={1} style={s.modalCard}>
-            <TouchableOpacity
-              style={s.menuRow}
-              onPress={() => { setMenuModal(false); router.push(`/(client)/recipe/create?editId=${recipe.id}` as any); }}
-            >
-              <SymbolView name="pencil" size={18} tintColor={TEXT} />
-              <Text style={s.menuRowText}>Edit</Text>
+      {/* ── Owner menu — slide-up panel ────────────────────────────── */}
+      {menuOpen && recipe && (
+        <BottomSheet onClose={() => setMenuOpen(false)}>
+          {close => (
+            <View style={s.sheetContent}>
+              <TouchableOpacity
+                style={s.menuRow}
+                onPress={() => close(() => router.push(`/(client)/recipe/create?id=${recipe.id}` as any))}
+                activeOpacity={0.7}
+              >
+                <SymbolView name="pencil" size={18} tintColor={TEXT} />
+                <Text style={s.menuRowText}>Edit</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={s.menuRow}
+                onPress={() => close(() => handleToggleShare())}
+                activeOpacity={0.7}
+              >
+                <SymbolView name={recipe.is_shared_to_trainer ? 'eye.slash' : 'eye'} size={18} tintColor={TEXT} />
+                <Text style={s.menuRowText}>
+                  {recipe.is_shared_to_trainer ? 'Unshare from trainer' : 'Share with trainer'}
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[s.menuRow, { borderBottomWidth: 0 }]}
+                onPress={() => close(() => setConfirmDelete(true))}
+                activeOpacity={0.7}
+              >
+                <SymbolView name="trash" size={18} tintColor={CORAL} />
+                <Text style={[s.menuRowText, { color: CORAL }]}>Delete</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+        </BottomSheet>
+      )}
+
+      {/* ── Delete confirm (centered) ──────────────────────────────── */}
+      <Modal visible={confirmDelete} transparent animationType="fade" onRequestClose={() => setConfirmDelete(false)}>
+        <Pressable style={s.overlay} onPress={() => setConfirmDelete(false)}>
+          <Pressable style={s.modalCard} onPress={() => {}}>
+            <Text style={s.modalTitle}>Delete recipe?</Text>
+            <Text style={s.modalSub}>"{recipe?.name.trim() || 'This recipe'}" will be permanently deleted.</Text>
+            <TouchableOpacity style={[s.confirmBtn, { backgroundColor: CORAL }]} onPress={doDelete} activeOpacity={0.85}>
+              <Text style={s.confirmBtnText}>Delete</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={s.menuRow} onPress={handleToggleShare}>
-              <SymbolView name={recipe.is_shared_to_trainer ? 'eye.slash' : 'eye'} size={18} tintColor={TEXT} />
-              <Text style={s.menuRowText}>
-                {recipe.is_shared_to_trainer ? 'Unshare from trainer' : 'Share with trainer'}
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={s.menuRow} onPress={() => { setMenuModal(false); handleDelete(); }}>
-              <SymbolView name="trash" size={18} tintColor="#e05555" />
-              <Text style={[s.menuRowText, { color: '#e05555' }]}>Delete</Text>
-            </TouchableOpacity>
-            <TouchableOpacity onPress={() => setMenuModal(false)} style={s.cancelLink}>
+            <TouchableOpacity onPress={() => setConfirmDelete(false)} style={s.cancelLink}>
               <Text style={s.cancelText}>Cancel</Text>
             </TouchableOpacity>
-          </TouchableOpacity>
-        </TouchableOpacity>
+          </Pressable>
+        </Pressable>
       </Modal>
     </View>
   );
@@ -346,22 +370,16 @@ const s = StyleSheet.create({
   root:   { flex: 1, backgroundColor: BG },
   loader: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: BG },
 
-  coverWrap: { height: 260, position: 'relative', justifyContent: 'space-between' },
-  navRow:    { flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 16, paddingTop: 8 },
-  navBtn:    { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
-  coverInfo: { padding: 20 },
-  coverName: { fontSize: 24, fontWeight: '800', color: '#fff', lineHeight: 30 },
-  coverSub:  { fontSize: 13, color: 'rgba(255,255,255,0.65)', marginTop: 4 },
+  coverWrap: { marginHorizontal: 16, marginTop: 16, height: 200, borderRadius: 16, backgroundColor: '#244e43', overflow: 'hidden' },
 
-  card:       { margin: 16, marginTop: 0, marginBottom: 12, backgroundColor: CARD, borderRadius: 16, padding: 16, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 8, elevation: 3 },
+  card:       { marginHorizontal: 16, marginTop: 12, backgroundColor: CARD, borderRadius: 16, padding: 16, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 8, elevation: 3 },
   cardTitle:  { fontSize: 14, fontWeight: '700', color: TEXT, marginBottom: 12 },
 
-  portionsRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 24, marginTop: 16 },
+  portionsRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 24 },
   portBtn:     { width: 36, height: 36, borderRadius: 18, backgroundColor: BG, alignItems: 'center', justifyContent: 'center', borderWidth: 1.5, borderColor: ACCENT },
-  portBtnText: { fontSize: 22, color: ACCENT, fontWeight: '300', lineHeight: 24 },
   portLabel:   { fontSize: 16, fontWeight: '600', color: TEXT, minWidth: 120, textAlign: 'center' },
 
-  logBtn:     { marginHorizontal: 16, marginBottom: 12, backgroundColor: ACCENT, borderRadius: 100, paddingVertical: 14, alignItems: 'center' },
+  logBtn:     { marginHorizontal: 16, marginTop: 12, backgroundColor: ACCENT, borderRadius: 100, paddingVertical: 14, alignItems: 'center' },
   logBtnText: { fontSize: 15, fontWeight: '700', color: '#fff' },
 
   macroGrid:  { flexDirection: 'row', flexWrap: 'wrap' },
@@ -373,19 +391,20 @@ const s = StyleSheet.create({
   instructions: { fontSize: 13, color: TEXT, lineHeight: 20 },
   emptyText:    { fontSize: 13, color: MUTED, fontStyle: 'italic' },
 
-  overlay:    { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', alignItems: 'center', justifyContent: 'center' },
-  modalCard:  { backgroundColor: CARD, borderRadius: 16, padding: 20, width: '84%' },
-  modalTitle: { fontSize: 16, fontWeight: '700', color: TEXT, textAlign: 'center', marginBottom: 14 },
+  overlay:    { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', alignItems: 'center', justifyContent: 'center', padding: 24 },
+  modalCard:  { backgroundColor: CARD, borderRadius: 16, padding: 20, width: '100%', maxWidth: 360 },
+  modalTitle: { fontSize: 16, fontWeight: '700', color: TEXT, textAlign: 'center', marginBottom: 6 },
+  modalSub:   { fontSize: 13, color: MUTED, textAlign: 'center', marginBottom: 8 },
 
   mealOption:     { flexDirection: 'row', alignItems: 'center', paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: BORDER, justifyContent: 'space-between' },
-  mealOptionActive: {},
   mealOptionText:   { fontSize: 15, color: TEXT },
   mealOptionTextActive: { color: ACCENT, fontWeight: '600' },
 
   confirmBtn:     { marginTop: 16, backgroundColor: ACCENT, borderRadius: 100, paddingVertical: 13, alignItems: 'center' },
   confirmBtnText: { fontSize: 15, fontWeight: '700', color: '#fff' },
 
-  menuRow:     { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: BORDER },
+  sheetContent: { paddingHorizontal: 20 },
+  menuRow:     { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 15, borderBottomWidth: 1, borderBottomColor: BORDER },
   menuRowText: { fontSize: 15, color: TEXT },
 
   cancelLink: { alignSelf: 'center', marginTop: 12 },

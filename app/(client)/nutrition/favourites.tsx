@@ -254,7 +254,9 @@ function RecipeCard({ recipe, onPress }: { recipe: Recipe; onPress: () => void }
       )}
       <LinearGradient colors={['transparent', 'rgba(0,0,0,0.6)']} style={rc.gradient} />
       <View style={rc.info}>
-        <Text style={rc.name} numberOfLines={2}>{recipe.name}</Text>
+        <Text style={[rc.name, !recipe.name.trim() && { fontStyle: 'italic', color: 'rgba(255,255,255,0.7)' }]} numberOfLines={2}>
+          {recipe.name.trim() ? recipe.name : 'Untitled recipe'}
+        </Text>
         <Text style={rc.sub}>
           {recipe.portions} portion{recipe.portions !== 1 ? 's' : ''}
           {kcal != null ? ` · ${kcal} kcal` : ''}
@@ -317,7 +319,6 @@ export default function FavouritesScreen() {
   const [meals, setMeals]               = useState<SavedMeal[]>([]);
   const [mealsLoading, setMealsLoading] = useState(true);
   const [mealQuery, setMealQuery]       = useState('');
-  const [mealSort, setMealSort]         = useState<'newest' | 'oldest' | 'az' | 'za'>('newest');
   // Meal making + logging happens on its own screen (app/(client)/meal/[id].tsx).
 
   // Days
@@ -590,6 +591,22 @@ export default function FavouritesScreen() {
 
   const openNewMeal = () => startNewMeal([]);
 
+  // Create an empty recipe row immediately, then open the editor (mirrors
+  // startNewMeal). Naming/ingredients happen on that screen; an empty+unnamed
+  // draft is discarded on back (see handleBack in recipe/create).
+  const startNewRecipe = async () => {
+    const { data } = await supabase.from('recipes')
+      .insert({
+        name: '', portions: 1, instructions: null, cover_photo_url: null,
+        created_by: clientId,
+        created_by_role: profile?.role === 'trainer' ? 'trainer' : 'client',
+        is_shared_to_trainer: false,
+      })
+      .select('id').single();
+    if (!data) return;
+    router.push(`/(client)/recipe/create?id=${(data as { id: string }).id}&isNew=1` as any);
+  };
+
   const makeMealFromFoods = () => {
     const chosen = favFoods.filter(f => selectedFoodIds.has(f.id));
     if (chosen.length === 0) return;
@@ -622,12 +639,10 @@ export default function FavouritesScreen() {
   })();
 
   const filteredMeals = (() => {
-    let result = mealQuery.trim()
+    const result = mealQuery.trim()
       ? meals.filter(m => m.name.toLowerCase().includes(mealQuery.toLowerCase()))
       : [...meals];
-    if (mealSort === 'oldest') result.sort((a, b) => a.created_at.localeCompare(b.created_at));
-    else if (mealSort === 'az')     result.sort((a, b) => a.name.localeCompare(b.name));
-    else if (mealSort === 'za')     result.sort((a, b) => b.name.localeCompare(a.name));
+    result.sort((a, b) => a.name.localeCompare(b.name));
     return result;
   })();
 
@@ -712,67 +727,71 @@ export default function FavouritesScreen() {
 
       {/* ── Recipes ─────────────────────────────────────────────────── */}
       {view === 'recipes' && (
-        <View style={{ flex: 1, paddingTop: headerH + 8 }}>
-          <View style={s.recipeToolbar}>
-            <View style={s.searchBar}>
-              <SymbolView name="magnifyingglass" size={15} tintColor={MUTED} />
-              <TextInput
-                style={s.searchInput}
-                placeholder="Search recipes…"
-                placeholderTextColor={MUTED}
-                value={recipeQuery}
-                onChangeText={setRecipeQuery}
-              />
-              {recipeQuery.length > 0 && (
-                <TouchableOpacity onPress={() => setRecipeQuery('')} hitSlop={8}>
-                  <SymbolView name="xmark.circle.fill" size={15} tintColor={MUTED} />
-                </TouchableOpacity>
-              )}
-            </View>
-            <TouchableOpacity
-              style={s.createBtn}
-              onPress={() => router.push('/(client)/recipe/create' as any)}
-              hitSlop={8}
-            >
-              <SymbolView name="plus.circle.fill" size={30} tintColor={ACCENT} />
-            </TouchableOpacity>
-          </View>
-
-          <View style={s.filterRow}>
-            {(['all', 'mine', 'trainer'] as RecipeFilter[]).map(f => (
-              <TouchableOpacity
-                key={f}
-                style={[s.filterPill, recipeFilter === f && s.filterPillActive]}
-                onPress={() => setRecipeFilter(f)}
-                hitSlop={6}
-              >
-                <Text style={[s.filterPillText, recipeFilter === f && s.filterPillTextActive]}>
-                  {f === 'all' ? 'All' : f === 'mine' ? 'Mine' : "Vitek's"}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-
+        <View style={{ flex: 1 }}>
           {recipesLoading ? (
-            <View style={s.loader}><ActivityIndicator color={ACCENT} /></View>
-          ) : filteredRecipes.length === 0 ? (
-            <View style={s.emptyState}>
-              <Text style={s.emptyTitle}>No recipes yet</Text>
-              <Text style={s.emptySubtitle}>Tap + to create your first recipe</Text>
-            </View>
+            <View style={[s.loader, { paddingTop: headerH }]}><ActivityIndicator color={ACCENT} /></View>
           ) : (
             <ScrollView
               contentInsetAdjustmentBehavior="never"
-              contentContainerStyle={[s.list, { paddingBottom: tabBarH + 16 }]}
+              contentContainerStyle={{ paddingTop: headerH + 8, paddingBottom: tabBarH + 16 }}
+              scrollIndicatorInsets={{ top: headerH }}
               showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
             >
-              {filteredRecipes.map(r => (
-                <RecipeCard
-                  key={r.id}
-                  recipe={r}
-                  onPress={() => router.push(`/(client)/recipe/${r.id}` as any)}
-                />
-              ))}
+              {/* Search + create — INSIDE the scroll so it folds under the frosted
+                  header as you scroll (WhatsApp-style), matching the other tabs. */}
+              <View style={s.recipeToolbar}>
+                <View style={s.searchBar}>
+                  <SymbolView name="magnifyingglass" size={15} tintColor={MUTED} />
+                  <TextInput
+                    style={s.searchInput}
+                    placeholder="Search recipes…"
+                    placeholderTextColor={MUTED}
+                    value={recipeQuery}
+                    onChangeText={setRecipeQuery}
+                  />
+                  {recipeQuery.length > 0 && (
+                    <TouchableOpacity onPress={() => setRecipeQuery('')} hitSlop={8}>
+                      <SymbolView name="xmark.circle.fill" size={15} tintColor={MUTED} />
+                    </TouchableOpacity>
+                  )}
+                </View>
+                <TouchableOpacity style={s.createBtn} onPress={startNewRecipe} hitSlop={8}>
+                  <SymbolView name="plus.circle.fill" size={30} tintColor={ACCENT} />
+                </TouchableOpacity>
+              </View>
+
+              <View style={s.filterRow}>
+                {(['all', 'mine', 'trainer'] as RecipeFilter[]).map(f => (
+                  <TouchableOpacity
+                    key={f}
+                    style={[s.filterPill, recipeFilter === f && s.filterPillActive]}
+                    onPress={() => setRecipeFilter(f)}
+                    hitSlop={6}
+                  >
+                    <Text style={[s.filterPillText, recipeFilter === f && s.filterPillTextActive]}>
+                      {f === 'all' ? 'All' : f === 'mine' ? 'Mine' : "Vitek's"}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              {filteredRecipes.length === 0 ? (
+                <View style={s.emptyScroll}>
+                  <Text style={s.emptyTitle}>No recipes yet</Text>
+                  <Text style={s.emptySubtitle}>Tap + to create your first recipe</Text>
+                </View>
+              ) : (
+                <View style={s.list}>
+                  {filteredRecipes.map(r => (
+                    <RecipeCard
+                      key={r.id}
+                      recipe={r}
+                      onPress={() => router.push(`/(client)/recipe/${r.id}` as any)}
+                    />
+                  ))}
+                </View>
+              )}
             </ScrollView>
           )}
         </View>
@@ -780,11 +799,11 @@ export default function FavouritesScreen() {
 
       {/* ── Meals ───────────────────────────────────────────────────── */}
       {view === 'meals' && (
-        <View style={{ flex: 1, paddingTop: headerH + 8 }}>
+        <View style={{ flex: 1 }}>
           {mealsLoading ? (
-            <View style={s.loader}><ActivityIndicator color={ACCENT} /></View>
+            <View style={[s.loader, { paddingTop: headerH }]}><ActivityIndicator color={ACCENT} /></View>
           ) : meals.length === 0 ? (
-            <View style={s.emptyState}>
+            <View style={[s.emptyState, { paddingTop: headerH }]}>
               <SymbolView name="fork.knife" size={40} tintColor={MUTED} />
               <Text style={[s.emptyTitle, { marginTop: 12 }]}>No saved meals</Text>
               <Text style={s.emptySubtitle}>Build one here, or save a combo from the Food Log</Text>
@@ -794,7 +813,14 @@ export default function FavouritesScreen() {
               </TouchableOpacity>
             </View>
           ) : (
-            <>
+            <ScrollView
+              contentInsetAdjustmentBehavior="never"
+              contentContainerStyle={{ paddingTop: headerH + 8, paddingBottom: tabBarH + 16 }}
+              scrollIndicatorInsets={{ top: headerH }}
+              showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
+            >
+              {/* Search + create — INSIDE the scroll so it folds under the header. */}
               <View style={s.recipeToolbar}>
                 <View style={s.searchBar}>
                   <SymbolView name="magnifyingglass" size={15} tintColor={MUTED} />
@@ -815,31 +841,13 @@ export default function FavouritesScreen() {
                   <SymbolView name="plus.circle.fill" size={30} tintColor={ACCENT} />
                 </TouchableOpacity>
               </View>
-              <View style={s.filterRow}>
-                {(['newest', 'oldest', 'az', 'za'] as const).map(opt => (
-                  <TouchableOpacity
-                    key={opt}
-                    style={[s.filterPill, mealSort === opt && s.filterPillActive]}
-                    onPress={() => setMealSort(opt)}
-                    hitSlop={6}
-                  >
-                    <Text style={[s.filterPillText, mealSort === opt && s.filterPillTextActive]}>
-                      {opt === 'newest' ? 'Newest' : opt === 'oldest' ? 'Oldest' : opt === 'az' ? 'A–Z' : 'Z–A'}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
               {filteredMeals.length === 0 ? (
-                <View style={s.emptyState}>
+                <View style={s.emptyScroll}>
                   <Text style={s.emptyTitle}>No results</Text>
                   <Text style={s.emptySubtitle}>Try a different search</Text>
                 </View>
               ) : (
-                <ScrollView
-                  contentInsetAdjustmentBehavior="never"
-                  contentContainerStyle={[s.list, { paddingBottom: tabBarH + 16 }]}
-                  showsVerticalScrollIndicator={false}
-                >
+                <View style={s.list}>
                   {filteredMeals.map(meal => {
                     const { kcal, pro, carbs, fat } = mealTotals(meal);
                     const renderMealDelete = () => (
@@ -887,26 +895,33 @@ export default function FavouritesScreen() {
                       </Swipeable>
                     );
                   })}
-                </ScrollView>
+                </View>
               )}
-            </>
+            </ScrollView>
           )}
         </View>
       )}
 
       {/* ── Foods ───────────────────────────────────────────────────── */}
       {view === 'foods' && (
-        <View style={{ flex: 1, paddingTop: headerH + 8 }}>
+        <View style={{ flex: 1 }}>
           {favFoodsLoading ? (
-            <View style={s.loader}><ActivityIndicator color={ACCENT} /></View>
+            <View style={[s.loader, { paddingTop: headerH }]}><ActivityIndicator color={ACCENT} /></View>
           ) : favFoods.length === 0 ? (
-            <View style={s.emptyState}>
+            <View style={[s.emptyState, { paddingTop: headerH }]}>
               <SymbolView name="carrot.fill" size={40} tintColor={MUTED} />
               <Text style={[s.emptyTitle, { marginTop: 12 }]}>No favourite foods</Text>
               <Text style={s.emptySubtitle}>Tap the ❤️ on a food while searching in the Food Log to save it here</Text>
             </View>
           ) : (
-            <>
+            <ScrollView
+              contentInsetAdjustmentBehavior="never"
+              contentContainerStyle={{ paddingTop: headerH + 8, paddingBottom: tabBarH + (foodSelectMode ? 90 : 16) }}
+              scrollIndicatorInsets={{ top: headerH }}
+              showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
+            >
+              {/* Search — INSIDE the scroll so it folds under the header. */}
               <View style={s.recipeToolbar}>
                 <View style={s.searchBar}>
                   <SymbolView name="magnifyingglass" size={15} tintColor={MUTED} />
@@ -930,16 +945,12 @@ export default function FavouritesScreen() {
               )}
 
               {filteredFoods.length === 0 ? (
-                <View style={s.emptyState}>
+                <View style={s.emptyScroll}>
                   <Text style={s.emptyTitle}>No results</Text>
                   <Text style={s.emptySubtitle}>Try a different search</Text>
                 </View>
               ) : (
-                <ScrollView
-                  contentInsetAdjustmentBehavior="never"
-                  contentContainerStyle={[s.list, { paddingBottom: tabBarH + (foodSelectMode ? 90 : 16) }]}
-                  showsVerticalScrollIndicator={false}
-                >
+                <View style={s.list}>
                   {filteredFoods.map(f => {
                     const n = f.nutrients_json;
                     const thumb = f.source_id ? foodImageMap.get(favFoodKey(f)) : undefined;
@@ -988,9 +999,9 @@ export default function FavouritesScreen() {
                       </Swipeable>
                     );
                   })}
-                </ScrollView>
+                </View>
               )}
-            </>
+            </ScrollView>
           )}
 
           {/* Selection action bar — actions depend on how many are selected
@@ -1126,46 +1137,50 @@ export default function FavouritesScreen() {
 
       {/* ── Recommendations ─────────────────────────────────────────── */}
       {view === 'recommendations' && (
-        <View style={{ flex: 1, paddingTop: headerH + 8 }}>
-          <View style={s.recommTabBar}>
-            {(['supplement', 'tip'] as const).map(tab => (
-              <TouchableOpacity
-                key={tab}
-                style={[s.recommTabItem, recommTab === tab && s.recommTabItemActive]}
-                onPress={() => setRecommTab(tab)}
-                hitSlop={8}
-              >
-                <Text style={[s.recommTabText, recommTab === tab && s.recommTabTextActive]}>
-                  {tab === 'supplement' ? 'Supplements' : 'Tips'}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-
+        <View style={{ flex: 1 }}>
           {recommLoading ? (
-            <View style={s.loader}><ActivityIndicator color={ACCENT} /></View>
-          ) : (() => {
-            const items = recommendations.filter(r => r.category === recommTab);
-            if (items.length === 0) return (
-              <View style={s.emptyState}>
-                <SymbolView
-                  name={recommTab === 'supplement' ? 'pills.fill' : 'lightbulb.fill'}
-                  size={40}
-                  tintColor={MUTED}
-                />
-                <Text style={[s.emptyTitle, { marginTop: 12 }]}>
-                  {recommTab === 'supplement' ? 'No supplements yet' : 'No tips yet'}
-                </Text>
-                <Text style={s.emptySubtitle}>Your trainer will add these here</Text>
+            <View style={[s.loader, { paddingTop: headerH }]}><ActivityIndicator color={ACCENT} /></View>
+          ) : (
+            <ScrollView
+              contentInsetAdjustmentBehavior="never"
+              contentContainerStyle={{ paddingTop: headerH + 8, paddingBottom: tabBarH + 16 }}
+              scrollIndicatorInsets={{ top: headerH }}
+              showsVerticalScrollIndicator={false}
+            >
+              {/* Tab switcher — INSIDE the scroll so it folds under the header. */}
+              <View style={s.recommTabBar}>
+                {(['supplement', 'tip'] as const).map(tab => (
+                  <TouchableOpacity
+                    key={tab}
+                    style={[s.recommTabItem, recommTab === tab && s.recommTabItemActive]}
+                    onPress={() => setRecommTab(tab)}
+                    hitSlop={8}
+                  >
+                    <Text style={[s.recommTabText, recommTab === tab && s.recommTabTextActive]}>
+                      {tab === 'supplement' ? 'Supplements' : 'Tips'}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
               </View>
-            );
-            return (
-              <ScrollView
-                contentInsetAdjustmentBehavior="never"
-                contentContainerStyle={[s.list, { paddingBottom: tabBarH + 16 }]}
-                showsVerticalScrollIndicator={false}
-              >
-                {items.map(r => (
+
+              {(() => {
+                const items = recommendations.filter(r => r.category === recommTab);
+                if (items.length === 0) return (
+                  <View style={s.emptyScroll}>
+                    <SymbolView
+                      name={recommTab === 'supplement' ? 'pills.fill' : 'lightbulb.fill'}
+                      size={40}
+                      tintColor={MUTED}
+                    />
+                    <Text style={[s.emptyTitle, { marginTop: 12 }]}>
+                      {recommTab === 'supplement' ? 'No supplements yet' : 'No tips yet'}
+                    </Text>
+                    <Text style={s.emptySubtitle}>Your trainer will add these here</Text>
+                  </View>
+                );
+                return (
+                  <View style={s.list}>
+                    {items.map(r => (
                   <TouchableOpacity
                     key={r.id}
                     style={s.recommCard}
@@ -1188,10 +1203,12 @@ export default function FavouritesScreen() {
                     </View>
                     <SymbolView name="chevron.right" size={14} tintColor={MUTED} />
                   </TouchableOpacity>
-                ))}
-              </ScrollView>
-            );
-          })()}
+                    ))}
+                  </View>
+                );
+              })()}
+            </ScrollView>
+          )}
         </View>
       )}
 
@@ -1405,6 +1422,7 @@ const s = StyleSheet.create({
   list: { paddingHorizontal: 16, paddingTop: 4, gap: 10 },
 
   emptyState:    { flex: 1, alignItems: 'center', justifyContent: 'center', paddingBottom: 80 },
+  emptyScroll:   { alignItems: 'center', justifyContent: 'center', paddingTop: 80, paddingBottom: 40 },
   emptyTitle:    { fontSize: 16, fontWeight: '600', color: TEXT, marginBottom: 6 },
   emptySubtitle: { fontSize: 13, color: MUTED, textAlign: 'center', paddingHorizontal: 32 },
   emptyCreateBtn:  { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: ACCENT, borderRadius: 100, paddingHorizontal: 18, paddingVertical: 10, marginTop: 18 },
