@@ -1180,7 +1180,7 @@ export default function NutritionDailyScreen() {
         <ScrollView
           style={styles.scroll}
           contentInsetAdjustmentBehavior="never"
-          contentContainerStyle={[styles.scrollContent, { paddingTop: headerH + 16, paddingBottom: tabBarH + (selectedIds.size > 0 ? 90 : 16) }]}
+          contentContainerStyle={[styles.scrollContent, { paddingTop: headerH + 16, paddingBottom: tabBarH + (selectedIds.size > 0 ? 90 : 84) }]}
           scrollIndicatorInsets={{ top: headerH, bottom: tabBarH }}
           showsVerticalScrollIndicator={false}
         >
