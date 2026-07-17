@@ -1803,6 +1803,7 @@ export default function NutritionDailyScreen() {
 
       {/* Glass header — rendered last so it overlays the scrolling content */}
       <LightHeader
+        plain
         left={
           <HeaderIcon onPress={() => setNotifOverlay(true)} badge={hasUnreadNotifs}>
             <PearIcon size={34} color={HEADER_ICON} strokeWidth={1.5} />

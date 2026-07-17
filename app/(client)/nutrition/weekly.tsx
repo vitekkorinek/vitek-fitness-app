@@ -609,6 +609,7 @@ export default function WeeklyInsightsScreen({ readOnly = false, clientId: propC
       )}
 
       <LightHeader
+        plain
         left={<HeaderIcon onPress={() => smartBack(router)}><SymbolView name="chevron.left" size={24} tintColor={HEADER_ICON} weight="semibold" /></HeaderIcon>}
         title="Weekly Report"
         right={<HeaderIcon onPress={() => router.navigate('/(client)' as any)}><VFIcon size={26} color={HEADER_ICON} /></HeaderIcon>}

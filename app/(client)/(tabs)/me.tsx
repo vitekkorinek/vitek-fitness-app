@@ -321,7 +321,7 @@ export default function MeScreen() {
 
       <ScrollView
         style={styles.scroll}
-        contentContainerStyle={[styles.scrollContent, { paddingTop: headerH, paddingBottom: tabBarH }]}
+        contentContainerStyle={[styles.scrollContent, { paddingTop: headerH + 14, paddingBottom: tabBarH }]}
         showsVerticalScrollIndicator={false}
         scrollIndicatorInsets={{ top: headerH, bottom: tabBarH }}
       >

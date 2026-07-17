@@ -346,7 +346,7 @@ export default function ScheduleTabScreen() {
       <StatusBar barStyle="dark-content" />
       <ScrollView
         style={s.scroll}
-        contentContainerStyle={[s.content, { paddingTop: headerH, paddingBottom: tabBarH }]}
+        contentContainerStyle={[s.content, { paddingTop: headerH + 14, paddingBottom: tabBarH }]}
         showsVerticalScrollIndicator={false}
         scrollIndicatorInsets={{ top: headerH, bottom: tabBarH }}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={ACCENT} progressViewOffset={headerH} />}
