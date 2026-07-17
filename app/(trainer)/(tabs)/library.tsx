@@ -1642,6 +1642,13 @@ function WorkoutsTab({
     setActiveMenu(null);
   };
 
+  const openEditWorkout = () => {
+    if (!activeMenu) return;
+    const { id: wid, clientId: wClientId } = activeMenu;
+    setActiveMenu(null);
+    router.push(`/(trainer)/workout-builder?clientId=${wClientId}&editWorkoutId=${wid}` as any);
+  };
+
   const openCategoryPicker = () => {
     if (!activeMenu) return;
     setCategoryPickerWorkout(activeMenu);
@@ -1967,7 +1974,7 @@ function WorkoutsTab({
         <WorkoutMenuModal
           workoutName={activeMenu.name}
           workoutStatus={activeMenu.status}
-          onRename={startRename}
+          onEdit={openEditWorkout}
           onDelete={startDelete}
           onAddToRoutine={openRoutinePicker}
           onSetCategory={openCategoryPicker}
@@ -2199,7 +2206,7 @@ function TemplateLibraryRow({
 function WorkoutMenuModal({
   workoutName,
   workoutStatus = 'active',
-  onRename,
+  onEdit,
   onDelete,
   onAddToRoutine,
   onSetCategory,
@@ -2210,7 +2217,7 @@ function WorkoutMenuModal({
 }: {
   workoutName: string;
   workoutStatus?: 'active' | 'completed';
-  onRename: () => void;
+  onEdit: () => void;
   onDelete: () => void;
   onAddToRoutine: () => void;
   onSetCategory: () => void;
@@ -2225,9 +2232,9 @@ function WorkoutMenuModal({
         <>
           <Text style={menuStyles.sheetTitle} numberOfLines={1}>{workoutName}</Text>
           <View style={menuStyles.sheetDivider} />
-          <TouchableOpacity style={menuStyles.option} onPress={() => close(onRename)} activeOpacity={0.7}>
-            <SymbolView name="pencil" size={16} tintColor={TEXT} />
-            <Text style={menuStyles.optionText}>Rename</Text>
+          <TouchableOpacity style={menuStyles.option} onPress={() => close(onEdit)} activeOpacity={0.7}>
+            <SymbolView name="square.and.pencil" size={16} tintColor={TEXT} />
+            <Text style={menuStyles.optionText}>Edit workout</Text>
           </TouchableOpacity>
           <View style={menuStyles.optionDivider} />
           <TouchableOpacity style={menuStyles.option} onPress={() => close(onChangeCover)} activeOpacity={0.7}>

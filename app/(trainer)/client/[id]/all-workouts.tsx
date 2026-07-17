@@ -279,6 +279,13 @@ export default function AllWorkoutsScreen() {
     setActiveMenu(null);
   };
 
+  const openEditWorkout = () => {
+    if (!activeMenu) return;
+    const wid = activeMenu.id;
+    setActiveMenu(null);
+    router.push(`/(trainer)/workout-builder?clientId=${clientId}&editWorkoutId=${wid}` as any);
+  };
+
   return (
     <View style={styles.root}>
       <StatusBar barStyle="light-content" />
@@ -459,7 +466,7 @@ export default function AllWorkoutsScreen() {
         <WorkoutMenuModal
           workoutName={activeMenu.name}
           workoutStatus={activeMenu.status}
-          onRename={startRename}
+          onEdit={openEditWorkout}
           onDelete={startDelete}
           onAddToRoutine={openRoutinePicker}
           onChangeCover={openChangeCover}
@@ -604,10 +611,10 @@ function WorkoutItem({
 // ─── WorkoutMenuModal ─────────────────────────────────────────────────────────
 
 function WorkoutMenuModal({
-  workoutName, workoutStatus = 'active', onRename, onDelete, onAddToRoutine, onChangeCover, onToggleStatus, onViewExercises, onClose,
+  workoutName, workoutStatus = 'active', onEdit, onDelete, onAddToRoutine, onChangeCover, onToggleStatus, onViewExercises, onClose,
 }: {
   workoutName: string; workoutStatus?: 'active' | 'completed';
-  onRename: () => void; onDelete: () => void;
+  onEdit: () => void; onDelete: () => void;
   onAddToRoutine: () => void; onChangeCover: () => void;
   onToggleStatus: () => void; onViewExercises: () => void; onClose: () => void;
 }) {
@@ -616,14 +623,14 @@ function WorkoutMenuModal({
       <>
         <Text style={menuStyles.sheetTitle} numberOfLines={1}>{workoutName}</Text>
         <View style={menuStyles.sheetDivider} />
-        <TouchableOpacity style={menuStyles.option} onPress={() => close(onViewExercises)} activeOpacity={0.7}>
-          <SymbolView name="list.bullet" size={16} tintColor={TEXT} />
-          <Text style={menuStyles.optionText}>View exercises</Text>
+        <TouchableOpacity style={menuStyles.option} onPress={() => close(onEdit)} activeOpacity={0.7}>
+          <SymbolView name="square.and.pencil" size={16} tintColor={TEXT} />
+          <Text style={menuStyles.optionText}>Edit workout</Text>
         </TouchableOpacity>
         <View style={menuStyles.optionDivider} />
-        <TouchableOpacity style={menuStyles.option} onPress={() => close(onRename)} activeOpacity={0.7}>
-          <SymbolView name="pencil" size={16} tintColor={TEXT} />
-          <Text style={menuStyles.optionText}>Rename</Text>
+        <TouchableOpacity style={menuStyles.option} onPress={() => close(onViewExercises)} activeOpacity={0.7}>
+          <SymbolView name="list.bullet.rectangle" size={16} tintColor={TEXT} />
+          <Text style={menuStyles.optionText}>Session details</Text>
         </TouchableOpacity>
         <View style={menuStyles.optionDivider} />
         <TouchableOpacity style={menuStyles.option} onPress={() => close(onChangeCover)} activeOpacity={0.7}>

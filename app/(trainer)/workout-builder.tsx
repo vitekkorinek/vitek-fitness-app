@@ -343,6 +343,8 @@ export default function WorkoutBuilderScreen() {
   // when it's THIS client's workout — otherwise Save copies), and the loaded cover
   // URL so an unchanged remote cover isn't needlessly re-uploaded.
   const [loadedWorkoutClientId, setLoadedWorkoutClientId] = useState<string | null>(null);
+  const [loadedRoutineId, setLoadedRoutineId] = useState<string | null>(null);
+  const [loadedOrderIndex, setLoadedOrderIndex] = useState<number>(0);
   const [loadedCoverUrl, setLoadedCoverUrl] = useState<string | null>(null);
 
   const [workoutName, setWorkoutName] = useState('');
@@ -473,6 +475,8 @@ export default function WorkoutBuilderScreen() {
       setWorkoutCategory((wr.category ?? null) as WorkoutCategory | null);
       setStretchType((wr.stretch_type ?? null) as 'upper_body' | 'lower_body' | 'full_body' | null);
       setLoadedWorkoutClientId(wr.client_id ?? null);
+      setLoadedRoutineId(wr.routine_id ?? null);
+      setLoadedOrderIndex(typeof wr.order_index === 'number' ? wr.order_index : 0);
       if (wr.cover_image_url) { setCoverImageUri(wr.cover_image_url); setLoadedCoverUrl(wr.cover_image_url); }
 
       const { data: wes } = await supabase.from('workout_exercises').select('*').eq('workout_id', editWorkoutId).eq('is_active', true).order('order_index', { ascending: true });
@@ -485,10 +489,12 @@ export default function WorkoutBuilderScreen() {
       const wsByWe = new Map<string, any[]>();
       (wss ?? []).forEach((s: any) => { const arr = wsByWe.get(s.workout_exercise_id) ?? []; arr.push(s); wsByWe.set(s.workout_exercise_id, arr); });
 
-      // Pre-fill from the client this workout will be scheduled for (the launch
-      // clientId), falling back to the workout's own owner.
+      // When SCHEDULING (scheduleDate present) pre-fill set rows with the client's
+      // last-performed weight/reps (blank if never done) so the trainer sees real
+      // numbers. For a pure EDIT (no scheduleDate) show the workout's OWN planned
+      // targets — otherwise saving would overwrite them with last-performed values.
       const perfClient = clientId || wr.client_id;
-      const lastPerf = perfClient ? await fetchLastPerformedMap(perfClient, exIds) : new Map();
+      const lastPerf = (scheduleDate && perfClient) ? await fetchLastPerformedMap(perfClient, exIds) : new Map();
 
       const loaded: BuilderExercise[] = [];
       for (const we of weList) {
@@ -498,12 +504,12 @@ export default function WorkoutBuilderScreen() {
         const setRows = (wsByWe.get(we.id) ?? []).sort((a, b) => a.set_number - b.set_number);
         const baseRows: any[] = setRows.length > 0 ? setRows : [{ set_number: 1 }, { set_number: 2 }, { set_number: 3 }];
         const sets: BuilderSet[] = baseRows.map((s: any) => {
-          const perf = perfForEx?.get(s.set_number);
+          const perf = scheduleDate ? perfForEx?.get(s.set_number) : undefined;
           return {
             key: uid(),
             set_number: s.set_number,
-            target_reps: perf ? perf.reps : '',
-            target_weight_kg: perf ? perf.weight : '',
+            target_reps: scheduleDate ? (perf ? perf.reps : '') : (s.target_reps != null ? String(s.target_reps) : ''),
+            target_weight_kg: scheduleDate ? (perf ? perf.weight : '') : (s.target_weight_kg != null ? String(s.target_weight_kg) : ''),
             rest_seconds: s.rest_seconds != null ? String(s.rest_seconds) : '60',
           };
         });
@@ -512,7 +518,7 @@ export default function WorkoutBuilderScreen() {
       if (!cancelled) setItems(loaded);
     })();
     return () => { cancelled = true; };
-  }, [editWorkoutId, clientId]);
+  }, [editWorkoutId, clientId, scheduleDate]);
 
   const updateItem = useCallback((key: string, patch: Partial<BuilderExercise>) => {
     setItems(prev => prev.map(i => i.key === key ? { ...i, ...patch } : i));
@@ -706,6 +712,16 @@ export default function WorkoutBuilderScreen() {
   const handleSavePress = () => {
     if (!workoutName.trim()) { Alert.alert('Name required', 'Please enter a workout name.'); return; }
     if (items.length === 0) { Alert.alert('No exercises', 'Add at least one exercise before saving.'); return; }
+    // Pure edit (opened via ⋯ → Edit workout, no scheduling): save straight in place,
+    // preserving the workout's own client + routine placement — don't send the trainer
+    // back through the client/placement picker (which could unlink a routine workout).
+    if (editWorkoutId && !scheduleDate && loadedWorkoutClientId) {
+      const intent: SaveIntent = loadedRoutineId
+        ? { type: 'existing-routine', clientId: loadedWorkoutClientId, routineId: loadedRoutineId }
+        : { type: 'standalone', clientId: loadedWorkoutClientId };
+      handleSave(intent, true);
+      return;
+    }
     setSaveSheetOpen(true);
   };
 
@@ -804,8 +820,13 @@ export default function WorkoutBuilderScreen() {
         routineId = createdRoutineId;
       }
 
+      // Pure edit in place keeps the workout's existing routine position; only a
+      // fresh add / re-placement appends to the end of the routine.
+      const isPureEdit = !!editWorkoutId && !scheduleDate && loadedWorkoutClientId != null && loadedWorkoutClientId === targetClientId;
       let order_index = 0;
-      if (routineId) {
+      if (isPureEdit) {
+        order_index = loadedOrderIndex;
+      } else if (routineId) {
         const { count } = await supabase.from('workouts').select('*', { count: 'exact', head: true }).eq('routine_id', routineId);
         order_index = count ?? 0;
       }
@@ -959,14 +980,14 @@ export default function WorkoutBuilderScreen() {
 
   return (
     <View style={styles.root}>
-      <StatusBar barStyle="light-content" />
+      <StatusBar barStyle="dark-content" />
 
       <SafeAreaView style={styles.headerSafe} edges={['top']}>
         <View style={styles.headerBar}>
           <TouchableOpacity onPress={handleBack} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-            <SymbolView name="chevron.left" size={20} tintColor="#ffffff" />
+            <SymbolView name="chevron.left" size={22} tintColor={HEADER} weight="semibold" />
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>Build Workout</Text>
+          <Text style={styles.headerTitle}>{editWorkoutId ? 'Edit Workout' : 'Build Workout'}</Text>
           <TouchableOpacity style={styles.saveHeaderBtn} onPress={handleSavePress} activeOpacity={0.8}>
             <Text style={styles.saveHeaderBtnText}>Save</Text>
           </TouchableOpacity>
@@ -1782,11 +1803,11 @@ const ssStyles = StyleSheet.create({
 });
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: HEADER },
+  root: { flex: 1, backgroundColor: BG },
   flex: { flex: 1 },
-  headerSafe: { backgroundColor: HEADER },
-  headerBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingVertical: 12 },
-  headerTitle: { color: '#fff', fontSize: 17, fontWeight: '600' },
+  headerSafe: { backgroundColor: BG },
+  headerBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 10, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#e6e5e1' },
+  headerTitle: { color: TEXT, fontSize: 20, fontWeight: '700' },
   saveHeaderBtn: { backgroundColor: ACCENT, borderRadius: 100, paddingHorizontal: 14, paddingVertical: 7 },
   saveHeaderBtnText: { color: '#fff', fontSize: 14, fontWeight: '700' },
 

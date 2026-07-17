@@ -1302,7 +1302,7 @@ function TrainingTab({
   }, [deleteSessionConfirm, loadStripSessions]);
 
   // Menu state
-  const [activeMenu, setActiveMenu] = useState<WorkoutWithLastDate | null>(null);
+  const [activeMenu, setActiveMenu] = useState<{ id: string; name: string; category: string | null; status?: 'active' | 'completed' } | null>(null);
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameText, setRenameText] = useState('');
   const [routinePickerId, setRoutinePickerId] = useState<string | null>(null);
@@ -1379,6 +1379,13 @@ function TrainingTab({
     setQuickLookWorkout({ id: activeMenu.id, name: activeMenu.name, category: activeMenu.category ?? null });
     setQuickLookVisible(true);
     setActiveMenu(null);
+  };
+
+  const openEditWorkout = () => {
+    if (!activeMenu) return;
+    const wid = activeMenu.id;
+    setActiveMenu(null);
+    router.push(`/(trainer)/workout-builder?clientId=${clientId}&editWorkoutId=${wid}` as any);
   };
 
   const handleAddToRoutine = async (workoutId: string, routineId: string) => {
@@ -1490,7 +1497,7 @@ function TrainingTab({
                         style={sectionStyles.wMenuBtn}
                         hitSlop={6}
                         activeOpacity={0.7}
-                        onPress={() => { setQuickLookWorkout({ id: c.id, name: c.name, category: c.category }); setQuickLookVisible(true); }}
+                        onPress={() => setActiveMenu({ id: c.id, name: c.name, category: c.category })}
                       >
                         <SymbolView name="ellipsis" size={14} tintColor="#fff" />
                       </TouchableOpacity>
@@ -1626,7 +1633,7 @@ function TrainingTab({
             <WorkoutMenuModal
               workoutName={activeMenu.name}
               workoutStatus={activeMenu.status ?? 'active'}
-              onRename={startRename}
+              onEdit={openEditWorkout}
               onDelete={startDelete}
               onAddToRoutine={openRoutinePicker}
               onToggleStatus={toggleWorkoutStatus}
@@ -4233,7 +4240,7 @@ function WorkoutRow({
 function WorkoutMenuModal({
   workoutName,
   workoutStatus = 'active',
-  onRename,
+  onEdit,
   onDelete,
   onAddToRoutine,
   onToggleStatus,
@@ -4242,7 +4249,7 @@ function WorkoutMenuModal({
 }: {
   workoutName: string;
   workoutStatus?: 'active' | 'completed';
-  onRename: () => void;
+  onEdit: () => void;
   onDelete: () => void;
   onAddToRoutine: () => void;
   onToggleStatus: () => void;
@@ -4250,40 +4257,40 @@ function WorkoutMenuModal({
   onClose: () => void;
 }) {
   return (
-    <Modal visible transparent animationType="fade" onRequestClose={onClose} statusBarTranslucent>
-      <Pressable style={menuStyles.overlay} onPress={onClose}>
-        <Pressable style={menuStyles.sheet}>
+    <BottomSheet onClose={onClose}>
+      {close => (
+        <>
           <Text style={menuStyles.sheetTitle} numberOfLines={1}>{workoutName}</Text>
           <View style={menuStyles.sheetDivider} />
-          <TouchableOpacity style={menuStyles.option} onPress={onViewExercises} activeOpacity={0.7}>
-            <SymbolView name="list.bullet" size={16} tintColor={TEXT} />
-            <Text style={menuStyles.optionText}>View exercises</Text>
+          <TouchableOpacity style={menuStyles.option} onPress={() => close(onEdit)} activeOpacity={0.7}>
+            <SymbolView name="square.and.pencil" size={16} tintColor={TEXT} />
+            <Text style={menuStyles.optionText}>Edit workout</Text>
           </TouchableOpacity>
           <View style={menuStyles.optionDivider} />
-          <TouchableOpacity style={menuStyles.option} onPress={onRename} activeOpacity={0.7}>
-            <SymbolView name="pencil" size={16} tintColor={TEXT} />
-            <Text style={menuStyles.optionText}>Rename</Text>
+          <TouchableOpacity style={menuStyles.option} onPress={() => close(onViewExercises)} activeOpacity={0.7}>
+            <SymbolView name="list.bullet.rectangle" size={16} tintColor={TEXT} />
+            <Text style={menuStyles.optionText}>Session details</Text>
           </TouchableOpacity>
           <View style={menuStyles.optionDivider} />
-          <TouchableOpacity style={menuStyles.option} onPress={onAddToRoutine} activeOpacity={0.7}>
+          <TouchableOpacity style={menuStyles.option} onPress={() => close(onAddToRoutine)} activeOpacity={0.7}>
             <SymbolView name="plus.circle" size={16} tintColor={TEXT} />
             <Text style={menuStyles.optionText}>Add to Routine</Text>
           </TouchableOpacity>
           <View style={menuStyles.optionDivider} />
-          <TouchableOpacity style={menuStyles.option} onPress={onToggleStatus} activeOpacity={0.7}>
+          <TouchableOpacity style={menuStyles.option} onPress={() => close(onToggleStatus)} activeOpacity={0.7}>
             <SymbolView name={workoutStatus === 'completed' ? 'arrow.uturn.left' : 'checkmark.circle'} size={16} tintColor={workoutStatus === 'completed' ? ACCENT : TEXT} />
             <Text style={[menuStyles.optionText, workoutStatus === 'completed' && { color: ACCENT }]}>
               {workoutStatus === 'completed' ? 'Reactivate' : 'Mark as done'}
             </Text>
           </TouchableOpacity>
           <View style={menuStyles.optionDivider} />
-          <TouchableOpacity style={menuStyles.option} onPress={onDelete} activeOpacity={0.7}>
+          <TouchableOpacity style={menuStyles.option} onPress={() => close(onDelete)} activeOpacity={0.7}>
             <SymbolView name="trash" size={16} tintColor="#ef4444" />
             <Text style={[menuStyles.optionText, menuStyles.deleteText]}>Delete</Text>
           </TouchableOpacity>
-        </Pressable>
-      </Pressable>
-    </Modal>
+        </>
+      )}
+    </BottomSheet>
   );
 }
 
