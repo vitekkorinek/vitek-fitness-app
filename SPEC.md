@@ -666,10 +666,10 @@ In-app notifications for clients. Filtered by `area` — nutrition notifications
 
 #### Change Password screen (`app/change-password.tsx`) ✅
 - Forced screen for clients on first login (or after trainer resets their password)
-- Dark green header, "Set your password" title, no back button
+- **Glass green-tint `LightHeader`** ("Set your password" title, no back button — a forced gate), root bg `#faf9f7`, `StatusBar dark-content`; body content offset by `useHeaderHeight() + 14`. (Was a solid dark-green bar — July 2026 changed to match the see-through green-tint header used across the training section.)
 - Two tappable rows (New password · Confirm password) → white centered modal per field. The field modal's input has an eye toggle (`showDraft` state).
 - Green filled pill "Save password" button
-- On save: `supabase.auth.updateUser({ password })`, sets `must_change_password = false`, navigates to `/(tabs)`
+- **On save (order matters — July 2026 fix for a stuck spinner):** (1) `supabase.auth.updateUser({ password })`, (2) set `must_change_password = false` in `users`, (3) `refreshProfile()` then `router.replace('/(client)')`. It must **NOT** rely on the `onAuthStateChange` callback to re-fetch the profile and route away — that callback runs a Supabase query while `updateUser` still holds the auth lock, which can hang and leave the Save spinner spinning forever. Refresh + navigate explicitly (outside the callback); `refreshProfile()` updates the context profile so `_layout.tsx` doesn't bounce back to this screen.
 
 #### Forgot / Reset Password flow (`app/(auth)/forgot-password.tsx` + `app/(auth)/reset-password.tsx`) ✅
 - **Forgot Password screen:** email field → `supabase.auth.resetPasswordForEmail(email, { redirectTo: Linking.createURL('/reset-password') })` → shows a "check your email" confirmation. `redirectTo` resolves to `vitekfitnessapp://reset-password`.

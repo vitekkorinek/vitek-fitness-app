@@ -11,14 +11,15 @@ import {
   Platform,
   InputAccessoryView,
   Alert,
+  StatusBar,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { useRouter } from 'expo-router';
 import { SymbolView } from 'expo-symbols';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/context/AuthContext';
+import { LightHeader, useHeaderHeight } from '@/components/LightHeader';
 import t from '@/i18n/en';
 
-const HEADER = '#244e43';
 const ACCENT = '#24ac88';
 const CARD = '#ffffff';
 const TEXT = '#1a1a1a';
@@ -29,7 +30,9 @@ const BG = '#faf9f7';
 type PasswordField = 'new' | 'confirm';
 
 export default function ChangePasswordScreen() {
-  const { user } = useAuth();
+  const { user, refreshProfile } = useAuth();
+  const router = useRouter();
+  const headerH = useHeaderHeight();
 
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -66,20 +69,7 @@ export default function ChangePasswordScreen() {
 
     setSaving(true);
 
-    // Update DB first — so when onAuthStateChange fires (triggered by updateUser below)
-    // and re-fetches the profile, must_change_password is already false and _layout.tsx
-    // routes to /(client)/(tabs)/train automatically. Never call router.replace manually.
-    const { error: dbError } = await supabase
-      .from('users')
-      .update({ must_change_password: false })
-      .eq('id', user!.id);
-
-    if (dbError) {
-      setSaving(false);
-      Alert.alert(t.common.error, t.changePassword.errorGeneric);
-      return;
-    }
-
+    // 1) Change the password first (the operation most likely to fail).
     const { error: pwdError } = await supabase.auth.updateUser({ password: pwd });
     if (pwdError) {
       setSaving(false);
@@ -90,7 +80,25 @@ export default function ChangePasswordScreen() {
       return;
     }
 
-    // Leave saving=true — _layout.tsx will route away once onAuthStateChange fires.
+    // 2) Clear the forced-change flag.
+    const { error: dbError } = await supabase
+      .from('users')
+      .update({ must_change_password: false })
+      .eq('id', user!.id);
+    if (dbError) {
+      setSaving(false);
+      Alert.alert(t.common.error, t.changePassword.errorGeneric);
+      return;
+    }
+
+    // 3) Refresh the profile explicitly, then route into the app. We do NOT rely on
+    // the onAuthStateChange callback to re-fetch the profile — doing a Supabase query
+    // inside that callback (while updateUser still holds the auth lock) can hang, which
+    // left the Save spinner spinning forever. Refreshing here (outside the callback)
+    // and navigating directly is deterministic. refreshProfile() updates the context
+    // profile so _layout.tsx won't bounce back to this screen.
+    await refreshProfile();
+    router.replace('/(client)');
   };
 
   const fieldLabel = activeField === 'new'
@@ -98,13 +106,10 @@ export default function ChangePasswordScreen() {
     : t.changePassword.confirmPassword;
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
-      {/* Header — no back button */}
-      <View style={styles.header}>
-        <Text style={styles.headerTitle}>{t.changePassword.title}</Text>
-      </View>
+    <View style={styles.safe}>
+      <StatusBar barStyle="dark-content" />
 
-      <View style={styles.body}>
+      <View style={[styles.body, { paddingTop: headerH + 14 }]}>
         {/* New password row */}
         <View style={styles.card}>
           <TouchableOpacity
@@ -187,21 +192,17 @@ export default function ChangePasswordScreen() {
           )}
         </Modal>
       )}
-    </SafeAreaView>
+
+      {/* Glass green-tint header (rendered last so it overlays the content) — no back
+          button; this is a forced first-login gate. */}
+      <LightHeader title={t.changePassword.title} />
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: BG },
-  header: {
-    backgroundColor: HEADER,
-    height: 56,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-  },
-  headerTitle: { color: '#fff', fontSize: 17, fontWeight: '700' },
-  body: { flex: 1, paddingHorizontal: 16, paddingTop: 24 },
+  body: { flex: 1, paddingHorizontal: 16 },
   card: {
     backgroundColor: CARD,
     borderRadius: 16,
