@@ -2494,9 +2494,9 @@ Accessed from the Nutrition entry card on the client home screen. Separate stack
 - Delete meal link (red) → `confirmModal` pattern.
 - All inner editing (rename, notes, ingredient amount) uses inline absolutely-positioned overlays — no nested Modals.
 
-**Days list:**
-- White item cards with heart.fill ACCENT icon, name, date reference, kcal total, macro summary
-- Expand/collapse → shows food entries grouped by meal (Breakfast/Lunch/Dinner/Snack)
+**Days list (redesigned July 2026):**
+- **Collapsed card:** a two-layer white card (outer holds a soft shadow, inner clips to `borderRadius:16`). Left = a **heart badge with the day-of-month number inside it** (solid ACCENT `heart.fill` + white bold date number — a "favourited date" marker). Center = day name (title) + a subtitle that avoids repeating the date (year + item count when the name *is* the default date label; the full date + item count when the day was renamed) + **colored macro pills** (P blue / C orange / F red, matching the Weekly screen palette). Right = a prominent **kcal readout** (bold number + "KCAL" label), vertically centered. A chevron sits at the **bottom-center** of the card as a pull-to-expand affordance.
+- **Expanded detail:** food entries grouped into ordered meal **sections** (Breakfast → snacks → Lunch → … → Evening Snack, matching the Food Log's lowercase `meal_category` keys incl. all 5 snack subtypes + a catch-all "Other"). Each section has a header (emoji + label + `N items · X kcal` subtotal) and per-item rows showing the food name + portion on the left and its kcal + P/C/F on the right. (Before this, the expand filtered by capitalized meal names that never matched the stored lowercase keys, so it rendered empty.)
 - "Use this day" → white centered modal: date picker + "Log all items" confirm
 - In `insertMode`: tap card → insert modal (logs to today immediately)
 - Delete: `confirmModal` pattern (danger:true)

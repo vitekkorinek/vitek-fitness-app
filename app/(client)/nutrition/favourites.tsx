@@ -42,6 +42,9 @@ const ACCENT = '#24ac88';
 const TEXT   = '#1a1a1a';
 const MUTED  = '#999';
 const AMBER  = '#f5a623';
+const COL_PROT = '#378ADD';
+const COL_CARB = '#EF9F27';
+const COL_FAT  = '#D85A30';
 
 function makeUUID(): string {
   return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
@@ -291,6 +294,37 @@ const MEAL_CATS = [
   { key: 'dinner',    label: 'Dinner'    },
   { key: 'snack_morning', label: 'Snack' },
 ];
+
+// Ordered meal sections for the saved-day detail. Keys match the lowercase
+// meal_category values stored on food_log_entries (see nutrition/index.tsx).
+const MEAL_SECTION_ORDER: { key: string; label: string; emoji: string }[] = [
+  { key: 'breakfast',          label: 'Breakfast',       emoji: '🍳' },
+  { key: 'snack_morning',      label: 'Morning Snack',   emoji: '🥐' },
+  { key: 'lunch',              label: 'Lunch',           emoji: '🥗' },
+  { key: 'snack_afternoon',    label: 'Afternoon Snack', emoji: '🍎' },
+  { key: 'snack_pre_workout',  label: 'Pre-Workout',     emoji: '⚡' },
+  { key: 'dinner',             label: 'Dinner',          emoji: '🍲' },
+  { key: 'snack_post_workout', label: 'Post-Workout',    emoji: '💪' },
+  { key: 'snack_evening',      label: 'Evening Snack',   emoji: '🫖' },
+  { key: 'snack',              label: 'Snacks',          emoji: '🍿' },
+];
+
+const KNOWN_MEAL_KEYS = new Set(MEAL_SECTION_ORDER.map(m => m.key));
+
+function groupDayEntries(entries: FoodLogEntry[]) {
+  const sections = MEAL_SECTION_ORDER
+    .map(m => ({ ...m, items: entries.filter(e => e.meal_category === m.key) }))
+    .filter(s => s.items.length > 0);
+  const other = entries.filter(e => !e.meal_category || !KNOWN_MEAL_KEYS.has(e.meal_category));
+  if (other.length) sections.push({ key: 'other', label: 'Other', emoji: '🍴', items: other });
+  return sections;
+}
+
+function portionLabel(e: FoodLogEntry): string | null {
+  if (e.portion_amount == null) return null;
+  const amt = Math.round(e.portion_amount * 10) / 10;
+  return `${amt} ${e.portion_unit ?? 'g'}`;
+}
 
 export default function FavouritesScreen() {
   const { profile } = useAuth();
@@ -1060,46 +1094,90 @@ export default function FavouritesScreen() {
                 const { kcal, pro, carbs, fat, items } = dayTotals(day);
                 const isExpanded = expandedDay === day.id;
                 const refDate = new Date(day.date_reference + 'T12:00:00');
+                const itemsLabel = `${items} ${items === 1 ? 'item' : 'items'}`;
+                // The saved-day name defaults to the date ("Thursday 9 July"). Only show
+                // the date in the subtitle when the user renamed it (so it isn't repeated).
+                const dateLabel = refDate.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' });
+                const nameIsDate = day.name.trim() === dateLabel;
                 return (
-                  <View key={day.id} style={s.itemCard}>
+                  <View key={day.id} style={[s.itemCardOuter, isExpanded && s.itemCardOpen]}>
+                   <View style={s.itemCard}>
                     <TouchableOpacity
-                      style={s.itemRow}
                       onPress={() => isInsertMode
                         ? setInsertDayModal(day)
                         : setExpandedDay(isExpanded ? null : day.id)
                       }
-                      activeOpacity={0.8}
+                      activeOpacity={0.85}
                     >
-                      <SymbolView name="heart.fill" size={18} tintColor={ACCENT} />
-                      <View style={{ flex: 1, marginLeft: 10 }}>
-                        <Text style={s.itemName}>{day.name}</Text>
-                        <Text style={s.itemSub}>
-                          {refDate.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
-                          {' · '}{kcal} kcal
-                        </Text>
-                        <Text style={s.itemSub}>
-                          P {pro}g · C {carbs}g · F {fat}g
-                        </Text>
+                      <View style={s.dayHeader}>
+                        <View style={s.heartBadge}>
+                          <SymbolView name="heart.fill" size={44} tintColor={ACCENT} />
+                          <View style={s.heartDateWrap}>
+                            <Text style={s.heartDate}>{refDate.getDate()}</Text>
+                          </View>
+                        </View>
+                        <View style={{ flex: 1, marginLeft: 12 }}>
+                          <Text style={s.dayName} numberOfLines={1}>{day.name}</Text>
+                          <Text style={s.dayDate}>
+                            {nameIsDate
+                              ? `${refDate.getFullYear()} · ${itemsLabel}`
+                              : `${dateLabel} · ${itemsLabel}`}
+                          </Text>
+                          <View style={s.macroPillRow}>
+                            <View style={[s.macroPill, { backgroundColor: `${COL_PROT}18` }]}>
+                              <Text style={[s.macroPillText, { color: COL_PROT }]}>P {pro}g</Text>
+                            </View>
+                            <View style={[s.macroPill, { backgroundColor: `${COL_CARB}18` }]}>
+                              <Text style={[s.macroPillText, { color: COL_CARB }]}>C {carbs}g</Text>
+                            </View>
+                            <View style={[s.macroPill, { backgroundColor: `${COL_FAT}18` }]}>
+                              <Text style={[s.macroPillText, { color: COL_FAT }]}>F {fat}g</Text>
+                            </View>
+                          </View>
+                        </View>
+                        <View style={s.dayKcalWrap}>
+                          <Text style={s.dayKcal}>{kcal}</Text>
+                          <Text style={s.dayKcalUnit}>kcal</Text>
+                        </View>
                       </View>
                       {!isInsertMode && (
-                        <SymbolView name={isExpanded ? 'chevron.up' : 'chevron.down'} size={14} tintColor={MUTED} />
+                        <View style={s.dayChevronRow}>
+                          <SymbolView name={isExpanded ? 'chevron.up' : 'chevron.down'} size={14} tintColor={MUTED} />
+                        </View>
                       )}
                     </TouchableOpacity>
 
                     {isExpanded && (
                       <View style={s.expanded}>
-                        {(['Breakfast', 'Lunch', 'Dinner', 'Snack'] as const).map(cat => {
-                          const entries = day.snapshot_json.filter(e => e.meal_category === cat);
-                          if (entries.length === 0) return null;
+                        {day.snapshot_json.length === 0 ? (
+                          <Text style={s.snapEmpty}>No food was logged on this day.</Text>
+                        ) : groupDayEntries(day.snapshot_json).map(section => {
+                          const secKcal = Math.round(section.items.reduce((sm, e) => sm + (e.calories ?? 0), 0));
                           return (
-                            <View key={cat}>
-                              <Text style={s.snapMealLabel}>{cat}</Text>
-                              {entries.map((e, idx) => (
-                                <View key={idx} style={s.ingRow}>
-                                  <Text style={s.ingName} numberOfLines={1}>{e.food_name}</Text>
-                                  <Text style={s.ingMacros}>{Math.round(e.calories ?? 0)} kcal</Text>
-                                </View>
-                              ))}
+                            <View key={section.key} style={s.snapMealBlock}>
+                              <View style={s.snapMealHeader}>
+                                <Text style={s.snapMealLabel}>{section.emoji}  {section.label}</Text>
+                                <Text style={s.snapMealSub}>
+                                  {section.items.length} {section.items.length === 1 ? 'item' : 'items'} · {secKcal} kcal
+                                </Text>
+                              </View>
+                              {section.items.map((e, idx) => {
+                                const portion = portionLabel(e);
+                                return (
+                                  <View key={idx} style={s.ingRow}>
+                                    <View style={{ flex: 1, marginRight: 10 }}>
+                                      <Text style={s.ingName} numberOfLines={1}>{e.food_name}</Text>
+                                      {portion && <Text style={s.ingPortion}>{portion}</Text>}
+                                    </View>
+                                    <View style={{ alignItems: 'flex-end' }}>
+                                      <Text style={s.ingKcal}>{Math.round(e.calories ?? 0)} kcal</Text>
+                                      <Text style={s.ingMacros}>
+                                        P {Math.round(e.protein_g ?? 0)} · C {Math.round(e.carbs_g ?? 0)} · F {Math.round(e.fat_g ?? 0)}
+                                      </Text>
+                                    </View>
+                                  </View>
+                                );
+                              })}
                             </View>
                           );
                         })}
@@ -1127,6 +1205,7 @@ export default function FavouritesScreen() {
                         </View>
                       </View>
                     )}
+                   </View>
                   </View>
                 );
               })}
@@ -1429,15 +1508,39 @@ const s = StyleSheet.create({
   emptyCreateBtn:  { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: ACCENT, borderRadius: 100, paddingHorizontal: 18, paddingVertical: 10, marginTop: 18 },
   emptyCreateText: { fontSize: 14, fontWeight: '700', color: '#fff' },
 
-  itemCard:  { backgroundColor: CARD, borderRadius: 14, overflow: 'hidden', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 8, elevation: 3 },
+  // Two-layer: outer holds the shadow (no clipping), inner clips content to the radius.
+  itemCardOuter: { borderRadius: 16, backgroundColor: CARD, shadowColor: '#000', shadowOffset: { width: 0, height: 5 }, shadowOpacity: 0.13, shadowRadius: 16, elevation: 6 },
+  itemCard:  { backgroundColor: CARD, borderRadius: 16, overflow: 'hidden' },
+  itemCardOpen: { shadowOpacity: 0.17, shadowRadius: 20 },
   itemRow:   { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 14 },
+
+  // ── Saved-day card ──
+  dayHeader:   { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingTop: 14, paddingBottom: 4 },
+  heartBadge:  { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
+  heartDateWrap:{ position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, alignItems: 'center', justifyContent: 'center', paddingBottom: 5 },
+  heartDate:   { color: '#fff', fontSize: 14, fontWeight: '800' },
+  dayChevronRow:{ alignItems: 'center', paddingTop: 2, paddingBottom: 10, marginTop: -2 },
+  dayName:     { fontSize: 16, fontWeight: '700', color: HEADER, marginBottom: 2 },
+  dayDate:     { fontSize: 12, color: MUTED, marginBottom: 8 },
+  macroPillRow:{ flexDirection: 'row', gap: 6 },
+  macroPill:   { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8 },
+  macroPillText:{ fontSize: 11, fontWeight: '700' },
+  dayKcalWrap: { alignItems: 'flex-end', marginLeft: 8, alignSelf: 'center' },
+  dayKcal:     { fontSize: 22, fontWeight: '800', color: HEADER, lineHeight: 24 },
+  dayKcalUnit: { fontSize: 10, fontWeight: '600', color: MUTED, letterSpacing: 0.3, textTransform: 'uppercase' },
   itemName:  { fontSize: 15, fontWeight: '600', color: TEXT, marginBottom: 3 },
   itemSub:   { fontSize: 12, color: MUTED },
-  expanded:  { borderTopWidth: 1, borderTopColor: BORDER, paddingHorizontal: 16, paddingTop: 10, paddingBottom: 14 },
-  ingRow:    { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 5 },
-  ingName:   { flex: 1, fontSize: 13, color: TEXT },
-  ingMacros: { fontSize: 12, color: MUTED, marginLeft: 8 },
-  snapMealLabel: { fontSize: 11, fontWeight: '700', color: MUTED, letterSpacing: 0.5, marginTop: 8, marginBottom: 4, textTransform: 'uppercase' },
+  expanded:  { borderTopWidth: 1, borderTopColor: BORDER, paddingHorizontal: 16, paddingTop: 6, paddingBottom: 14 },
+  ingRow:    { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', paddingVertical: 6 },
+  ingName:   { fontSize: 13, color: TEXT, fontWeight: '500' },
+  ingPortion:{ fontSize: 11, color: MUTED, marginTop: 1 },
+  ingKcal:   { fontSize: 13, fontWeight: '600', color: TEXT },
+  ingMacros: { fontSize: 11, color: MUTED, marginTop: 1 },
+  snapEmpty: { fontSize: 13, fontStyle: 'italic', color: MUTED, paddingVertical: 8 },
+  snapMealBlock:  { marginTop: 4 },
+  snapMealHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 8, marginBottom: 4, paddingBottom: 4, borderBottomWidth: 1, borderBottomColor: BORDER },
+  snapMealSub:    { fontSize: 11, fontWeight: '600', color: ACCENT },
+  snapMealLabel:  { fontSize: 12, fontWeight: '700', color: HEADER, letterSpacing: 0.3 },
   actionRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 12 },
   actionBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: ACCENT, borderRadius: 100, paddingHorizontal: 16, paddingVertical: 8 },
   actionBtnText: { fontSize: 13, fontWeight: '700', color: '#fff' },
