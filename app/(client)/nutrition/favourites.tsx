@@ -313,7 +313,7 @@ function RecipeCard({ recipe, onPress }: { recipe: Recipe; onPress: () => void }
       {recipe.cover_photo_url ? (
         <Image source={{ uri: recipe.cover_photo_url }} style={rc.cover} resizeMode="cover" />
       ) : (
-        <LinearGradient colors={['#3a7d6b', '#244e43']} style={rc.cover} />
+        <LinearGradient colors={['#d4841e', '#8a4e0e']} style={rc.cover} />
       )}
       <LinearGradient colors={['transparent', 'rgba(0,0,0,0.6)']} style={rc.gradient} />
       <View style={rc.info}>

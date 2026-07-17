@@ -182,7 +182,7 @@ export default function RecipeDetailScreen() {
             {recipe.cover_photo_url ? (
               <Image source={{ uri: recipe.cover_photo_url }} style={StyleSheet.absoluteFill} resizeMode="cover" />
             ) : (
-              <LinearGradient colors={['#3a7d6b', '#244e43']} style={[StyleSheet.absoluteFill, { alignItems: 'center', justifyContent: 'center' }]}>
+              <LinearGradient colors={['#d4841e', '#8a4e0e']} style={[StyleSheet.absoluteFill, { alignItems: 'center', justifyContent: 'center' }]}>
                 <SymbolView name="book.closed.fill" size={44} tintColor="rgba(255,255,255,0.45)" />
               </LinearGradient>
             )}
