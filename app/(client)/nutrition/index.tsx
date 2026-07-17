@@ -1142,7 +1142,9 @@ export default function NutritionDailyScreen() {
   };
 
   const handleInsertDay = () => {
-    router.push('/(client)/nutrition/favourites?tab=days&insertMode=true' as any);
+    // Carry the currently-viewed food-log date so a saved day can be inserted
+    // retroactively (e.g. viewing yesterday → inserts to yesterday, not today).
+    router.push(`/(client)/nutrition/favourites?tab=days&insertMode=true&date=${toDateStr(selectedDate)}` as any);
   };
 
   const openCalendar = () => {

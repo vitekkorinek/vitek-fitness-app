@@ -15,7 +15,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { smartBack } from '@/lib/navHistory';
@@ -64,6 +64,14 @@ function addDays(d: Date, n: number): Date {
   const r = new Date(d);
   r.setDate(r.getDate() + n);
   return r;
+}
+
+// Parse a YYYY-MM-DD string into a LOCAL Date (avoids the UTC shift of new Date(str)).
+function parseDateStr(s: string | undefined): Date {
+  if (!s) return new Date();
+  const [y, m, d] = s.split('-').map(Number);
+  if (!y || !m || !d) return new Date();
+  return new Date(y, m - 1, d);
 }
 
 function formatDateLabel(d: Date): string {
@@ -333,7 +341,7 @@ export default function FavouritesScreen() {
   const headerH     = useHeaderHeight();
   const tabBarH     = useTabBarHeight();
   const clientId    = profile?.id ?? '';
-  const { tab: tabParam, insertMode: insertModeParam } = useLocalSearchParams<{ tab?: string; insertMode?: string }>();
+  const { tab: tabParam, insertMode: insertModeParam, date: dateParam } = useLocalSearchParams<{ tab?: string; insertMode?: string; date?: string }>();
   const isInsertMode = insertModeParam === 'true';
 
   const [view, setView] = useState<ViewState>(
@@ -342,6 +350,12 @@ export default function FavouritesScreen() {
     tabParam === 'recipes'         ? 'recipes'         :
     tabParam === 'recommendations' ? 'recommendations' : 'landing'
   );
+
+  // Favourites is a persistent native tab, so navigating in with ?insertMode=true&tab=days
+  // won't re-run the useState initializer. Sync the view when arriving in insert mode.
+  useEffect(() => {
+    if (isInsertMode && tabParam === 'days') setView('days');
+  }, [isInsertMode, tabParam]);
 
   // Recipes
   const [recipeQuery, setRecipeQuery]     = useState('');
@@ -364,6 +378,10 @@ export default function FavouritesScreen() {
   const [usingDay, setUsingDay]       = useState(false);
   const [dayToast, setDayToast]       = useState<string | null>(null);
   const [insertDayModal, setInsertDayModal] = useState<FavouriteDay | null>(null);
+  // Derived from the ?date= param (the day selected in the Food Log week strip).
+  // Must be reactive, NOT a one-time useState — the Favourites screen is a persistent
+  // native tab, so a useState initializer would freeze on the first mount's params.
+  const insertDayDate = useMemo(() => parseDateStr(dateParam), [dateParam]);
   const [insertingDay, setInsertingDay]     = useState(false);
 
   // Foods
@@ -514,7 +532,7 @@ export default function FavouritesScreen() {
   const insertDay = async () => {
     if (!insertDayModal || insertingDay) return;
     setInsertingDay(true);
-    const dateStr = toDateStr(new Date());
+    const dateStr = toDateStr(insertDayDate);
     await supabase.from('food_log_entries').insert(
       insertDayModal.snapshot_json.map(e => ({
         id: makeUUID(), client_id: clientId, date: dateStr,
@@ -528,18 +546,18 @@ export default function FavouritesScreen() {
     );
     setInsertingDay(false);
     setInsertDayModal(null);
-    setDayToast('Day logged for today');
-    setTimeout(() => {
-      setDayToast(null);
-      router.navigate('/(client)/nutrition' as any);
-    }, 2500);
+    // Return to the Food Log right away — it reloads on focus and shows the inserted
+    // items on the selected day (which is the confirmation), so no lingering toast.
+    router.navigate('/(client)/nutrition' as any);
   };
 
   // ─── Foods ────────────────────────────────────────────────────────────────
 
   const openAddFood = (f: FavFood) => {
     setAddFoodMeal(defaultMealForNow());
-    setAddFoodDate(new Date());
+    // Default to the day the user was viewing in the Food Log (passed via ?date=),
+    // so a favourite food lands on the selected day — not always today.
+    setAddFoodDate(parseDateStr(dateParam));
     setAddFood(favFoodToResult(f, foodImageMap.get(favFoodKey(f))));
   };
 
@@ -1429,7 +1447,7 @@ export default function FavouritesScreen() {
             <Text style={s.modalSub}>{insertDayModal?.name}</Text>
             {insertDayModal && (
               <Text style={s.useDayNote}>
-                {dayTotals(insertDayModal).kcal} kcal · {insertDayModal.snapshot_json.length} items will be added to today
+                {dayTotals(insertDayModal).kcal} kcal · {insertDayModal.snapshot_json.length} items will be added to {formatDateLabel(insertDayDate)}, keeping their original meal categories.
               </Text>
             )}
             <TouchableOpacity
