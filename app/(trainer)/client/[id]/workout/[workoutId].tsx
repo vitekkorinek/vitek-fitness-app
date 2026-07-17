@@ -368,23 +368,27 @@ function computeStats(points: GraphPoint[]): { bestThis: StatPoint; lowestThis: 
 }
 
 // ─── GlassPanel ───────────────────────────────────────────────────────
-// Real iOS-26 Liquid Glass card (matches the native tab bar) with a frosted
-// BlurView fallback on older iOS. A uniform light scrim keeps the same
-// readable "frosted glass" level across the whole card over the clear glass.
+// Matches Apple's Notification Centre glass: the ADAPTIVE "regular" Liquid
+// Glass material (auto-tints to the content behind, keeps a specular edge and
+// stays genuinely see-through) rather than the flat "clear" glass + heavy white
+// wash that read as milky plastic. Only a WHISPER of white scrim is layered on
+// so our dark text stays legible without killing the transparency.
+// Knob: SCRIM_OPACITY — raise for more legibility/frost, lower for more glass.
+const GLASS_SCRIM_OPACITY = 0.14;
 function GlassPanel({ style, children }: { style?: any; children: React.ReactNode }) {
   const textScrim = (
-    <View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(255,255,255,0.5)' }]} />
+    <View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: `rgba(255,255,255,${GLASS_SCRIM_OPACITY})` }]} />
   );
   if (isLiquidGlassAvailable()) {
     return (
-      <GlassView style={style} glassEffectStyle="clear">
+      <GlassView style={style} glassEffectStyle="regular">
         {textScrim}
         {children}
       </GlassView>
     );
   }
   return (
-    <BlurView intensity={18} tint="light" style={style}>
+    <BlurView intensity={30} tint="light" style={style}>
       {textScrim}
       {children}
     </BlurView>
@@ -6385,7 +6389,7 @@ const styles = StyleSheet.create({
   confirmMessage: { fontSize: 14, color: '#33413b', fontWeight: '500', textAlign: 'center', lineHeight: 20, marginTop: -4 },
   confirmPrimaryBtn: { backgroundColor: ACCENT, borderRadius: 100, paddingVertical: 14, alignSelf: 'stretch', alignItems: 'center' },
   confirmPrimaryBtnText: { color: '#fff', fontSize: 15, fontWeight: '700' },
-  confirmSecondaryBtn: { backgroundColor: '#f0f0ee', borderRadius: 100, paddingVertical: 14, alignSelf: 'stretch', alignItems: 'center' },
+  confirmSecondaryBtn: { backgroundColor: '#c8c8c2', borderRadius: 100, paddingVertical: 14, alignSelf: 'stretch', alignItems: 'center', borderWidth: 1, borderColor: 'rgba(0,0,0,0.08)' },
   confirmSecondaryBtnText: { color: TEXT, fontSize: 15, fontWeight: '600' },
   confirmDangerBtn: { backgroundColor: '#e85d4a', borderRadius: 100, paddingVertical: 14, alignSelf: 'stretch', alignItems: 'center' },
   confirmDangerBtnText: { color: '#fff', fontSize: 15, fontWeight: '700' },
