@@ -128,7 +128,7 @@ const generateUUID = () => 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/
   return (c === 'x' ? r : (r & 0x3) | 0x8).toString(16);
 });
 
-type NoteEntry = { id: string; text: string; date: string; isDeleted?: boolean };
+type NoteEntry = { id: string; text: string; date: string; createdAt?: string; isDeleted?: boolean };
 
 type TrainingNoteHistorySession = {
   sessionId: string;
@@ -290,6 +290,36 @@ function calcTotal(weightKg: number | null, equipment: string | null, barWeightK
   if (eq.includes('barbell') || eq === 'z bar') return String(Math.round((weightKg * 2 + barWeightKg) * 10) / 10);
   if (eq.includes('dumbbell') || eq.includes('kettlebell')) return String(Math.round(weightKg * 2 * 10) / 10);
   return String(weightKg);
+}
+
+// Compact "what's on the card" set summary for the collapsed row.
+// Shows the values as they appear in the set inputs (typed value, else the planned target),
+// e.g. "12 × 42kg   ·   8 × 46kg   ·   8 × 50kg   …". First 3 real sets, then a "…" if more.
+function buildSetsSummary(sets: SessionSet[]): string | null {
+  const rows = sets.filter(s => !s.isRemoved && !s.isDropset);
+  const parts: string[] = [];
+  for (const s of rows) {
+    const w = (s.weightKg && s.weightKg.trim()) || (s.targetWeightKg != null ? String(s.targetWeightKg) : '');
+    const r = (s.repsCompleted && s.repsCompleted.trim()) || (s.targetReps != null ? String(s.targetReps) : '');
+    if (!w && !r) continue;
+    if (w && r) parts.push(`${r} × ${w}kg`);
+    else if (w) parts.push(`${w}kg`);
+    else parts.push(`${r}×`);
+  }
+  if (parts.length === 0) return null;
+  const shown = parts.slice(0, 3).join('   ·   ');
+  return parts.length > 3 ? `${shown}   …` : shown;
+}
+
+// The most recent note to surface at the bottom of an expanded card.
+// Prefers the newest trainer (coaching) note, falling back to the newest client note.
+// Arrays are ordered oldest→newest, so the last element is the newest.
+function latestExerciseNote(ex: SessionExercise): NoteEntry | null {
+  const t = ex.trainerNotes.filter(n => !n.isDeleted);
+  if (t.length) return t[t.length - 1];
+  const c = ex.clientNote.filter(n => !n.isDeleted);
+  if (c.length) return c[c.length - 1];
+  return null;
 }
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
@@ -477,6 +507,7 @@ export default function TrainerWorkoutSessionScreen() {
   const [pastSession, setPastSession] = useState<PastSession | null>(null);
   // Duration of the most recent completed session — shown in the view-only FINISHED pill.
   const [viewedSessionDuration, setViewedSessionDuration] = useState<number | null>(null);
+  const [lastCompletedSessionAt, setLastCompletedSessionAt] = useState<string | null>(null);
   const [videoModalUrl, setVideoModalUrl] = useState<string | null>(null);
   const [videoOverlayEx, setVideoOverlayEx] = useState<{ exerciseName: string; muscleGroups: string[]; equipment: string | null; videoUrls: string[]; photoUrls: string[] } | null>(null);
 
@@ -760,13 +791,16 @@ export default function TrainerWorkoutSessionScreen() {
       supabase.from('sessions').select('*', { count: 'exact', head: true }).eq('workout_id', workoutId).eq('client_id', clientId).eq('status', 'completed'),
       // Fetch last 10 sessions so we can find the most recent weight per exercise+set,
       // even if individual sessions didn't cover all exercises.
-      supabase.from('sessions').select('id, date, duration_seconds').eq('workout_id', workoutId).eq('client_id', clientId).eq('status', 'completed').order('created_at', { ascending: false }).limit(10),
+      supabase.from('sessions').select('id, date, duration_seconds, created_at').eq('workout_id', workoutId).eq('client_id', clientId).eq('status', 'completed').order('created_at', { ascending: false }).limit(10),
       // Fetch all sessions oldest-first so we can find first-completed data per exercise (for peek).
       supabase.from('sessions').select('id').eq('workout_id', workoutId).eq('client_id', clientId).eq('status', 'completed').order('created_at', { ascending: true }),
       supabase.from('workout_exercise_slots').select('id, slot_number, current_exercise_id').eq('workout_id', workoutId),
     ]);
     setSessionCount(sessCount ?? 0);
     setViewedSessionDuration(((recentSessData as any[])?.[0]?.duration_seconds) ?? null);
+    // Start time of the most recent completed session — a note counts as "new" (name dot)
+    // only until the client completes a session after it was written.
+    setLastCompletedSessionAt(((recentSessData as any[])?.[0]?.created_at) ?? null);
 
     // Build map: exercise_id → movedFromLabel (from permanent drag history)
     const exIdToMoveLabel = new Map<string, string>();
@@ -1006,7 +1040,7 @@ export default function TrainerWorkoutSessionScreen() {
     const exNotesByWeId = new Map<string, { trainer: NoteEntry[]; client: NoteEntry[] }>();
     (exerciseNoteData ?? []).forEach((n: any) => {
       if (!exNotesByWeId.has(n.reference_id)) exNotesByWeId.set(n.reference_id, { trainer: [], client: [] });
-      const entry: NoteEntry = { id: n.id, text: n.content, date: formatDate(n.created_at.split('T')[0]) };
+      const entry: NoteEntry = { id: n.id, text: n.content, date: formatDate(n.created_at.split('T')[0]), createdAt: n.created_at };
       if (n.role === 'trainer') exNotesByWeId.get(n.reference_id)!.trainer.push(entry);
       else exNotesByWeId.get(n.reference_id)!.client.push(entry);
       persistedExerciseNoteIdsRef.current.add(n.id);
@@ -3030,6 +3064,7 @@ export default function TrainerWorkoutSessionScreen() {
                                   isLiveActive={false}
                                   onLiveTap={undefined}
                                   readOnly={isViewOnly}
+                                  lastCompletedSessionAt={lastCompletedSessionAt}
                                   isRevealed={revealedExId === member.workoutExerciseId}
                                   onReveal={setRevealedExId}
                                   onSwipeLeftOpen={handleEditBeforeStart}
@@ -3098,6 +3133,7 @@ export default function TrainerWorkoutSessionScreen() {
                           isLiveActive={false}
                           onLiveTap={undefined}
                           readOnly={isViewOnly}
+                          lastCompletedSessionAt={lastCompletedSessionAt}
                           isRevealed={revealedExId === ex.workoutExerciseId}
                           onReveal={setRevealedExId}
                           onSwipeLeftOpen={handleEditBeforeStart}
@@ -3929,12 +3965,14 @@ function ExerciseCard({
   isLiveActive,
   onLiveTap,
   readOnly,
+  lastCompletedSessionAt,
 }: {
   exercise: SessionExercise;
   isExpanded: boolean;
   isSuperset: boolean;
   isDragging: boolean;
   readOnly?: boolean;
+  lastCompletedSessionAt?: string | null;
   isTrainer: boolean;
   isEditMode: boolean;
   isSelected: boolean;
@@ -3981,6 +4019,15 @@ function ExerciseCard({
   const hasChangeIndicator = hasExerciseNotes || exercise.movedFromLabel !== null || exercise.orderChangeDescription !== null || exercise.addedAt !== null;
   const [infoSeen, setInfoSeen] = useState(false);
   const showInfoDot = hasChangeIndicator && !infoSeen;
+  // Dot next to the name (collapsed-visible) — shows for a NOTE that's newer than the last
+  // completed session (i.e. written since the client last trained this workout). It clears on
+  // its own once they complete another session, and the note itself stays (with its date).
+  const latestNote = latestExerciseNote(exercise);
+  const showNameNoteDot = !!latestNote && (
+    lastCompletedSessionAt == null ||
+    latestNote.createdAt == null ||          // just added this session → treat as new
+    latestNote.createdAt > lastCompletedSessionAt
+  );
 
   const eqRaw = (exercise.equipment ?? '').toLowerCase();
   const isBarbell = eqRaw.includes('barbell');
@@ -4178,10 +4225,15 @@ function ExerciseCard({
                 <View style={{ flex: 1 }}>
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                     <Text style={[styles.exerciseName, { flexShrink: 1 }]} numberOfLines={1} ellipsizeMode="tail">{exercise.exerciseName}</Text>
+                    {showNameNoteDot && <View style={styles.nameNoteDot} />}
                   </View>
                   {exercise.originalExerciseName && (
                     <Text style={styles.ogLabel}>og. {exercise.originalExerciseName}</Text>
                   )}
+                  {!isExpanded && (() => {
+                    const summary = buildSetsSummary(exercise.sets);
+                    return summary ? <Text style={styles.collapsedSetsSummary} numberOfLines={1}>{summary}</Text> : null;
+                  })()}
                 </View>
               </View>
             </TouchableOpacity>
@@ -4420,6 +4472,30 @@ function ExerciseCard({
                 ))}
               </View>
             )}
+
+            {/* Last note — side action opens the full notes sliding panel */}
+            {(() => {
+              const lastNote = latestExerciseNote(exercise);
+              if (!lastNote && readOnly) return null;
+              return (
+                <View style={styles.noteFooter}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.noteFooterLabel}>NOTE{lastNote?.date ? `  ·  ${lastNote.date}` : ''}</Text>
+                    {lastNote
+                      ? <Text style={styles.noteFooterText} numberOfLines={3}>{lastNote.text}</Text>
+                      : <Text style={styles.noteFooterEmpty}>No notes yet</Text>}
+                  </View>
+                  <TouchableOpacity
+                    style={styles.noteFooterAction}
+                    onPress={() => { setInfoSeen(true); onOpenInfo(); }}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={styles.noteFooterActionText}>{lastNote || readOnly ? 'See all' : 'Add note'}</Text>
+                    <SymbolView name="chevron.right" size={11} tintColor={ACCENT} />
+                  </TouchableOpacity>
+                </View>
+              );
+            })()}
           </View>
         )}
       </Animated.View>
@@ -6078,6 +6154,14 @@ const styles = StyleSheet.create({
 
   addedLabel: { fontSize: 11, color: '#aaa', marginBottom: 1 },
   ogLabel: { fontSize: 11, color: '#aaa', fontStyle: 'italic', marginBottom: 1 },
+  collapsedSetsSummary: { fontSize: 12.5, color: '#7a7a7a', marginTop: 3, fontVariant: ['tabular-nums'] },
+  nameNoteDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: ACCENT, flexShrink: 0 },
+  noteFooter: { flexDirection: 'row', alignItems: 'center', gap: 8, marginHorizontal: 12, marginTop: 4, paddingTop: 10, paddingBottom: 6, borderTopWidth: 1, borderTopColor: '#e8e8e4' },
+  noteFooterLabel: { fontSize: 10, fontWeight: '700', color: '#aaa', letterSpacing: 0.5, marginBottom: 3 },
+  noteFooterText: { fontSize: 13, color: TEXT, lineHeight: 18 },
+  noteFooterEmpty: { fontSize: 13, color: '#bbb', fontStyle: 'italic' },
+  noteFooterAction: { flexDirection: 'row', alignItems: 'center', gap: 2, paddingLeft: 6 },
+  noteFooterActionText: { fontSize: 12, fontWeight: '600', color: ACCENT },
   metaRow: { flexDirection: 'row', alignItems: 'center', gap: 5, flexWrap: 'wrap' },
   muscleTag: { backgroundColor: '#e6f7f3', borderRadius: 5, paddingHorizontal: 6, paddingVertical: 2 },
   muscleTagText: { fontSize: 11, fontWeight: '700', color: ACCENT },

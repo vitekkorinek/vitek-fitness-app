@@ -356,6 +356,11 @@ export default function WorkoutBuilderScreen() {
   const [items, setItems] = useState<BuilderExercise[]>([]);
   const [saveSheetOpen, setSaveSheetOpen] = useState(false);
   const [saving, setSaving] = useState(false);
+  // Synchronous re-entrancy guard. `saving` is async React state, so a fast double-tap
+  // (or a race between two save triggers) can enter handleSave twice before it flips —
+  // in the update-in-place path both runs delete-then-insert workout_sets and interleave,
+  // producing doubled set rows. This ref blocks the second entry immediately.
+  const savingRef = useRef(false);
   const [conflictModal, setConflictModal] = useState<{ id: string; name: string; intent: SaveIntent } | null>(null);
 
   // Multi-select state
@@ -726,6 +731,8 @@ export default function WorkoutBuilderScreen() {
   };
 
   const handleSave = async (intent: SaveIntent, skipConflictCheck = false) => {
+    if (savingRef.current) return;
+    savingRef.current = true;
     setSaving(true);
     let createdRoutineId: string | null = null;
     let createdWorkoutId: string | null = null;
@@ -958,6 +965,10 @@ export default function WorkoutBuilderScreen() {
       }
       setSaving(false);
       Alert.alert('Save failed', e?.message ?? 'Failed to save workout. Please try again.');
+    } finally {
+      // Runs on every exit (success, early returns, catch) so a later legitimate save
+      // — e.g. the conflict-prompt re-invoking handleSave — isn't permanently blocked.
+      savingRef.current = false;
     }
   };
 
