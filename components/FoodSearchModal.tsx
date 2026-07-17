@@ -27,7 +27,9 @@ import {
   fetchUSDAPortions,
   fetchWikipediaImage,
   loadCustomFoods,
+  lookupBarcode,
 } from '@/lib/foodApi';
+import { CameraView, useCameraPermissions } from 'expo-camera';
 import type { FoodResult, FoodPortion, PortionUnit, NutritionValues } from '@/lib/foodApi';
 import { VFIcon } from '@/components/VFIcon';
 import FoodCreateModal from '@/components/FoodCreateModal';
@@ -199,6 +201,13 @@ export default function FoodSearchModal({
     }, 1400);
   }, [toastOpacity]);
 
+  // Barcode scanner
+  const [scanning, setScanning] = useState(false);
+  const [scanLooking, setScanLooking] = useState(false);
+  const [scanError, setScanError] = useState<string | null>(null);
+  const scanHandledRef = useRef(false);
+  const [camPermission, requestCamPermission] = useCameraPermissions();
+
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
@@ -219,6 +228,10 @@ export default function FoodSearchModal({
       setToast(null);
       toastOpacity.setValue(0);
       setConfirmRemoveFav(null);
+      setScanning(false);
+      setScanLooking(false);
+      setScanError(null);
+      scanHandledRef.current = false;
       return;
     }
     if (initialFood) {
@@ -394,6 +407,42 @@ export default function FoodSearchModal({
       : allPortions[0];
     setSelectedPortion(defaultPortion);
     setLoadingPortions(false);
+  };
+
+  const openScanner = async () => {
+    Keyboard.dismiss();
+    let granted = camPermission?.granted ?? false;
+    if (!granted) {
+      const res = await requestCamPermission();
+      granted = res.granted;
+    }
+    if (!granted) {
+      Alert.alert(
+        'Camera access needed',
+        'Enable camera access in Settings to scan food barcodes.',
+      );
+      return;
+    }
+    scanHandledRef.current = false;
+    setScanError(null);
+    setScanLooking(false);
+    setScanning(true);
+  };
+
+  const handleBarcodeScanned = async (barcode: string) => {
+    if (scanHandledRef.current) return;
+    scanHandledRef.current = true;
+    setScanLooking(true);
+    setScanError(null);
+    const food = await lookupBarcode(barcode);
+    if (food) {
+      setScanning(false);
+      setScanLooking(false);
+      openPortion(food);
+    } else {
+      setScanLooking(false);
+      setScanError('No food found for this barcode. Try again or search by name.');
+    }
   };
 
   const getPortionGrams = () => {
@@ -613,7 +662,7 @@ export default function FoodSearchModal({
           </View>
           <TouchableOpacity
             style={s.barcodeBtn}
-            onPress={() => Alert.alert('Barcode scanner', 'Add expo-camera to enable barcode scanning.')}
+            onPress={openScanner}
             hitSlop={8}
           >
             <SymbolView name="barcode.viewfinder" size={24} tintColor={HEADER} />
@@ -919,6 +968,53 @@ export default function FoodSearchModal({
           </Animated.View>
         )}
       </View>
+
+      {/* Barcode scanner */}
+      <Modal visible={scanning} animationType="slide" onRequestClose={() => setScanning(false)}>
+        <View style={s.scanRoot}>
+          <CameraView
+            style={StyleSheet.absoluteFill}
+            facing="back"
+            barcodeScannerSettings={{
+              barcodeTypes: ['ean13', 'ean8', 'upc_a', 'upc_e', 'code128', 'code39'],
+            }}
+            onBarcodeScanned={({ data }) => handleBarcodeScanned(data)}
+          />
+          {/* Dim frame + viewfinder */}
+          <View style={s.scanFrameWrap} pointerEvents="none">
+            <View style={s.scanFrame} />
+          </View>
+          {/* Top bar */}
+          <View style={[s.scanTopBar, { paddingTop: insets.top + 10 }]}>
+            <TouchableOpacity onPress={() => setScanning(false)} style={s.scanCloseBtn} hitSlop={10}>
+              <SymbolView name="xmark" size={20} tintColor="#fff" weight="semibold" />
+            </TouchableOpacity>
+            <Text style={s.scanTitle}>Scan barcode</Text>
+            <View style={s.scanCloseBtn} />
+          </View>
+          {/* Bottom status / retry */}
+          <View style={[s.scanBottom, { paddingBottom: insets.bottom + 24 }]}>
+            {scanLooking ? (
+              <View style={s.scanStatusRow}>
+                <ActivityIndicator color="#fff" />
+                <Text style={s.scanStatusText}>Looking up…</Text>
+              </View>
+            ) : scanError ? (
+              <>
+                <Text style={s.scanStatusText}>{scanError}</Text>
+                <TouchableOpacity
+                  style={s.scanRetryBtn}
+                  onPress={() => { scanHandledRef.current = false; setScanError(null); }}
+                >
+                  <Text style={s.scanRetryText}>Scan again</Text>
+                </TouchableOpacity>
+              </>
+            ) : (
+              <Text style={s.scanHint}>Point the camera at a product barcode</Text>
+            )}
+          </View>
+        </View>
+      </Modal>
     </Modal>
   );
 }
@@ -944,6 +1040,20 @@ const s = StyleSheet.create({
   searchBar:    { flex: 1, flexDirection: 'row', alignItems: 'center', backgroundColor: BG, borderRadius: 10, paddingHorizontal: 10, paddingVertical: 8, gap: 8, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.06, shadowRadius: 4, elevation: 2 },
   searchInput:  { flex: 1, fontSize: 15, color: TEXT },
   barcodeBtn:   { padding: 4 },
+
+  // Barcode scanner
+  scanRoot:      { flex: 1, backgroundColor: '#000' },
+  scanFrameWrap: { ...StyleSheet.absoluteFillObject, alignItems: 'center', justifyContent: 'center' },
+  scanFrame:     { width: SCREEN_W * 0.72, height: SCREEN_W * 0.46, borderRadius: 16, borderWidth: 3, borderColor: 'rgba(255,255,255,0.9)' },
+  scanTopBar:    { position: 'absolute', top: 0, left: 0, right: 0, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingBottom: 10 },
+  scanCloseBtn:  { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.4)' },
+  scanTitle:     { color: '#fff', fontSize: 17, fontWeight: '700' },
+  scanBottom:    { position: 'absolute', bottom: 0, left: 0, right: 0, paddingHorizontal: 32, alignItems: 'center', gap: 14 },
+  scanStatusRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  scanStatusText:{ color: '#fff', fontSize: 15, fontWeight: '600', textAlign: 'center', lineHeight: 21 },
+  scanHint:      { color: 'rgba(255,255,255,0.85)', fontSize: 14, textAlign: 'center' },
+  scanRetryBtn:  { backgroundColor: ACCENT, borderRadius: 100, paddingHorizontal: 26, paddingVertical: 12 },
+  scanRetryText: { color: '#fff', fontSize: 15, fontWeight: '700' },
 
   filterRow:    { flexDirection: 'row', gap: 8, paddingHorizontal: 12, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: BORDER },
   filterPill:   { borderRadius: 100, backgroundColor: '#fff', paddingHorizontal: 12, paddingVertical: 5, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 3, elevation: 1 },

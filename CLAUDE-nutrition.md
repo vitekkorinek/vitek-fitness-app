@@ -265,6 +265,12 @@ The old green-gradient **summary card**, the old **← date → switcher row**, 
 
 **FoodSearchModal** (`components/FoodSearchModal.tsx`): full-screen slide-up modal — the SHARED add-food screen (food log, meal editor, recipe editor, favourites-food-to-log). **Header is LIGHT** (July 2026 — was dark-green `#244e43`): `#faf9f7` bg + hairline bottom border, dark-green `xmark` (left) + dark title (centered = `mealLabel`), `StatusBar dark-content` — consistent with the frosted nav. (It's a solid light header, NOT the scroll-under frosted `LightHeader`, because the search bar sits directly beneath it.) Returns `FoodConfirmResult` when confirmed; consumer inserts `food_log_entries` row.
 
+### FoodSearchModal — barcode scanner (BUILT July 2026)
+The `barcode.viewfinder` button right of the search bar opens a real camera scanner (it used to be a stub `Alert.alert('Add expo-camera…')`). Uses **`expo-camera`** (`~17.0.10`, `CameraView` + `useCameraPermissions`) — added to `app.json` plugins with a `cameraPermission` string. **⚠️ Native module → needs a NEW BUILD (no OTA/hot-reload); Expo Go camera is limited.**
+- `openScanner()` requests camera permission (Settings-prompt `Alert` if denied), then opens a full-screen camera `Modal` (nested inside the modal's outer `<Modal>`). Barcode types: `ean13/ean8/upc_a/upc_e/code128/code39`. Viewfinder frame + top bar (close · "Scan barcode") + bottom status.
+- `onBarcodeScanned` → `handleBarcodeScanned(data)`: a **`scanHandledRef` guard** prevents repeat-fire on the same frame. Calls the already-built **`lookupBarcode(barcode)`** (in `lib/foodApi.ts` — OFF cache → Open Food Facts API). Found → closes scanner + `openPortion(food)` (the normal portion picker, same path as tapping a search result). Not found → inline "No food found" message + **Scan again** button (resets `scanHandledRef`).
+- State (`scanning`, `scanLooking`, `scanError`, `scanHandledRef`) all reset in the modal's `!visible` cleanup effect. Scanner styles: `scanRoot`/`scanFrame`/`scanTopBar`/`scanBottom`/`scanStatusRow`/`scanRetryBtn` etc.
+
 ### FoodSearchModal — filter tabs
 Permanent pill row below the search bar (All · Favourites · My foods · Meals). Pill style: `borderRadius:100, borderWidth:1.5, borderColor:BORDER` inactive; `backgroundColor:ACCENT, borderColor:ACCENT` active. Default: **All**.
 

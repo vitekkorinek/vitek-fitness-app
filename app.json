@@ -48,6 +48,12 @@
         {
           "photosPermission": "Allow Vitek Fitness to access your photos to set a workout cover image."
         }
+      ],
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow Vitek Fitness to use the camera to scan food barcodes."
+        }
       ]
     ],
     "experiments": {
