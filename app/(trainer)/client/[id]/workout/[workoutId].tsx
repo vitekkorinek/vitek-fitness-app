@@ -90,6 +90,8 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
 import { SymbolView } from 'expo-symbols';
 import { LinearGradient } from 'expo-linear-gradient';
+import { BlurView } from 'expo-blur';
+import { GlassView, isLiquidGlassAvailable } from 'expo-glass-effect';
 import { VideoView, useVideoPlayer } from 'expo-video';
 import { Plus, ArrowLeftRight } from 'lucide-react-native';
 import * as ImagePicker from 'expo-image-picker';
@@ -363,6 +365,30 @@ function computeStats(points: GraphPoint[]): { bestThis: StatPoint; lowestThis: 
     bestAll: ba ? { weightKg: ba.maxWeightKg, date: ba.date, graphPoint: ba } : null,
     lowestAll: la ? { weightKg: la.minWeightKg, date: la.date, graphPoint: la } : null,
   };
+}
+
+// ─── GlassPanel ───────────────────────────────────────────────────────
+// Real iOS-26 Liquid Glass card (matches the native tab bar) with a frosted
+// BlurView fallback on older iOS. A uniform light scrim keeps the same
+// readable "frosted glass" level across the whole card over the clear glass.
+function GlassPanel({ style, children }: { style?: any; children: React.ReactNode }) {
+  const textScrim = (
+    <View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(255,255,255,0.5)' }]} />
+  );
+  if (isLiquidGlassAvailable()) {
+    return (
+      <GlassView style={style} glassEffectStyle="clear">
+        {textScrim}
+        {children}
+      </GlassView>
+    );
+  }
+  return (
+    <BlurView intensity={18} tint="light" style={style}>
+      {textScrim}
+      {children}
+    </BlurView>
+  );
 }
 
 // ─── useSheetDismissGesture ───────────────────────────────────────────────────────
@@ -2648,9 +2674,10 @@ export default function TrainerWorkoutSessionScreen() {
     if (startedAt) {
       setConfirmModal({
         title: 'Session in progress',
+        message: 'Leave and the session keeps running in the background — come back anytime to finish it.',
         actions: [
           {
-            text: 'Leave for now',
+            text: 'Leave — keep it running',
             primary: true,
             onPress: () => {
               suspendSession({
@@ -2676,8 +2703,11 @@ export default function TrainerWorkoutSessionScreen() {
               router.back();
             },
           },
+          {
+            text: 'Keep going',
+            onPress: () => {},
+          },
         ],
-        cancelText: 'Keep going',
       });
     } else { router.back(); }
   }, [pastSession, startedAt, activeSessionId, finishSession, suspendSession, clearSuspendedSession, clientId, workoutId, isFreeSession, freeSessionName, workout, router]);
@@ -3750,7 +3780,8 @@ export default function TrainerWorkoutSessionScreen() {
       <Modal visible={confirmModal !== null} transparent animationType="fade" onRequestClose={() => { confirmModal?.onCancel?.(); setConfirmModal(null); }}>
         <View style={styles.centeredRoot}>
           <Pressable style={StyleSheet.absoluteFill} onPress={() => { confirmModal?.onCancel?.(); setConfirmModal(null); }} />
-          <View style={styles.confirmBox}>
+          <View style={styles.confirmBoxShadow}>
+            <GlassPanel style={styles.confirmBox}>
             <Text style={styles.confirmTitle}>{confirmModal?.title}</Text>
             {confirmModal?.message ? <Text style={styles.confirmMessage}>{confirmModal.message}</Text> : null}
             {confirmModal?.actions.map((btn, i) => (
@@ -3772,6 +3803,7 @@ export default function TrainerWorkoutSessionScreen() {
                 <Text style={styles.confirmCancelText}>{confirmModal.cancelText}</Text>
               </TouchableOpacity>
             ) : null}
+            </GlassPanel>
           </View>
         </View>
       </Modal>
@@ -3850,10 +3882,11 @@ export default function TrainerWorkoutSessionScreen() {
         <Modal visible transparent animationType="fade" onRequestClose={() => setEditFreeSessionName(false)}>
           <View style={styles.centeredRoot}>
             <Pressable style={StyleSheet.absoluteFill} onPress={() => setEditFreeSessionName(false)} />
-            <View style={styles.confirmBox}>
+            <View style={styles.confirmBoxShadow}>
+            <GlassPanel style={styles.confirmBox}>
               <Text style={styles.confirmTitle}>Session Name</Text>
               <TextInput
-                style={{ width: '100%', borderWidth: 1, borderColor: '#e8e8e4', borderRadius: 10, paddingHorizontal: 14, paddingVertical: 12, fontSize: 15, color: '#1a1a1a', marginTop: 4 }}
+                style={{ width: '100%', borderWidth: 1, borderColor: 'rgba(0,0,0,0.12)', backgroundColor: 'rgba(255,255,255,0.6)', borderRadius: 10, paddingHorizontal: 14, paddingVertical: 12, fontSize: 15, color: '#1a1a1a', marginTop: 4 }}
                 value={freeSessionNameDraft}
                 onChangeText={setFreeSessionNameDraft}
                 autoFocus
@@ -3871,6 +3904,7 @@ export default function TrainerWorkoutSessionScreen() {
               <TouchableOpacity activeOpacity={0.7} hitSlop={8} onPress={() => setEditFreeSessionName(false)}>
                 <Text style={styles.confirmCancelText}>Cancel</Text>
               </TouchableOpacity>
+            </GlassPanel>
             </View>
           </View>
         </Modal>
@@ -6262,7 +6296,7 @@ const styles = StyleSheet.create({
   videoCloseBtn: { alignSelf: 'flex-end', margin: 16, width: 36, height: 36, borderRadius: 18, backgroundColor: 'rgba(0,0,0,0.6)', alignItems: 'center', justifyContent: 'center' },
   videoCloseBtnText: { color: '#fff', fontSize: 16, fontWeight: '600' },
 
-  centeredRoot: { flex: 1, backgroundColor: 'rgba(0,0,0,0.52)', justifyContent: 'center', paddingHorizontal: 24 },
+  centeredRoot: { flex: 1, backgroundColor: 'rgba(0,0,0,0.38)', justifyContent: 'center', paddingHorizontal: 24 },
   centeredModal: { backgroundColor: CARD, borderRadius: 20, padding: 20, maxHeight: SCREEN_H * 0.78 },
   sheetContent: { paddingHorizontal: 20, paddingBottom: 8 },
   centeredModalTitle: { fontSize: 16, fontWeight: '700', color: TEXT, marginBottom: 14 },
@@ -6345,9 +6379,10 @@ const styles = StyleSheet.create({
   hardBlockStartBtn: { backgroundColor: ACCENT, borderRadius: 100, paddingVertical: 14, paddingHorizontal: 32 },
   hardBlockStartText: { color: '#fff', fontSize: 15, fontWeight: '700' },
   hardBlockCancelText: { fontSize: 14, color: MUTED },
-  confirmBox: { backgroundColor: '#fff', borderRadius: 16, padding: 24, alignItems: 'center', gap: 14 },
+  confirmBoxShadow: { borderRadius: 38, shadowColor: '#000', shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.22, shadowRadius: 28, elevation: 12 },
+  confirmBox: { borderRadius: 38, overflow: 'hidden', padding: 24, alignItems: 'center', gap: 14 },
   confirmTitle: { fontSize: 16, fontWeight: '700', color: TEXT, textAlign: 'center' },
-  confirmMessage: { fontSize: 14, color: MUTED, textAlign: 'center', lineHeight: 20, marginTop: -4 },
+  confirmMessage: { fontSize: 14, color: '#33413b', fontWeight: '500', textAlign: 'center', lineHeight: 20, marginTop: -4 },
   confirmPrimaryBtn: { backgroundColor: ACCENT, borderRadius: 100, paddingVertical: 14, alignSelf: 'stretch', alignItems: 'center' },
   confirmPrimaryBtnText: { color: '#fff', fontSize: 15, fontWeight: '700' },
   confirmSecondaryBtn: { backgroundColor: '#f0f0ee', borderRadius: 100, paddingVertical: 14, alignSelf: 'stretch', alignItems: 'center' },
