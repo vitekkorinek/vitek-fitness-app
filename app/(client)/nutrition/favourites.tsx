@@ -211,19 +211,19 @@ function FullWidthCard({
           <View style={fc.iconWrap}>
             <SymbolView name={symbolName} size={120} tintColor="rgba(255,255,255,0.10)" />
           </View>
+          <View style={fc.arrow}>
+            <SymbolView name="arrow.right" size={14} tintColor="rgba(255,255,255,0.55)" />
+          </View>
           <View>
             <Text style={fc.title}>{title}</Text>
             <Text style={fc.desc}>{description}</Text>
           </View>
-          <View style={fc.footer}>
-            <View style={fc.badge}>
-              {loading ? (
-                <Text style={fc.badgeText}>—</Text>
-              ) : (
-                <Text style={fc.badgeText}>{count} {countLabel}</Text>
-              )}
-            </View>
-            <SymbolView name="arrow.right" size={14} tintColor="rgba(255,255,255,0.55)" />
+          <View style={fc.badge}>
+            {loading ? (
+              <Text style={fc.badgeText}>—</Text>
+            ) : (
+              <Text style={fc.badgeText}>{count} {countLabel}</Text>
+            )}
           </View>
         </LinearGradient>
       </Pressable>
@@ -239,10 +239,10 @@ const fc = StyleSheet.create({
   },
   card:    { borderRadius: 20, padding: 16, height: 132, overflow: 'hidden', justifyContent: 'space-between' },
   iconWrap:{ position: 'absolute', right: -20, bottom: -18 },
+  arrow:   { position: 'absolute', top: 16, right: 16 },
   title:   { fontSize: 18, fontWeight: '800', color: '#fff', letterSpacing: -0.3 },
   desc:    { fontSize: 13, color: 'rgba(255,255,255,0.60)', lineHeight: 17, marginTop: 3 },
-  footer:  { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  badge:   { backgroundColor: 'rgba(255,255,255,0.18)', borderRadius: 100, paddingHorizontal: 11, paddingVertical: 4 },
+  badge:   { alignSelf: 'flex-start', backgroundColor: 'rgba(255,255,255,0.18)', borderRadius: 100, paddingHorizontal: 11, paddingVertical: 4 },
   badgeText: { fontSize: 12, fontWeight: '700', color: '#fff' },
 });
 
@@ -271,15 +271,15 @@ function TileCard({
           <View style={tc.iconWrap}>
             <SymbolView name={symbolName} size={96} tintColor="rgba(255,255,255,0.10)" />
           </View>
+          <View style={tc.arrow}>
+            <SymbolView name="arrow.right" size={13} tintColor="rgba(255,255,255,0.45)" weight="medium" />
+          </View>
           <View>
             <Text style={tc.title}>{title}</Text>
             <Text style={tc.desc} numberOfLines={2}>{description}</Text>
           </View>
-          <View style={tc.footer}>
-            <View style={tc.badge}>
-              <Text style={tc.badgeText}>{loading ? '—' : `${count} ${countLabel}`}</Text>
-            </View>
-            <SymbolView name="arrow.right" size={13} tintColor="rgba(255,255,255,0.4)" weight="medium" />
+          <View style={tc.badge}>
+            <Text style={tc.badgeText}>{loading ? '—' : `${count} ${countLabel}`}</Text>
           </View>
         </LinearGradient>
       </Pressable>
@@ -296,10 +296,10 @@ const tc = StyleSheet.create({
   },
   card:    { borderRadius: 20, padding: 16, height: 162, overflow: 'hidden', justifyContent: 'space-between' },
   iconWrap:{ position: 'absolute', right: -16, bottom: -14 },
+  arrow:   { position: 'absolute', top: 14, right: 14 },
   title:   { fontSize: 17, fontWeight: '800', color: '#fff', letterSpacing: -0.3 },
   desc:    { fontSize: 11.5, color: 'rgba(255,255,255,0.60)', lineHeight: 15, marginTop: 3 },
-  footer:  { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  badge:   { backgroundColor: 'rgba(255,255,255,0.18)', borderRadius: 100, paddingHorizontal: 10, paddingVertical: 3 },
+  badge:   { alignSelf: 'flex-start', backgroundColor: 'rgba(255,255,255,0.18)', borderRadius: 100, paddingHorizontal: 10, paddingVertical: 3 },
   badgeText: { fontSize: 11.5, fontWeight: '700', color: '#fff' },
 });
 
