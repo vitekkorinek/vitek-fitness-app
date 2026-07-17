@@ -208,24 +208,22 @@ function FullWidthCard({
     <Animated.View style={[fc.wrap, { transform: [{ scale }] }]}>
       <Pressable onPress={onPress} onPressIn={onPressIn} onPressOut={onPressOut}>
         <LinearGradient colors={colors} style={fc.card} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}>
-          <View style={fc.circle1} />
-          <View style={fc.circle2} />
-          <View style={fc.body}>
-            <View style={fc.iconWrap}>
-              <SymbolView name={symbolName} size={28} tintColor="rgba(255,255,255,0.9)" />
-            </View>
+          <View style={fc.iconWrap}>
+            <SymbolView name={symbolName} size={120} tintColor="rgba(255,255,255,0.10)" />
+          </View>
+          <View>
             <Text style={fc.title}>{title}</Text>
             <Text style={fc.desc}>{description}</Text>
-            <View style={fc.footer}>
-              <View style={fc.badge}>
-                {loading ? (
-                  <Text style={fc.badgeText}>—</Text>
-                ) : (
-                  <Text style={fc.badgeText}>{count} {countLabel}</Text>
-                )}
-              </View>
-              <SymbolView name="arrow.right" size={14} tintColor="rgba(255,255,255,0.55)" />
+          </View>
+          <View style={fc.footer}>
+            <View style={fc.badge}>
+              {loading ? (
+                <Text style={fc.badgeText}>—</Text>
+              ) : (
+                <Text style={fc.badgeText}>{count} {countLabel}</Text>
+              )}
             </View>
+            <SymbolView name="arrow.right" size={14} tintColor="rgba(255,255,255,0.55)" />
           </View>
         </LinearGradient>
       </Pressable>
@@ -237,18 +235,72 @@ const fc = StyleSheet.create({
   wrap:    {
     borderRadius: 20,
     shadowColor: '#000', shadowOffset: { width: 0, height: 5 },
-    shadowOpacity: 0.2, shadowRadius: 14, elevation: 7,
+    shadowOpacity: 0.18, shadowRadius: 14, elevation: 7,
   },
-  card:    { borderRadius: 20, padding: 16, height: 126, overflow: 'hidden', justifyContent: 'flex-end' },
-  circle1: { position: 'absolute', top: -32, right: -32, width: 158, height: 158, borderRadius: 79, backgroundColor: 'rgba(255,255,255,0.07)' },
-  circle2: { position: 'absolute', top: 26, right: 52,  width:  61, height:  61, borderRadius: 30, backgroundColor: 'rgba(255,255,255,0.05)' },
-  iconWrap:{ marginBottom: 6 },
-  body:    { gap: 0 },
+  card:    { borderRadius: 20, padding: 16, height: 132, overflow: 'hidden', justifyContent: 'space-between' },
+  iconWrap:{ position: 'absolute', right: -20, bottom: -18 },
   title:   { fontSize: 18, fontWeight: '800', color: '#fff', letterSpacing: -0.3 },
-  desc:    { fontSize: 13, color: 'rgba(255,255,255,0.60)', lineHeight: 17, marginBottom: 8 },
+  desc:    { fontSize: 13, color: 'rgba(255,255,255,0.60)', lineHeight: 17, marginTop: 3 },
   footer:  { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   badge:   { backgroundColor: 'rgba(255,255,255,0.18)', borderRadius: 100, paddingHorizontal: 11, paddingVertical: 4 },
   badgeText: { fontSize: 12, fontWeight: '700', color: '#fff' },
+});
+
+// ─── TileCard (half-width grid tile — the 4 favourites) ───────────────────────
+
+function TileCard({
+  title, description, count, countLabel, colors, symbolName, onPress, loading,
+}: {
+  title: string;
+  description: string;
+  count: number;
+  countLabel: string;
+  colors: [string, string, ...string[]];
+  symbolName: any;
+  onPress: () => void;
+  loading?: boolean;
+}) {
+  const scale = useRef(new Animated.Value(1)).current;
+  const onPressIn  = () => Animated.spring(scale, { toValue: 0.96, useNativeDriver: true, speed: 30 }).start();
+  const onPressOut = () => Animated.spring(scale, { toValue: 1,    useNativeDriver: true, speed: 20 }).start();
+
+  return (
+    <Animated.View style={[tc.wrap, { transform: [{ scale }] }]}>
+      <Pressable onPress={onPress} onPressIn={onPressIn} onPressOut={onPressOut} style={{ flex: 1 }}>
+        <LinearGradient colors={colors} style={tc.card} start={{ x: 0.4, y: 0 }} end={{ x: 0.6, y: 1 }}>
+          <View style={tc.iconWrap}>
+            <SymbolView name={symbolName} size={96} tintColor="rgba(255,255,255,0.10)" />
+          </View>
+          <View>
+            <Text style={tc.title}>{title}</Text>
+            <Text style={tc.desc} numberOfLines={2}>{description}</Text>
+          </View>
+          <View style={tc.footer}>
+            <View style={tc.badge}>
+              <Text style={tc.badgeText}>{loading ? '—' : `${count} ${countLabel}`}</Text>
+            </View>
+            <SymbolView name="arrow.right" size={13} tintColor="rgba(255,255,255,0.4)" weight="medium" />
+          </View>
+        </LinearGradient>
+      </Pressable>
+    </Animated.View>
+  );
+}
+
+const tc = StyleSheet.create({
+  wrap:    {
+    flex: 1,
+    borderRadius: 20,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 5 },
+    shadowOpacity: 0.16, shadowRadius: 12, elevation: 6,
+  },
+  card:    { borderRadius: 20, padding: 16, height: 162, overflow: 'hidden', justifyContent: 'space-between' },
+  iconWrap:{ position: 'absolute', right: -16, bottom: -14 },
+  title:   { fontSize: 17, fontWeight: '800', color: '#fff', letterSpacing: -0.3 },
+  desc:    { fontSize: 11.5, color: 'rgba(255,255,255,0.60)', lineHeight: 15, marginTop: 3 },
+  footer:  { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  badge:   { backgroundColor: 'rgba(255,255,255,0.18)', borderRadius: 100, paddingHorizontal: 10, paddingVertical: 3 },
+  badgeText: { fontSize: 11.5, fontWeight: '700', color: '#fff' },
 });
 
 // ─── RecipeCard ───────────────────────────────────────────────────────────────
@@ -724,52 +776,61 @@ export default function FavouritesScreen() {
           contentContainerStyle={[s.landingContent, { paddingTop: headerH + 16, paddingBottom: tabBarH + 16 }]}
           showsVerticalScrollIndicator={false}
         >
-          <FullWidthCard
-            title="Recipes"
-            description="Trainer picks & your own creations"
-            count={recipes.length}
-            countLabel={recipes.length === 1 ? 'recipe' : 'recipes'}
-            colors={['#2d6456', '#1e4038']}
-            symbolName="book.closed.fill"
-            onPress={() => setView('recipes')}
-            loading={recipesLoading}
-          />
-          <FullWidthCard
-            title="Meals"
-            description="Saved meal combinations"
-            count={meals.length}
-            countLabel={meals.length === 1 ? 'meal' : 'meals'}
-            colors={['#2e4288', '#1d2d6a']}
-            symbolName="fork.knife"
-            onPress={() => setView('meals')}
-            loading={mealsLoading}
-          />
-          <FullWidthCard
-            title="Foods"
-            description="Your go-to single foods"
-            count={favFoods.length}
-            countLabel={favFoods.length === 1 ? 'food' : 'foods'}
-            colors={['#1f7a6b', '#12564a']}
-            symbolName="carrot.fill"
-            onPress={() => setView('foods')}
-            loading={favFoodsLoading}
-          />
-          <FullWidthCard
-            title="Days"
-            description="Favourite full-day logs"
-            count={days.length}
-            countLabel={days.length === 1 ? 'day' : 'days'}
-            colors={['#7a3060', '#551a48']}
-            symbolName="heart.fill"
-            onPress={() => setView('days')}
-            loading={daysLoading}
-          />
+          {/* 4 favourites as a 2×2 tile grid */}
+          <Text style={s.sectionLabel}>Your saved & shared</Text>
+          <View style={s.tileRow}>
+            <TileCard
+              title="Recipes"
+              description="Trainer picks & your own"
+              count={recipes.length}
+              countLabel={recipes.length === 1 ? 'recipe' : 'recipes'}
+              colors={['#d4841e', '#b06614', '#8a4e0e']}
+              symbolName="book.closed.fill"
+              onPress={() => setView('recipes')}
+              loading={recipesLoading}
+            />
+            <TileCard
+              title="Meals"
+              description="Saved combinations"
+              count={meals.length}
+              countLabel={meals.length === 1 ? 'meal' : 'meals'}
+              colors={['#33499a', '#26386f', '#1a2650']}
+              symbolName="fork.knife"
+              onPress={() => setView('meals')}
+              loading={mealsLoading}
+            />
+          </View>
+          <View style={s.tileRow}>
+            <TileCard
+              title="Foods"
+              description="Your go-to single foods"
+              count={favFoods.length}
+              countLabel={favFoods.length === 1 ? 'food' : 'foods'}
+              colors={['#347463', '#255145', '#183a30']}
+              symbolName="carrot.fill"
+              onPress={() => setView('foods')}
+              loading={favFoodsLoading}
+            />
+            <TileCard
+              title="Days"
+              description="Favourite full-day logs"
+              count={days.length}
+              countLabel={days.length === 1 ? 'day' : 'days'}
+              colors={['#88376c', '#682452', '#4a1740']}
+              symbolName="calendar"
+              onPress={() => setView('days')}
+              loading={daysLoading}
+            />
+          </View>
+
+          {/* Recommendations — a distinct full-width card (from your trainer) */}
+          <Text style={s.sectionLabel}>From your trainer</Text>
           <FullWidthCard
             title="Recommendations"
             description="Supplements & nutrition tips"
             count={recommendations.length}
             countLabel={recommendations.length === 1 ? 'item' : 'items'}
-            colors={['#c87820', '#e89840']}
+            colors={['#453a30', '#2f2820', '#211b15']}
             symbolName="pills.fill"
             onPress={() => setView('recommendations')}
             loading={recommLoading}
@@ -1490,6 +1551,8 @@ const s = StyleSheet.create({
   loader: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingTop: 60 },
 
   landingContent: { padding: 16, paddingTop: 16, gap: 12 },
+  tileRow:      { flexDirection: 'row', gap: 12 },
+  sectionLabel: { fontSize: 11, fontWeight: '700', color: MUTED, letterSpacing: 0.6, textTransform: 'uppercase', marginTop: 6, marginLeft: 4, marginBottom: -2 },
 
   recipeToolbar: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 16, paddingVertical: 12 },
   searchBar:  { flex: 1, flexDirection: 'row', alignItems: 'center', backgroundColor: CARD, borderRadius: 10, paddingHorizontal: 10, paddingVertical: 9, gap: 8, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.06, shadowRadius: 4, elevation: 2 },
