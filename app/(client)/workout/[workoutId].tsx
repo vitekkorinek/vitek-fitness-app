@@ -119,6 +119,20 @@ import { useAuth } from '@/context/AuthContext';
 import type { Workout } from '@/types/database';
 import en from '@/i18n/en';
 import MuscleThumb from '@/components/MuscleThumb';
+import CategoryCover, { categoryHasCover } from '@/components/CategoryCover';
+
+// PROTOTYPE (July 2026): a real photo pulled from the Push workout's exercises,
+// used as the Do Mode header hero to test "vertical photo in the header". Hardcoded
+// for the look-test only — will be replaced by a per-workout chosen cover.
+const PROTO_PUSH_PHOTO =
+  'https://iwtfhmbolhoivpzufprr.supabase.co/storage/v1/object/public/workout-covers/exercise-photos/9d43326c-3da3-459c-be06-80dd2e28b376/9c6db3da-c6fe-4465-a21c-6f920984ab98.jpg';
+
+// ─── FIXED HEADER (option 2) ──────────────────────────────────────────────
+// Master switch for the new fixed banner header that stays pinned and shows the
+// ACTIVE exercise's photo + name + count (image follows whichever exercise you
+// open). Flip to false to instantly return to the old scroll-away header — no
+// other change needed. Only affects the live/main Do Mode path (not past-session view).
+const FIXED_HEADER = true;
 
 // ─── Types ──────────────────────────────────────────────────────────────────────
 
@@ -424,6 +438,19 @@ function GlassPanel({ style, children }: { style?: any; children: React.ReactNod
   );
 }
 
+// The header timer/START/FINISH pill as a Liquid Glass capsule (shadow on an
+// outer wrapper; glass clipped inside). Tappable when onPress is given.
+function GlassPill({ onPress, children }: { onPress?: () => void; children: React.ReactNode }) {
+  const body = (
+    <View style={styles.combinedPillShadow}>
+      <GlassPanel style={styles.combinedPillGlass}>{children}</GlassPanel>
+    </View>
+  );
+  return onPress ? (
+    <TouchableOpacity onPress={onPress} activeOpacity={0.85}>{body}</TouchableOpacity>
+  ) : body;
+}
+
 // ─── useSheetDismissGesture ───────────────────────────────────────────────────────
 
 const SHEET_OFF_SCREEN = 900;
@@ -706,6 +733,11 @@ export default function TrainerWorkoutSessionScreen() {
   const [equipSheetOpen, setEquipSheetOpen] = useState(false);
   const [historySheetOpen, setHistorySheetOpen] = useState(false);
   const [dotsMenuOpen, setDotsMenuOpen] = useState(false);
+
+  // Header timer: collapsed = small glass stopwatch; tap to expand to timer + FINISH.
+  const [timerCollapsed, setTimerCollapsed] = useState(true);
+  // Fixed header: which exercise the banner is showing (follows the last-opened card).
+  const [activeHeaderId, setActiveHeaderId] = useState<string | null>(null);
 
   const [headerCollapsed, setHeaderCollapsed] = useState(false);
 
@@ -1618,6 +1650,7 @@ export default function TrainerWorkoutSessionScreen() {
   const toggleExpand = (weId: string) => {
     const isExpanding = !expandedIds.has(weId);
     if (isExpanding) {
+      setActiveHeaderId(weId); // fixed header follows the exercise you open
       const exIdx = exercises.findIndex(e => e.workoutExerciseId === weId);
       // Feature 2: track interaction order for slot_order_history
       const ex = exIdx >= 0 ? exercises[exIdx] : null;
@@ -2810,15 +2843,74 @@ export default function TrainerWorkoutSessionScreen() {
   const equipmentList = workout?.equipment_list ?? [];
   const hasTrainingNotes = trainingTrainerNotes.length > 0 || trainingClientNotes.length > 0 || trainingNoteHistory.some(s => s.trainer.length > 0 || s.client.length > 0);
 
+  // ── Fixed-header banner data (option 2) ───────────────────────────────
+  const showFixedHeader = FIXED_HEADER && !pastSession;
+  const bannerH = HEADER_MAX; // same height as the old header
+  const activeHeaderEx = exercises.find(e => e.workoutExerciseId === activeHeaderId) ?? exercises[0] ?? null;
+  const activeHeaderIdx = activeHeaderEx ? exercises.findIndex(e => e.workoutExerciseId === activeHeaderEx.workoutExerciseId) : -1;
+  const bannerPhoto = activeHeaderEx?.extraPhotoUrls?.[0] ?? activeHeaderEx?.thumbnailUrl ?? workout?.cover_image_url ?? null;
+  const bannerTitle = activeHeaderEx?.exerciseName ?? (isFreeSession ? freeSessionName : workout?.name) ?? '—';
+  const bannerSessionLabel = isFreeSession
+    ? new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
+    : `Session ${sessionCount + 1} · ${new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}`;
+  const bannerWorkoutName = (isFreeSession ? freeSessionName : workout?.name) ?? '';
+  const bannerOverline = [bannerWorkoutName.toUpperCase(), bannerSessionLabel].filter(Boolean).join('   ·   ');
+
+  // The timer / START / FINISH control — shared by the old nav bar and the new banner.
+  const timerControl = isEditMode ? (
+    <TouchableOpacity style={styles.editDoneBtn} onPress={exitEditMode} activeOpacity={0.8}>
+      <Text style={styles.editDoneBtnText}>Done</Text>
+    </TouchableOpacity>
+  ) : isRunning && !pastSession ? (
+    timerCollapsed ? (
+      <TouchableOpacity onPress={() => setTimerCollapsed(false)} activeOpacity={0.85}>
+        <View style={styles.combinedPillShadow}>
+          <GlassPanel style={styles.timerClockGlass}>
+            <SymbolView name="stopwatch" size={18} tintColor={ACCENT} />
+          </GlassPanel>
+        </View>
+      </TouchableOpacity>
+    ) : (
+      <GlassPill>
+        <TouchableOpacity onPress={() => setTimerCollapsed(true)} hitSlop={8} activeOpacity={0.7}>
+          <Text style={styles.combinedPillTimerText}>{formatTimer(elapsed)}</Text>
+        </TouchableOpacity>
+        <View style={styles.combinedPillSep} />
+        <TouchableOpacity onPress={handleFinish} hitSlop={8} activeOpacity={0.7}>
+          <Text style={styles.combinedPillFinishText}>FINISH</Text>
+        </TouchableOpacity>
+      </GlassPill>
+    )
+  ) : showFinishedPill ? (
+    <GlassPill>
+      {viewedSessionDuration != null && (
+        <>
+          <Text style={styles.combinedPillTimerText}>{formatTimer(viewedSessionDuration)}</Text>
+          <View style={styles.combinedPillSep} />
+        </>
+      )}
+      <Text style={styles.combinedPillFinishText}>FINISHED</Text>
+    </GlassPill>
+  ) : isViewOnly ? null : (
+    <GlassPill onPress={handleStartPress}>
+      <Text style={styles.combinedPillTimerText}>{formatTimer(elapsed)}</Text>
+      <View style={styles.combinedPillSep} />
+      <Text style={styles.combinedPillFinishText}>START</Text>
+    </GlassPill>
+  );
+
   return (
     <View style={styles.root}>
       <StatusBar barStyle="light-content" />
 
-      {/* ── Static nav bar — scroll-driven crossfade */}
+      {/* ── Static nav bar (old scroll-away header) — only when NOT using the fixed banner */}
+      {!showFixedHeader && (
       <View style={[styles.collapsingHeader, { height: HEADER_MIN, zIndex: 10, overflow: 'hidden' }]}>
         {/* Background fades in as user scrolls — fully opaque at COLLAPSE_END so cards never bleed through */}
         <Animated.View style={[StyleSheet.absoluteFill, { opacity: navBgOpacity, overflow: 'hidden' }]}>
-          {workout?.cover_image_url ? (
+          {categoryHasCover(workout?.category) ? (
+            <Image source={{ uri: PROTO_PUSH_PHOTO }} style={{ position: 'absolute', top: 0, left: 0, right: 0, height: HEADER_MAX * 1.7 }} resizeMode="cover" />
+          ) : workout?.cover_image_url ? (
             <>
               {/* Image anchored to bottom so it shows the exact same slice visible at collapse threshold */}
               <Image
@@ -2837,22 +2929,36 @@ export default function TrainerWorkoutSessionScreen() {
             <SymbolView name="chevron.left" size={20} tintColor="#fff" />
           </TouchableOpacity>
 
-          {/* Combined pill — always visible at top of header */}
-          <View style={{ flex: 1, alignItems: 'center' }}>
+          {/* Session control — pinned top-right (left of ⋯), off the header subject's face */}
+          <View style={{ flex: 1, alignItems: 'flex-end', justifyContent: 'center', paddingRight: 10 }}>
             {isEditMode ? (
               <TouchableOpacity style={styles.editDoneBtn} onPress={exitEditMode} activeOpacity={0.8}>
                 <Text style={styles.editDoneBtnText}>Done</Text>
               </TouchableOpacity>
             ) : isRunning && !pastSession ? (
-              // Active session (including one started from a view-only "Start today" pill).
-              <TouchableOpacity style={styles.combinedPill} onPress={handleFinish} activeOpacity={0.85}>
-                <Text style={styles.combinedPillTimerText}>{formatTimer(elapsed)}</Text>
-                <View style={styles.combinedPillSep} />
-                <Text style={styles.combinedPillFinishText}>FINISH</Text>
-              </TouchableOpacity>
+              // Active session — collapsible: small glass stopwatch → tap → timer + FINISH.
+              timerCollapsed ? (
+                <TouchableOpacity onPress={() => setTimerCollapsed(false)} activeOpacity={0.85}>
+                  <View style={styles.combinedPillShadow}>
+                    <GlassPanel style={styles.timerClockGlass}>
+                      <SymbolView name="stopwatch" size={18} tintColor={ACCENT} />
+                    </GlassPanel>
+                  </View>
+                </TouchableOpacity>
+              ) : (
+                <GlassPill>
+                  <TouchableOpacity onPress={() => setTimerCollapsed(true)} hitSlop={8} activeOpacity={0.7}>
+                    <Text style={styles.combinedPillTimerText}>{formatTimer(elapsed)}</Text>
+                  </TouchableOpacity>
+                  <View style={styles.combinedPillSep} />
+                  <TouchableOpacity onPress={handleFinish} hitSlop={8} activeOpacity={0.7}>
+                    <Text style={styles.combinedPillFinishText}>FINISH</Text>
+                  </TouchableOpacity>
+                </GlassPill>
+              )
             ) : showFinishedPill ? (
               // Completed session in view-only mode: session duration + FINISHED, not tappable.
-              <View style={styles.combinedPill}>
+              <GlassPill>
                 {viewedSessionDuration != null && (
                   <>
                     <Text style={styles.combinedPillTimerText}>{formatTimer(viewedSessionDuration)}</Text>
@@ -2860,17 +2966,17 @@ export default function TrainerWorkoutSessionScreen() {
                   </>
                 )}
                 <Text style={styles.combinedPillFinishText}>FINISHED</Text>
-              </View>
+              </GlassPill>
             ) : isViewOnly ? (
               // View-only is always read-only — never startable. Non-completed views show no pill.
               null
             ) : (
               // Not started (real session flow): tap START to begin logging.
-              <TouchableOpacity style={styles.combinedPill} onPress={handleStartPress} activeOpacity={0.85}>
+              <GlassPill onPress={handleStartPress}>
                 <Text style={styles.combinedPillTimerText}>{formatTimer(elapsed)}</Text>
                 <View style={styles.combinedPillSep} />
                 <Text style={styles.combinedPillFinishText}>START</Text>
-              </TouchableOpacity>
+              </GlassPill>
             )}
           </View>
 
@@ -2884,6 +2990,53 @@ export default function TrainerWorkoutSessionScreen() {
           </View>
         </View>
       </View>
+      )}
+
+      {/* ── Fixed banner header (option 2): shows the ACTIVE exercise's photo + name + count */}
+      {showFixedHeader && (
+        <View style={[styles.fixedBanner, { height: bannerH }]}>
+          <View style={StyleSheet.absoluteFill}>
+            {bannerPhoto ? (
+              <Image source={{ uri: bannerPhoto }} style={{ position: 'absolute', top: 0, left: 0, right: 0, height: bannerH * 1.9 }} resizeMode="cover" />
+            ) : categoryHasCover(workout?.category) ? (
+              <CategoryCover category={workout?.category} variant="color" watermarkSize={150} />
+            ) : (
+              <LinearGradient colors={['#2d6b5a', '#244e43', '#1a3832']} start={{ x: 1, y: 0 }} end={{ x: 0, y: 1 }} style={StyleSheet.absoluteFill} />
+            )}
+            <LinearGradient colors={['rgba(0,0,0,0.28)', 'transparent', 'rgba(0,0,0,0.55)']} locations={[0, 0.42, 1]} style={StyleSheet.absoluteFill} pointerEvents="none" />
+          </View>
+
+          {/* top row: back (left) · ⋯ (right) */}
+          <View style={{ flexDirection: 'row', alignItems: 'center', paddingTop: insets.top, paddingHorizontal: 12, height: insets.top + 44 }}>
+            <TouchableOpacity onPress={handleBack} hitSlop={8} style={styles.floatIconBtn}>
+              <SymbolView name="chevron.left" size={20} tintColor="#fff" />
+            </TouchableOpacity>
+            <View style={{ flex: 1 }} />
+            <View style={{ position: 'relative' }}>
+              <TouchableOpacity onPress={() => setDotsMenuOpen(true)} hitSlop={8} style={styles.floatIconBtn}>
+                <SymbolView name="ellipsis" size={18} tintColor="#fff" />
+              </TouchableOpacity>
+              {hasTrainingNotes && !trainingNotesViewed && (
+                <View style={{ position: 'absolute', top: 2, right: 2, width: 8, height: 8, borderRadius: 4, backgroundColor: '#24ac88', borderWidth: 1.5, borderColor: 'rgba(0,0,0,0.2)' }} pointerEvents="none" />
+              )}
+            </View>
+          </View>
+
+          {/* bottom: exercise name + count (left) · timer control (right) */}
+          <View style={styles.bannerBottom}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.bannerOverline} numberOfLines={1}>{bannerOverline}</Text>
+              <Text style={styles.bannerTitle} numberOfLines={1}>{bannerTitle}</Text>
+              {activeHeaderIdx >= 0 && exercises.length > 0 && (
+                <Text style={styles.bannerCount}>{activeHeaderIdx + 1} / {exercises.length}</Text>
+              )}
+            </View>
+            <View style={{ justifyContent: 'flex-end' }}>{timerControl}</View>
+          </View>
+
+          <View style={styles.bannerCap} pointerEvents="none" />
+        </View>
+      )}
 
       {/* ── Scrollable content */}
       <View style={{ flex: 1, backgroundColor: '#fff' }}>
@@ -2950,8 +3103,16 @@ export default function TrainerWorkoutSessionScreen() {
                   setHeaderCollapsed(offset >= COLLAPSE_END);
                 }}
                 ListHeaderComponent={
-                  <View style={{ height: HEADER_MAX }}>
-                    {workout?.cover_image_url ? (
+                  showFixedHeader ? (
+                    <View style={{ height: bannerH }} />
+                  ) : (
+                  <View style={{ height: HEADER_MAX, overflow: 'hidden' }}>
+                    {categoryHasCover(workout?.category) ? (
+                      <>
+                        <Image source={{ uri: PROTO_PUSH_PHOTO }} style={{ position: 'absolute', top: 0, left: 0, right: 0, height: HEADER_MAX * 1.7 }} resizeMode="cover" />
+                        <LinearGradient colors={['transparent', 'rgba(0,0,0,0.45)']} start={{ x: 0, y: 0.4 }} end={{ x: 0, y: 1 }} style={StyleSheet.absoluteFill} />
+                      </>
+                    ) : workout?.cover_image_url ? (
                       <>
                         <Image source={{ uri: workout.cover_image_url }} style={StyleSheet.absoluteFill} resizeMode="cover" />
                         <LinearGradient colors={['transparent', 'rgba(0,0,0,0.38)']} start={{ x: 0, y: 0.45 }} end={{ x: 0, y: 1 }} style={StyleSheet.absoluteFill} />
@@ -2978,6 +3139,7 @@ export default function TrainerWorkoutSessionScreen() {
                     </View>
                     <View style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: 26, backgroundColor: '#fff', borderTopLeftRadius: 26, borderTopRightRadius: 26 }} pointerEvents="none" />
                   </View>
+                  )
                 }
                 ListEmptyComponent={isFreeSession ? (
                   <View style={styles.freeEmptyState}>
@@ -2997,7 +3159,7 @@ export default function TrainerWorkoutSessionScreen() {
                   // ── Superset group card (edit mode) ───────────────────────
                   if (item.kind === 'group' && isEditMode) {
                     return (
-                      <View style={[styles.exCardOuter, isFirst && { marginTop: 12 }, isActive && { shadowOpacity: 0.22, shadowRadius: 14, elevation: 8, transform: [{ scale: 1.02 }] }]}>
+                      <View style={[styles.exCardOuter, isFirst && { marginTop: 6 }, isActive && { shadowOpacity: 0.22, shadowRadius: 14, elevation: 8, transform: [{ scale: 1.02 }] }]}>
                         <View style={styles.exCardInner}>
                           <SupersetGroupCard
                             groupId={item.groupId}
@@ -3031,7 +3193,7 @@ export default function TrainerWorkoutSessionScreen() {
                   // ── Superset group card (normal mode) ─────────────────────
                   if (item.kind === 'group') {
                     return (
-                      <View style={[styles.exCardOuter, isFirst && { marginTop: 12 }]}>
+                      <View style={[styles.exCardOuter, isFirst && { marginTop: 6 }]}>
                         <View style={styles.exCardInner}>
                           <View style={styles.ssGroupHeader}>
                             <TouchableOpacity onPress={() => toggleLiveForSuperset(item.groupId)} hitSlop={8} activeOpacity={0.85}>
@@ -3115,7 +3277,7 @@ export default function TrainerWorkoutSessionScreen() {
                   const isExpanded = expandedIds.has(ex.workoutExerciseId);
 
                   return (
-                    <View style={[styles.exCardOuter, isFirst && { marginTop: 12 }, isActive && { shadowOpacity: 0.22, shadowRadius: 14, elevation: 8, transform: [{ scale: 1.02 }] }]}>
+                    <View style={[styles.exCardOuter, isFirst && { marginTop: 6 }, isActive && { shadowOpacity: 0.22, shadowRadius: 14, elevation: 8, transform: [{ scale: 1.02 }] }]}>
                       <View style={styles.exCardInner}>
                         <ExerciseCard
                           exercise={ex}
@@ -4249,23 +4411,6 @@ function ExerciseCard({
           <View style={{ paddingTop: 4 }}>
 
             {/* ── Action row: Play video · Info ──────── */}
-            <View style={styles.actionBtnRow}>
-              <TouchableOpacity
-                style={styles.actionBtn}
-                onPress={onVideoPress}
-                activeOpacity={0.7}
-              >
-                <SymbolView name="play.fill" size={12} tintColor={ACCENT} />
-                <Text style={styles.actionBtnText}>Play video</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={[styles.actionBtn, { flex: 1 }]} onPress={() => { setInfoSeen(true); onOpenInfo(); }} activeOpacity={0.7}>
-                <SymbolView name="info.circle" size={12} tintColor={ACCENT} />
-                <Text style={styles.actionBtnText}>Info</Text>
-                {showInfoDot && <View style={styles.infoDotBadge} />}
-              </TouchableOpacity>
-            </View>
-            <View style={{ height: 1, backgroundColor: '#e8e8e4', marginHorizontal: 12, marginBottom: 10 }} />
-
             {/* Bar selector — barbell and z-bar exercises */}
             {isBarType && (
               <View style={styles.barSelectorRow} pointerEvents={readOnly ? 'none' : 'auto'}>
@@ -4427,6 +4572,9 @@ function ExerciseCard({
             {/* Add / camera / rest-timer affordances hidden in read-only view. */}
             {!readOnly && (addSetMenuOpen ? (
               <View style={styles.addSetMenu}>
+                <TouchableOpacity style={styles.addSetMenuClose} onPress={() => setAddSetMenuOpen(false)} hitSlop={10} activeOpacity={0.6}>
+                  <SymbolView name="xmark" size={12} tintColor="#aaa" />
+                </TouchableOpacity>
                 <TouchableOpacity style={styles.addSetMenuBtn} onPress={() => { onAddRegularSet(); setAddSetMenuOpen(false); }} activeOpacity={0.7}>
                   <SymbolView name="plus.circle" size={16} tintColor={ACCENT} />
                   <Text style={styles.addSetMenuText}>Add Set</Text>
@@ -4438,15 +4586,20 @@ function ExerciseCard({
                 </TouchableOpacity>
               </View>
             ) : (
-              <View style={styles.addSetBtnRow}>
-                <DashedBtnWrapper style={[styles.addSetBtn, { flex: 1 }]} onPress={() => setAddSetMenuOpen(true)} activeOpacity={0.7}>
-                  <SymbolView name="plus" size={13} tintColor={ACCENT} />
-                  <Text style={styles.addSetBtnText}>Add Set / Dropset</Text>
-                </DashedBtnWrapper>
-                <DashedBtnWrapper style={[styles.addSetBtn, { flex: 1 }]} onPress={onCameraPress} activeOpacity={0.7}>
-                  <SymbolView name="camera" size={13} tintColor={ACCENT} />
-                  <Text style={styles.addSetBtnText}>{en.doMode.addPhoto}</Text>
-                </DashedBtnWrapper>
+              <View style={styles.iconToolbar}>
+                <TouchableOpacity style={styles.iconBtn} onPress={() => setAddSetMenuOpen(true)} activeOpacity={0.7}>
+                  <SymbolView name="plus" size={18} tintColor={ACCENT} />
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.iconBtn} onPress={onCameraPress} activeOpacity={0.7}>
+                  <SymbolView name="camera" size={16} tintColor={ACCENT} />
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.iconBtn} onPress={onVideoPress} activeOpacity={0.7}>
+                  <SymbolView name="play.fill" size={17} tintColor={ACCENT} />
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.iconBtn} onPress={() => { setInfoSeen(true); onOpenInfo(); }} activeOpacity={0.7}>
+                  <SymbolView name="info.circle" size={16} tintColor={ACCENT} />
+                  {showInfoDot && <View style={styles.infoDotBadge} />}
+                </TouchableOpacity>
               </View>
             ))}
 
@@ -6070,7 +6223,15 @@ const styles = StyleSheet.create({
   miniBarTimerIdle: { color: 'rgba(255,255,255,0.4)' },
   timerPill: { backgroundColor: '#fff', borderRadius: 20, paddingHorizontal: 18, paddingVertical: 10, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.18, shadowRadius: 8, elevation: 4 },
   timerPillText: { color: '#24ac88', fontWeight: '700', fontSize: 13, fontVariant: ['tabular-nums'], letterSpacing: 0.4 },
-  combinedPill: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', borderRadius: 20, paddingHorizontal: 14, paddingVertical: 7, gap: 10, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.22, shadowRadius: 8, elevation: 4 },
+  combinedPillShadow: { borderRadius: 20, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.22, shadowRadius: 8, elevation: 4 },
+  combinedPillGlass: { flexDirection: 'row', alignItems: 'center', borderRadius: 20, overflow: 'hidden', paddingHorizontal: 14, paddingVertical: 7, gap: 10 },
+  timerClockGlass: { width: 40, height: 40, borderRadius: 20, overflow: 'hidden', alignItems: 'center', justifyContent: 'center' },
+  fixedBanner: { position: 'absolute', top: 0, left: 0, right: 0, zIndex: 10, overflow: 'hidden' },
+  bannerBottom: { position: 'absolute', left: 0, right: 0, bottom: 30, paddingHorizontal: 20, flexDirection: 'row', alignItems: 'flex-end', gap: 10 },
+  bannerOverline: { color: 'rgba(255,255,255,0.78)', fontSize: 11, fontWeight: '700', letterSpacing: 0.5, marginBottom: 5 },
+  bannerTitle: { color: '#fff', fontSize: 24, fontWeight: '700', letterSpacing: 0.2 },
+  bannerCount: { color: 'rgba(255,255,255,0.72)', fontSize: 13, fontWeight: '600', marginTop: 3 },
+  bannerCap: { position: 'absolute', bottom: 0, left: 0, right: 0, height: 26, backgroundColor: '#fff', borderTopLeftRadius: 26, borderTopRightRadius: 26 },
   combinedPillSep: { width: 1, height: 14, backgroundColor: 'rgba(36,172,136,0.35)' },
   combinedPillTimerText: { color: '#24ac88', fontWeight: '700', fontSize: 13, fontVariant: ['tabular-nums'], letterSpacing: 0.4 },
   combinedPillFinishText: { color: '#24ac88', fontWeight: '700', fontSize: 13, letterSpacing: 0.4 },
@@ -6114,7 +6275,7 @@ const styles = StyleSheet.create({
   ssPill: { backgroundColor: 'rgba(36,78,67,0.12)', paddingHorizontal: 5, paddingVertical: 1, borderRadius: 100 },
   ssPillText: { fontSize: 9, fontWeight: '700', color: '#244e43' },
   ssLabelTextPaused: { opacity: 0.35 },
-  setSectionLabelRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 12, paddingTop: 8, paddingBottom: 2 },
+  setSectionLabelRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 12, paddingTop: 5, paddingBottom: 2 },
   setSectionLabel: { fontSize: 11, fontWeight: '600', color: '#244e43', letterSpacing: 0.5 },
 
   swipeRow: { marginBottom: 16, position: 'relative' },
@@ -6182,7 +6343,7 @@ const styles = StyleSheet.create({
 
   setsDivider: { height: 1, backgroundColor: '#f0f0ee', marginHorizontal: 12, marginBottom: 2 },
 
-  barSelectorRow: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, paddingVertical: 8 },
+  barSelectorRow: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, paddingVertical: 6 },
   barOption: { flex: 1, alignItems: 'center', paddingVertical: 7, borderRadius: 100, borderWidth: 1, borderColor: '#e0e0dc', backgroundColor: '#f9f9f7' },
   barOptionActive: { backgroundColor: ACCENT, borderColor: ACCENT },
   barOptionPeeking: { backgroundColor: '#fff8e8', borderColor: '#c8a800' },
@@ -6202,11 +6363,11 @@ const styles = StyleSheet.create({
   brandCustomSetBtnDisabled: { backgroundColor: '#ccc' },
   brandCustomSetBtnText: { color: '#fff', fontSize: 14, fontWeight: '600' },
 
-  setColHeaderRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingTop: 5, paddingBottom: 4, gap: 8 },
+  setColHeaderRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingTop: 3, paddingBottom: 3, gap: 8 },
   colHeaderDivider: { height: 1, backgroundColor: '#e8e8e4', marginHorizontal: 12, marginBottom: 2 },
   setColLabel: { fontSize: 9, fontWeight: '800', color: '#ccc', letterSpacing: 0.8 },
 
-  inlineSetRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 10, gap: 8 },
+  inlineSetRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 7, gap: 8 },
   inlineDropsetRow: { paddingLeft: 24, backgroundColor: '#fafaf8' },
   inlineSetRemoved: { opacity: 0.3 },
   setNumCol: { width: 30, alignItems: 'center', justifyContent: 'center' },
@@ -6214,8 +6375,8 @@ const styles = StyleSheet.create({
   setNumActive: { color: '#244e43' },
   setNumPeeking: { color: '#b87d00' },
   dropsetArrow: { fontSize: 15, color: ACCENT, fontWeight: '700' },
-  kgInput: { flex: 1.2, textAlign: 'center', fontSize: 16, fontWeight: '700', color: TEXT, backgroundColor: '#f0f0ee', borderRadius: 8, paddingVertical: 8, paddingHorizontal: 4 },
-  repsInput: { flex: 1, textAlign: 'center', fontSize: 15, fontWeight: '500', color: '#999', backgroundColor: '#f5f5f3', borderRadius: 8, paddingVertical: 8, paddingHorizontal: 4 },
+  kgInput: { flex: 1.2, textAlign: 'center', fontSize: 16, fontWeight: '700', color: TEXT, backgroundColor: '#f0f0ee', borderRadius: 8, paddingVertical: 7, paddingHorizontal: 4 },
+  repsInput: { flex: 1, textAlign: 'center', fontSize: 15, fontWeight: '500', color: '#999', backgroundColor: '#f5f5f3', borderRadius: 8, paddingVertical: 7, paddingHorizontal: 4 },
   totalDisplay: { flex: 1.2, alignItems: 'center', justifyContent: 'center' },
   totalText: { fontSize: 14, fontWeight: '500', color: MUTED },
   totalTextPeeking: { color: '#b87d00', fontWeight: '700' },
@@ -6235,15 +6396,18 @@ const styles = StyleSheet.create({
 
   addedSetsDivider: { height: 1, marginHorizontal: 12, marginVertical: 4, borderStyle: 'dashed', borderTopWidth: 1, borderColor: '#ccc' },
 
-  addSetBtnRow: { flexDirection: 'row', gap: 8, marginHorizontal: 12, marginVertical: 8 },
+  addSetBtnRow: { flexDirection: 'row', gap: 8, marginHorizontal: 12, marginVertical: 6 },
+  iconToolbar: { flexDirection: 'row', gap: 8, marginHorizontal: 12, marginVertical: 6 },
+  iconBtn: { flex: 1, height: 38, borderRadius: 10, borderWidth: 1.5, borderColor: ACCENT, alignItems: 'center', justifyContent: 'center', backgroundColor: 'transparent' },
   addSetBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 12, borderRadius: 10 },
   addSetBtnText: { fontSize: 13, fontWeight: '700', color: ACCENT },
   addSetMenu: { marginHorizontal: 12, marginVertical: 8, borderRadius: 10, borderWidth: 1, borderColor: BORDER, overflow: 'hidden' },
+  addSetMenuClose: { position: 'absolute', top: 6, right: 8, zIndex: 2, width: 22, height: 22, alignItems: 'center', justifyContent: 'center' },
   addSetMenuBtn: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 14, paddingVertical: 12 },
   addSetMenuText: { fontSize: 14, fontWeight: '600', color: TEXT },
   addSetMenuDiv: { height: 1, backgroundColor: BORDER },
 
-  startTimerBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 10, marginHorizontal: 12, marginBottom: 8, borderRadius: 10, borderWidth: 1.5, borderColor: ACCENT, backgroundColor: '#edf8f5' },
+  startTimerBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 8, marginHorizontal: 12, marginBottom: 6, borderRadius: 10, borderWidth: 1.5, borderColor: ACCENT, backgroundColor: '#edf8f5' },
   startTimerBtnText: { fontSize: 13, fontWeight: '700', color: ACCENT },
 
   changesLogEntry: { fontSize: 13, color: MUTED, lineHeight: 20, marginBottom: 3 },
@@ -6414,8 +6578,8 @@ const styles = StyleSheet.create({
   statKg: { fontSize: 13, fontWeight: '700', color: '#1a1a1a' },
   statDate: { fontSize: 11, color: '#bbb' },
 
-  actionBtnRow: { flexDirection: 'row', gap: 8, marginBottom: 6, marginTop: 6, marginHorizontal: 12 },
-  actionBtn: { flex: 1, paddingVertical: 9, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 6, borderRadius: 10, borderWidth: 1.5, borderColor: '#24ac88', backgroundColor: 'transparent' },
+  actionBtnRow: { flexDirection: 'row', gap: 8, marginBottom: 4, marginTop: 4, marginHorizontal: 12 },
+  actionBtn: { flex: 1, paddingVertical: 8, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 6, borderRadius: 10, borderWidth: 1.5, borderColor: '#24ac88', backgroundColor: 'transparent' },
   actionBtnDisabled: { borderColor: '#e0e0dc' },
   actionBtnText: { color: '#24ac88', fontSize: 13, fontWeight: '500' },
   actionBtnTextDisabled: { color: '#bbb' },

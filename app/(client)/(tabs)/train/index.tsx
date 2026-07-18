@@ -23,6 +23,7 @@ import { useTabBarHeight } from '@/components/FloatingTabBar';
 import { SessionDetailsSheet } from '@/components/SessionDetailsSheet';
 import { RoutineDetailsSheet } from '@/components/RoutineDetailsSheet';
 import type { RoutineWorkoutPick } from '@/components/RoutineDetailsSheet';
+import CategoryCover, { categoryHasCover } from '@/components/CategoryCover';
 
 const BG     = '#faf9f7';
 const CARD   = '#ffffff';
@@ -821,10 +822,16 @@ export default function TrainTabScreen() {
               >
                 <View style={sectionStyles.wCard}>
                   <View style={sectionStyles.wCover}>
-                    {c.coverUrl
-                      ? <Image source={{ uri: c.coverUrl }} style={StyleSheet.absoluteFill} resizeMode="cover" />
-                      : <LinearGradient colors={['#2a5448', '#1a3832']} style={StyleSheet.absoluteFill} />}
-                    <LinearGradient colors={['transparent', 'rgba(0,0,0,0.5)']} style={StyleSheet.absoluteFill} pointerEvents="none" />
+                    {categoryHasCover(c.category) ? (
+                      <CategoryCover category={c.category} variant="color" watermarkSize={96} />
+                    ) : c.coverUrl ? (
+                      <>
+                        <Image source={{ uri: c.coverUrl }} style={StyleSheet.absoluteFill} resizeMode="cover" />
+                        <LinearGradient colors={['transparent', 'rgba(0,0,0,0.5)']} style={StyleSheet.absoluteFill} pointerEvents="none" />
+                      </>
+                    ) : (
+                      <LinearGradient colors={['#2a5448', '#1a3832']} style={StyleSheet.absoluteFill} />
+                    )}
                     <Text style={sectionStyles.wName} numberOfLines={1}>{c.name}</Text>
                     {c.category && (
                       <View style={[sectionStyles.wCatPill, { backgroundColor: CATEGORY_COLORS[c.category as WorkoutCategory]?.border ?? ACCENT }]}>
@@ -1563,11 +1570,16 @@ function WeeklyGaugeCard({
                     onPress={() => session.workout_id && onOpenSession(session.workout_id, { date: selectedDate, planned: true })}
                     style={{ height: 62 }}
                   >
-                    {session.coverImageUrl
-                      ? <Image source={{ uri: session.coverImageUrl }} style={StyleSheet.absoluteFill} resizeMode="cover" />
-                      : <LinearGradient colors={['#2a5448', '#1a3832']} style={StyleSheet.absoluteFill} />
-                    }
-                    <LinearGradient colors={['transparent', 'rgba(0,0,0,0.58)']} style={StyleSheet.absoluteFill} pointerEvents="none" />
+                    {categoryHasCover(session.category) ? (
+                      <CategoryCover category={session.category} variant="color" watermarkSize={72} />
+                    ) : session.coverImageUrl ? (
+                      <>
+                        <Image source={{ uri: session.coverImageUrl }} style={StyleSheet.absoluteFill} resizeMode="cover" />
+                        <LinearGradient colors={['transparent', 'rgba(0,0,0,0.58)']} style={StyleSheet.absoluteFill} pointerEvents="none" />
+                      </>
+                    ) : (
+                      <LinearGradient colors={['#2a5448', '#1a3832']} style={StyleSheet.absoluteFill} />
+                    )}
                     <View style={gcStyles.plannedBadge}><Text style={gcStyles.plannedBadgeText}>PLANNED</Text></View>
                     <Text style={gcStyles.sessName} numberOfLines={1}>{session.workoutName ?? 'Session'}</Text>
                     <Text style={gcStyles.sessDate}>{formatShortDate(selectedDate)}</Text>
@@ -1600,11 +1612,16 @@ function WeeklyGaugeCard({
                   onPress={() => session.workout_id && onOpenSession(session.workout_id, { date: selectedDate })}
                 >
                   <View style={{ height: 62 }}>
-                    {session.coverImageUrl
-                      ? <Image source={{ uri: session.coverImageUrl }} style={StyleSheet.absoluteFill} resizeMode="cover" />
-                      : <LinearGradient colors={['#2a5448', '#1a3832']} style={StyleSheet.absoluteFill} />
-                    }
-                    <LinearGradient colors={['transparent', 'rgba(0,0,0,0.58)']} style={StyleSheet.absoluteFill} pointerEvents="none" />
+                    {categoryHasCover(session.category) ? (
+                      <CategoryCover category={session.category} variant="color" watermarkSize={72} />
+                    ) : session.coverImageUrl ? (
+                      <>
+                        <Image source={{ uri: session.coverImageUrl }} style={StyleSheet.absoluteFill} resizeMode="cover" />
+                        <LinearGradient colors={['transparent', 'rgba(0,0,0,0.58)']} style={StyleSheet.absoluteFill} pointerEvents="none" />
+                      </>
+                    ) : (
+                      <LinearGradient colors={['#2a5448', '#1a3832']} style={StyleSheet.absoluteFill} />
+                    )}
                     <View style={gcStyles.checkBadge}><Text style={gcStyles.checkMark}>✓</Text></View>
                     <Text style={gcStyles.sessName} numberOfLines={1}>{session.workoutName ?? 'Session'}</Text>
                     <Text style={gcStyles.sessDate}>{formatShortDate(selectedDate)}</Text>
