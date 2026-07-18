@@ -936,6 +936,7 @@ function FoodsTab({
   const [loading, setLoading]   = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [search, setSearch]     = useState('');
+  const [badgeFilter, setBadgeFilter] = useState<'all' | 'whole' | 'branded' | 'generic'>('all');
 
   // Create / edit modal
   const [createOpen, setCreateOpen]   = useState(false);
@@ -997,12 +998,25 @@ function FoodsTab({
     await supabase.from('trainer_foods').delete().eq('id', id);
   };
 
-  const filtered = search.trim()
-    ? rows.filter(r =>
-        r.name.toLowerCase().includes(search.trim().toLowerCase()) ||
-        (r.name_de ?? '').toLowerCase().includes(search.trim().toLowerCase()),
-      )
-    : rows;
+  const q = search.trim().toLowerCase();
+  const filtered = rows.filter(r => {
+    if (badgeFilter !== 'all' && (r.badge ?? 'whole') !== badgeFilter) return false;
+    if (q && !(r.name.toLowerCase().includes(q) || (r.name_de ?? '').toLowerCase().includes(q))) return false;
+    return true;
+  });
+
+  const badgeCounts = {
+    all: rows.length,
+    whole: rows.filter(r => (r.badge ?? 'whole') === 'whole').length,
+    branded: rows.filter(r => r.badge === 'branded').length,
+    generic: rows.filter(r => r.badge === 'generic').length,
+  };
+  const BADGE_FILTERS = [
+    { key: 'all' as const,     label: 'All',     color: '#555' },
+    { key: 'whole' as const,   label: 'Whole',   color: '#244e43' },
+    { key: 'branded' as const, label: 'Branded', color: '#e85d4a' },
+    { key: 'generic' as const, label: 'Generic', color: '#f5a623' },
+  ];
 
   return (
     <View style={{ flex: 1 }}>
@@ -1020,6 +1034,32 @@ function FoodsTab({
           clearButtonMode="while-editing"
         />
       </View>
+
+      {/* Badge-tier filter */}
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={foodStyles.filterRow}
+      >
+        {BADGE_FILTERS.map(f => {
+          const active = badgeFilter === f.key;
+          return (
+            <TouchableOpacity
+              key={f.key}
+              onPress={() => setBadgeFilter(f.key)}
+              activeOpacity={0.8}
+              style={[foodStyles.filterPill, active && { backgroundColor: f.color }]}
+            >
+              {f.key !== 'all' && (
+                <View style={[foodStyles.filterDot, { backgroundColor: active ? '#fff' : f.color }]} />
+              )}
+              <Text style={[foodStyles.filterPillText, active && { color: '#fff' }]}>
+                {f.label} {badgeCounts[f.key]}
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
+      </ScrollView>
 
       {loading ? (
         <ActivityIndicator color={ACCENT} size="large" style={styles.loader} />
@@ -1113,7 +1153,13 @@ function FoodCard({ row, onPress }: { row: TrainerFoodRow; onPress: () => void }
 
       {/* Name + macros */}
       <View style={foodStyles.info}>
-        <Text style={foodStyles.name} numberOfLines={1}>{row.name}</Text>
+        <View style={foodStyles.nameRow}>
+          <Text style={[foodStyles.name, { flexShrink: 1 }]} numberOfLines={1}>{row.name}</Text>
+          <VFIcon
+            size={12}
+            color={row.badge === 'branded' ? '#e85d4a' : row.badge === 'generic' ? '#f5a623' : '#244e43'}
+          />
+        </View>
         {row.name_de ? (
           <Text style={foodStyles.nameDe} numberOfLines={1}>{row.name_de}</Text>
         ) : null}
@@ -1178,6 +1224,36 @@ const foodStyles = StyleSheet.create({
   info: {
     flex: 1,
     gap: 2,
+  },
+  nameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  filterRow: {
+    flexDirection: 'row',
+    gap: 8,
+    paddingHorizontal: 16,
+    paddingBottom: 10,
+  },
+  filterPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 13,
+    paddingVertical: 7,
+    borderRadius: 100,
+    backgroundColor: '#f2f2ef',
+  },
+  filterDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  filterPillText: {
+    fontSize: 12.5,
+    fontWeight: '600',
+    color: '#555',
   },
   name: {
     fontSize: 14,

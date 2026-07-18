@@ -127,9 +127,23 @@ function rowToFoodResult(row: RecentRow | FavRow): FoodResult {
   };
 }
 
+const SCAN_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+function fmtScannedDate(iso: string): string {
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return '';
+  return `${d.getDate()} ${SCAN_MONTHS[d.getMonth()]} ${d.getFullYear()}`;
+}
+
 function SourceBadge({ food }: { food: FoodResult }) {
+  if (food.scannedAt) {
+    return <SymbolView name="barcode.viewfinder" size={12} tintColor="#888" />;
+  }
   if (food.source === 'trainer') {
-    return <VFIcon size={13} color="#244e43" />;
+    // VF badge tier: green = whole food, red = branded/fast food, yellow = generic estimate.
+    const badgeColor = food.foodBadge === 'branded' ? '#e85d4a'
+      : food.foodBadge === 'generic' ? '#f5a623'
+      : '#244e43';
+    return <VFIcon size={13} color={badgeColor} />;
   }
   if (food.source === 'custom') {
     return <SymbolView name="star.fill" size={11} tintColor={AMBER} />;
@@ -165,9 +179,11 @@ export default function FoodSearchModal({
   const [results, setResults]           = useState<FoodResult[]>([]);
   const [searching, setSearching]       = useState(false);
   const [recent, setRecent]             = useState<RecentRow[]>([]);
+  const [recentImg, setRecentImg]       = useState<Map<string, string>>(new Map());
   const [favRows, setFavRows]           = useState<FavRow[]>([]);
   const [favIds, setFavIds]             = useState<Set<string>>(new Set());
   const [customFoods, setCustomFoods]   = useState<FoodResult[]>([]);
+  const [scannedFoods, setScannedFoods] = useState<FoodResult[]>([]);
   const [savedMeals, setSavedMeals]     = useState<SavedMealRow[]>([]);
   const [mealExpanded, setMealExpanded] = useState<string | null>(null);
 
@@ -241,6 +257,7 @@ export default function FoodSearchModal({
     loadRecent();
     loadFavourites();
     loadCustom();
+    loadScanned();
     loadSavedMeals();
   }, [visible]);
 
@@ -250,8 +267,26 @@ export default function FoodSearchModal({
       .select('*')
       .eq('client_id', clientId)
       .order('last_used_at', { ascending: false })
-      .limit(10);
-    setRecent((data as RecentRow[]) ?? []);
+      .limit(20);
+    const rows = (data as RecentRow[]) ?? [];
+    setRecent(rows);
+    // Photos: trainer foods live in trainer_foods.photo_url; off/usda in food_cache.image_url.
+    const img = new Map<string, string>();
+    const trainerIds = rows.filter(r => r.source === 'trainer' && r.source_id).map(r => r.source_id as string);
+    const cacheIds = rows.filter(r => (r.source === 'off' || r.source === 'usda') && r.source_id).map(r => r.source_id as string);
+    await Promise.all([
+      trainerIds.length > 0
+        ? supabase.from('trainer_foods').select('id, photo_url').in('id', trainerIds).then(({ data: td }) => {
+            for (const row of (td ?? []) as any[]) if (row.photo_url) img.set(`trainer:${row.id}`, row.photo_url);
+          })
+        : Promise.resolve(),
+      cacheIds.length > 0
+        ? supabase.from('food_cache').select('source, source_id, image_url').in('source_id', cacheIds).then(({ data: cd }) => {
+            for (const row of (cd ?? []) as any[]) if (row.image_url) img.set(`${row.source}:${row.source_id}`, row.image_url);
+          })
+        : Promise.resolve(),
+    ]);
+    setRecentImg(img);
   };
 
   const loadFavourites = async () => {
@@ -268,6 +303,26 @@ export default function FoodSearchModal({
   const loadCustom = async () => {
     const foods = await loadCustomFoods(clientId);
     setCustomFoods(foods);
+  };
+
+  const loadScanned = async () => {
+    const { data } = await supabase
+      .from('scanned_foods')
+      .select('*')
+      .eq('client_id', clientId)
+      .order('scanned_at', { ascending: false });
+    const foods: FoodResult[] = ((data ?? []) as any[]).map(row => ({
+      id: `scanned:${row.source_id ?? row.id}`,
+      name: row.food_name,
+      brand: row.brand ?? null,
+      source: (row.source ?? 'off') as FoodResult['source'],
+      sourceId: row.source_id ?? '',
+      nutrientsPer100g: row.nutrients_json,
+      foodGroups: (row.food_groups ?? []) as FoodResult['foodGroups'],
+      imageUrl: row.image_url ?? undefined,
+      scannedAt: row.scanned_at,
+    }));
+    setScannedFoods(foods);
   };
 
   const loadSavedMeals = async () => {
@@ -438,7 +493,20 @@ export default function FoodSearchModal({
     if (food) {
       setScanning(false);
       setScanLooking(false);
-      openPortion(food);
+      // Auto-save the scan to this client's own scanned foods so they never re-scan it.
+      const nowIso = new Date().toISOString();
+      supabase.from('scanned_foods').upsert({
+        client_id: clientId,
+        food_name: food.name,
+        brand: food.brand,
+        source: food.source,
+        source_id: food.sourceId,
+        nutrients_json: food.nutrientsPer100g,
+        food_groups: food.foodGroups,
+        image_url: food.imageUrl ?? null,
+        scanned_at: nowIso,
+      }, { onConflict: 'client_id,source,source_id' }).then(() => { loadScanned(); });
+      openPortion({ ...food, scannedAt: nowIso });
     } else {
       setScanLooking(false);
       setScanError('No food found for this barcode. Try again or search by name.');
@@ -539,12 +607,14 @@ export default function FoodSearchModal({
       )
     : favRows;
 
-  const filteredCustom = q
-    ? customFoods.filter(f =>
+  // "My foods" = the client's own foods: scanned (newest first) then custom.
+  const myFoodsAll = [...scannedFoods, ...customFoods];
+  const filteredMyFoods = q
+    ? myFoodsAll.filter(f =>
         f.name.toLowerCase().includes(q) ||
         (f.brand ?? '').toLowerCase().includes(q),
       )
-    : customFoods;
+    : myFoodsAll;
 
   const filteredMeals = q
     ? savedMeals.filter(m => m.name.toLowerCase().includes(q))
@@ -699,7 +769,7 @@ export default function FoodSearchModal({
                   {recent.length > 0 ? (
                     <>
                       <Text style={s.sectionLabel}>RECENTLY ADDED</Text>
-                      {recent.map(r => renderFoodRow(rowToFoodResult(r)))}
+                      {recent.map(r => renderFoodRow({ ...rowToFoodResult(r), imageUrl: r.source_id ? recentImg.get(`${r.source}:${r.source_id}`) : undefined }))}
                     </>
                   ) : (
                     <Text style={s.emptyNote}>Search above to find foods to log</Text>
@@ -744,12 +814,12 @@ export default function FoodSearchModal({
           {activeTab === 'my_foods' && (
             <View style={{ flex: 1 }}>
               <FlatList
-                data={filteredCustom}
+                data={filteredMyFoods}
                 keyExtractor={item => item.id}
                 renderItem={({ item }) => renderFoodRow(item, false)}
                 ListEmptyComponent={
                   <Text style={s.emptyNote}>
-                    {q ? 'No custom foods match your search' : 'Tap + to create your first food'}
+                    {q ? 'No foods match your search' : 'Scan a barcode or tap + to add your own foods'}
                   </Text>
                 }
                 keyboardShouldPersistTaps="handled"
@@ -791,13 +861,19 @@ export default function FoodSearchModal({
                 <Image
                   source={{ uri: portionFood.imageUrl }}
                   style={s.portionImage}
-                  contentFit="cover"
+                  contentFit="contain"
                 />
               )}
               <View style={s.portionHeader}>
                 <View style={{ flex: 1 }}>
                   <Text style={s.portionFoodName} numberOfLines={2}>{portionFood.name}</Text>
                   {portionFood.brand && <Text style={s.portionBrand}>{portionFood.brand}</Text>}
+                  {portionFood.scannedAt && (
+                    <View style={s.portionScannedRow}>
+                      <SymbolView name="barcode.viewfinder" size={12} tintColor="#888" />
+                      <Text style={s.portionScanned}>Scanned on {fmtScannedDate(portionFood.scannedAt)}</Text>
+                    </View>
+                  )}
                 </View>
                 {portionFood.source !== 'custom' && (
                   <TouchableOpacity onPress={() => toggleFavourite(portionFood)} hitSlop={8}>
@@ -1115,6 +1191,8 @@ const s = StyleSheet.create({
   portionHeader:  { flexDirection: 'row', alignItems: 'flex-start', gap: 12, marginBottom: 14 },
   portionFoodName:{ fontSize: 16, fontWeight: '700', color: TEXT, lineHeight: 22 },
   portionBrand:   { fontSize: 12, color: MUTED, marginTop: 2 },
+  portionScannedRow: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 4 },
+  portionScanned: { fontSize: 12, color: '#888', fontWeight: '500' },
 
   unitRow:        { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 8 },
   servingHint:    { fontSize: 11, color: MUTED, marginBottom: 12, paddingLeft: 2 },

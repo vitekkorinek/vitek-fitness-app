@@ -824,7 +824,13 @@ export default function NutritionDailyScreen() {
     }).select().single();
     if (data) setLogs(prev => [...prev, data as FoodLogEntry]);
 
-    if (result.source !== 'manual' && result.sourceId) {
+    if (result.source === 'trainer' && result.sourceId) {
+      // Trainer foods live in trainer_foods, not food_cache — pull the photo so the row shows it without a full reload.
+      supabase.from('trainer_foods').select('photo_url').eq('id', result.sourceId).single()
+        .then(({ data: td }) => {
+          if (td?.photo_url) setImageUrlMap(prev => new Map(prev).set(`trainer:${result.sourceId}`, td.photo_url!));
+        });
+    } else if (result.source !== 'manual' && result.sourceId) {
       supabase.from('food_cache').select('image_url')
         .eq('source', result.source).eq('source_id', result.sourceId)
         .single()

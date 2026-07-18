@@ -34,6 +34,8 @@ export interface FoodResult {
   isGerman?: boolean;
   isBrandSubmitted?: boolean;
   nameDe?: string;
+  foodBadge?: 'whole' | 'branded' | 'generic';  // trainer-food badge tier: green (whole) / red (branded) / yellow (generic estimate)
+  scannedAt?: string;    // set for the client's own barcode-scanned foods → scan badge + "Scanned on DATE"
 }
 
 // --- OFF category tag → food group mapping ---
@@ -315,6 +317,8 @@ export interface TrainerFoodRow {
   photo_url: string | null;
   food_groups: string[];
   portions: FoodPortion[] | null;
+  is_branded: boolean;
+  badge: 'whole' | 'branded' | 'generic';
   created_at: string;
 }
 
@@ -338,6 +342,7 @@ export function trainerFoodToResult(row: TrainerFoodRow): FoodResult {
     foodGroups: (row.food_groups ?? []) as FoodGroup[],
     imageUrl: row.photo_url ?? undefined,
     portions: row.portions?.length ? row.portions : undefined,
+    foodBadge: (row.badge ?? 'whole') as 'whole' | 'branded' | 'generic',
   };
 }
 

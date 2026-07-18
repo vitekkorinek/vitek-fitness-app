@@ -516,9 +516,26 @@ protein_g, carbs_g, fat_g, fiber_g, sugar_g, salt_g (numeric, nullable),
 photo_url (text, nullable — stored in trainer-foods Supabase bucket),
 food_groups (text[] default '{}' — veg | fruit | meat | fish | dairy | legume | grain | nut | fat),
 portions (jsonb default '[]' — array of {label: string, grams: number} for named portions),
+badge (text default 'whole', CHECK in 'whole'|'branded'|'generic' — VF badge tier: green/red/yellow),
+is_branded (boolean default false — legacy, superseded by badge),
 created_at
 ```
 Trainer-defined foods curated for clients. RLS: trainer can read/write own rows (`trainer_id = auth.uid()`); all authenticated users can SELECT. `portions` stores named portion sizes (e.g. `[{label:'serving',grams:150},{label:'piece',grams:50},{label:'can',grams:400}]`) — 100g is always implicit. Photos stored in `trainer-foods` Supabase bucket (public). `source = 'trainer'`, `source_id = id` when logged to `food_log_entries`. Searched via `name` and `name_de`. Appear in food search ranked first (score 1100, above custom=1000 and USDA/OFF). Identified in search results by VFIcon badge (dark green, size 13).
+
+**Claude-seeded food library (July 2026):** the table was bulk-seeded from 1 → **~249 rows** of accurate common foods (whole foods across every group, German staples, common prepared dishes, drinks, condiments, sweets) so clients get a rich, trustworthy library that appears first with the trainer's VF badge — instead of the trainer hand-creating each food. All rows carry `name_de` (bilingual EN/DE search), `food_groups`, and natural `portions` (1 egg large/small, 1 apple, 1 cup dry vs cooked rice, 1 slice, 1 handful, 1 tbsp/tsp, 1 glass). Dry/cooked and raw/cooked are separate rows with the state labelled in the name. **Photos** use TheMealDB ingredient images (`photo_url` links directly to TheMealDB's CDN for display; Almonds is a self-hosted proof-of-concept in the bucket); ~129/249 have a photo, the rest show the fork/knife placeholder. Full detail + conventions + the sandbox upload gotcha in **CLAUDE-nutrition.md "Trainer food library (Claude-seeded foods) + photos"**.
+
+**Extensions (BUILT July 2026):** (1) **3-tier VF badge by trust level** — the `trainer_foods.badge` column (`whole|branded|generic`) drives the VF colour: 🟢 green = whole foods + source-independent staples (banana, chicken, olive oil, dark chocolate 70%), 🔴 red = named brand / fast food (Coca-Cola, Nutella, McDonald's, Döner), 🟡 yellow = generic processed/composite estimate where brand & recipe are unknown (milk chocolate, chocolate spread, sauces, ready dishes, sausages). Branded/generic are best-effort estimates, with the barcode scanner as the accurate path for exact branded items; (2) **auto-saved scanned foods** — the `scanned_foods` table stores each client's barcode scans (RLS per-client); a scan is saved the moment it resolves, shown in the "My foods" tab with a scan badge + "Scanned on DATE" so the product is never re-scanned; (3) recently-used foods surfaced on opening search — the "RECENTLY ADDED" list (from `recent_foods`, with photos, 20 items) which had been silently broken and was fixed. See CLAUDE-nutrition.md for implementation detail.
+
+### scanned_foods
+```
+id, client_id (uuid → users.id, cascade delete),
+food_name (text, not null), brand (text, nullable),
+source (text default 'off'), source_id (text — the barcode),
+nutrients_json (jsonb, not null — per 100g), food_groups (text[] default '{}'),
+image_url (text, nullable), scanned_at (timestamptz default now()),
+UNIQUE (client_id, source, source_id)
+```
+Per-client record of barcode-scanned foods so they never re-scan the same product. RLS: `client_manage_own_scanned_foods` (`client_id = auth.uid()`, ALL). Written by `handleBarcodeScanned` in `FoodSearchModal` the instant a barcode resolves (independent of logging). Surfaced in the "My foods" tab (merged with `custom_foods`) with a `barcode.viewfinder` badge; the portion picker shows "Scanned on DATE".
 
 ### water_logs
 ```
