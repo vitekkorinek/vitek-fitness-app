@@ -12,6 +12,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   Image,
+  Dimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -21,7 +22,13 @@ import * as VideoThumbnails from 'expo-video-thumbnails';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/context/AuthContext';
 import { VFIcon } from '@/components/VFIcon';
+import { HeaderPhotoPositioner } from '@/components/HeaderPhoto';
 import t from '@/i18n/en';
+
+// The Do Mode header is full width × ~42% of screen height. The builder frames
+// the header crop at that same aspect so what the trainer sets is what shows.
+const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
+const HEADER_ASPECT = (SCREEN_H * 0.42) / SCREEN_W;
 
 function makeUUID() {
   return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
@@ -74,6 +81,7 @@ export default function AddExerciseScreen() {
   const [videoItems, setVideoItems] = useState<VideoItem[]>([]);
   const [uploadingNewVideo, setUploadingNewVideo] = useState(false);
   const [photoItems, setPhotoItems] = useState<PhotoItem[]>([]);
+  const [headerFocusY, setHeaderFocusY] = useState(0.5);
 
   useEffect(() => {
     if (!isEdit) return;
@@ -98,6 +106,7 @@ export default function AddExerciseScreen() {
 
           const photos: PhotoItem[] = (e.extra_photo_urls ?? []).map((u: string) => ({ displayUri: u, localUri: null }));
           setPhotoItems(photos);
+          setHeaderFocusY(typeof e.header_focus_y === 'number' ? e.header_focus_y : 0.5);
         }
         setLoadingExercise(false);
       });
@@ -232,6 +241,7 @@ export default function AddExerciseScreen() {
       extra_video_urls:         videoItems.slice(1).map(v => v.videoUrl),
       thumbnail_url:            finalThumbnail,
       extra_photo_urls:         finalPhotoUrls,
+      header_focus_y:           headerFocusY,
     };
 
     const { error: err } = isEdit
@@ -506,6 +516,23 @@ export default function AddExerciseScreen() {
             </Text>
           </TouchableOpacity>
 
+          {/* Header framing — position the first photo for the Do Mode header */}
+          {photoItems.length > 0 && (
+            <>
+              <FormLabel title="HEADER FRAMING" />
+              <Text style={styles.headerFrameHint}>
+                Drag the photo to set what shows in the session header.
+              </Text>
+              <HeaderPhotoPositioner
+                uri={photoItems[0].displayUri}
+                focusY={headerFocusY}
+                onChange={setHeaderFocusY}
+                boxW={SCREEN_W - 40}
+                boxH={Math.round((SCREEN_W - 40) * HEADER_ASPECT)}
+              />
+            </>
+          )}
+
           {error && <Text style={styles.errorText}>{error}</Text>}
 
           <TouchableOpacity
@@ -639,6 +666,7 @@ const styles = StyleSheet.create({
 
   // Photo preview
   photoThumbnail: { width: '100%', height: 200 },
+  headerFrameHint: { fontSize: 12, color: '#999', marginBottom: 10, marginTop: -2 },
 
   // Shared remove button (top-right of each media card)
   mediaRemoveBtn: { position: 'absolute', top: 10, right: 10 },

@@ -120,6 +120,8 @@ import type { Workout } from '@/types/database';
 import en from '@/i18n/en';
 import MuscleThumb from '@/components/MuscleThumb';
 import CategoryCover, { categoryHasCover } from '@/components/CategoryCover';
+import { HeaderPhoto } from '@/components/HeaderPhoto';
+import SessionStartOverlay from '@/components/SessionStartOverlay';
 
 // PROTOTYPE (July 2026): a real photo pulled from the Push workout's exercises,
 // used as the Do Mode header hero to test "vertical photo in the header". Hardcoded
@@ -133,6 +135,14 @@ const PROTO_PUSH_PHOTO =
 // open). Flip to false to instantly return to the old scroll-away header — no
 // other change needed. Only affects the live/main Do Mode path (not past-session view).
 const FIXED_HEADER = true;
+
+// ─── MERGED PREVIEW (Stage 2) ─────────────────────────────────────────────
+// Show the merged pre-session ↔ Do Mode slide overlay (SessionStartOverlay)
+// before a session starts, then hand off to this running Do Mode on Start.
+// Additive + reversible: flip to false to fully disable. Push-scoped +
+// launcher-only for testing (session-intro redirects those here without
+// autoStart). See components/SessionStartOverlay.tsx.
+const MERGED_PREVIEW = true;
 
 // ─── Types ──────────────────────────────────────────────────────────────────────
 
@@ -189,6 +199,7 @@ type SessionExercise = {
   thumbnailUrl: string | null;
   extraVideoUrls: string[];
   extraPhotoUrls: string[];
+  headerFocusY?: number;
   equipment: string | null;
   exerciseDescription: string | null;
   isDone: boolean;
@@ -532,6 +543,10 @@ export default function TrainerWorkoutSessionScreen() {
   const [sessionHistory, setSessionHistory] = useState<SessionHistoryEntry[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [pastSession, setPastSession] = useState<PastSession | null>(null);
+  const [previewClosed, setPreviewClosed] = useState(false);
+  // Captured once (first loaded render, before the session starts) so the overlay
+  // survives its own lock+fade even though onStart sets startedAt.
+  const previewInitRef = useRef<boolean | undefined>(undefined);
   // Duration of the most recent completed session — shown in the view-only FINISHED pill.
   const [viewedSessionDuration, setViewedSessionDuration] = useState<number | null>(null);
   const [lastCompletedSessionAt, setLastCompletedSessionAt] = useState<string | null>(null);
@@ -781,7 +796,7 @@ export default function TrainerWorkoutSessionScreen() {
 
     const [{ data: wData }, { data: weData }, { data: clientData }] = await Promise.all([
       supabase.from('workouts').select('id, name, description, goal, client_id, routine_id, created_by, equipment_list, muscle_groups, order_index, notes, cover_image_url, category, stretch_type, created_at').eq('id', workoutId).single(),
-      supabase.from('workout_exercises').select('*, exercises(id, name, muscle_groups, secondary_muscle_groups, video_url, extra_video_urls, extra_photo_urls, thumbnail_url, equipment, description)').eq('workout_id', workoutId).eq('is_active', true).order('order_index'),
+      supabase.from('workout_exercises').select('*, exercises(id, name, muscle_groups, secondary_muscle_groups, video_url, extra_video_urls, extra_photo_urls, thumbnail_url, header_focus_y, equipment, description)').eq('workout_id', workoutId).eq('is_active', true).order('order_index'),
       supabase.from('users').select('name').eq('id', clientId).single(),
     ]);
 
@@ -1117,6 +1132,7 @@ export default function TrainerWorkoutSessionScreen() {
         thumbnailUrl: we.exercises?.thumbnail_url ?? null,
         extraVideoUrls: (we.exercises as any)?.extra_video_urls ?? [],
         extraPhotoUrls: (we.exercises as any)?.extra_photo_urls ?? [],
+        headerFocusY: (we.exercises as any)?.header_focus_y ?? 0.5,
         equipment: we.exercises?.equipment ?? null,
         exerciseDescription: we.exercises?.description ?? null,
         isDone: false,
@@ -2856,6 +2872,42 @@ export default function TrainerWorkoutSessionScreen() {
   const bannerWorkoutName = (isFreeSession ? freeSessionName : workout?.name) ?? '';
   const bannerOverline = [bannerWorkoutName.toUpperCase(), bannerSessionLabel].filter(Boolean).join('   ·   ');
 
+  // ── Merged pre-session overlay (Stage 2) ──────────────────────────────
+  // Shows before the session starts, then hands off to this running Do Mode.
+  // Eligibility is captured once (lazy init) so onStart setting startedAt does
+  // not unmount the overlay before its lock+fade finishes.
+  if (previewInitRef.current === undefined && workout) {
+    previewInitRef.current =
+      MERGED_PREVIEW &&
+      workout.category === 'Push' &&
+      !isFreeSession && !isViewOnly && !pastSession && !autoStart && !resumeSessionId &&
+      !startedAt &&
+      exercises.length > 0;
+  }
+  const showPreview = previewInitRef.current === true && !previewClosed;
+  const previewExercises = showPreview
+    ? exercises.map(ex => ({
+        id: ex.workoutExerciseId,
+        name: ex.exerciseName,
+        photoUrl: ex.extraPhotoUrls?.[0] ?? ex.thumbnailUrl ?? workout?.cover_image_url ?? null,
+        muscleGroups: ex.muscleGroups,
+        secondaryMuscleGroups: ex.secondaryMuscleGroups,
+        sets: (ex.sets ?? []).filter(s => !s.isRemoved).map(s => ({
+          weight: (s.weightKg?.trim()) || (s.targetWeightKg != null ? String(s.targetWeightKg) : ''),
+          reps: (s.repsCompleted?.trim()) || (s.targetReps != null ? String(s.targetReps) : ''),
+          isDropset: s.isDropset,
+        })),
+      }))
+    : [];
+  // A note for the whole session (latest trainer training note), plus how many
+  // exercises carry notes — surfaced under the workout name in the preview.
+  const previewSessionNote = showPreview
+    ? ([...trainingTrainerNotes].reverse().find(n => !n.isDeleted)?.text ?? null)
+    : null;
+  const previewNotedCount = showPreview
+    ? exercises.filter(ex => ex.trainerNotes.some(n => !n.isDeleted) || ex.clientNote.some(n => !n.isDeleted)).length
+    : 0;
+
   // The timer / START / FINISH control — shared by the old nav bar and the new banner.
   const timerControl = isEditMode ? (
     <TouchableOpacity style={styles.editDoneBtn} onPress={exitEditMode} activeOpacity={0.8}>
@@ -2997,7 +3049,7 @@ export default function TrainerWorkoutSessionScreen() {
         <View style={[styles.fixedBanner, { height: bannerH }]}>
           <View style={StyleSheet.absoluteFill}>
             {bannerPhoto ? (
-              <Image source={{ uri: bannerPhoto }} style={{ position: 'absolute', top: 0, left: 0, right: 0, height: bannerH * 1.9 }} resizeMode="cover" />
+              <HeaderPhoto uri={bannerPhoto} focusY={activeHeaderEx?.headerFocusY ?? 0.5} boxW={SCREEN_W} boxH={bannerH} />
             ) : categoryHasCover(workout?.category) ? (
               <CategoryCover category={workout?.category} variant="color" watermarkSize={150} />
             ) : (
@@ -3006,12 +3058,15 @@ export default function TrainerWorkoutSessionScreen() {
             <LinearGradient colors={['rgba(0,0,0,0.28)', 'transparent', 'rgba(0,0,0,0.55)']} locations={[0, 0.42, 1]} style={StyleSheet.absoluteFill} pointerEvents="none" />
           </View>
 
-          {/* top row: back (left) · ⋯ (right) */}
-          <View style={{ flexDirection: 'row', alignItems: 'center', paddingTop: insets.top, paddingHorizontal: 12, height: insets.top + 44 }}>
+          {/* top row: back (left) · workout title + session·date (center) · ⋯ (right) */}
+          <View style={{ flexDirection: 'row', alignItems: 'center', paddingTop: insets.top, paddingHorizontal: 12, height: insets.top + 52 }}>
             <TouchableOpacity onPress={handleBack} hitSlop={8} style={styles.floatIconBtn}>
               <SymbolView name="chevron.left" size={20} tintColor="#fff" />
             </TouchableOpacity>
-            <View style={{ flex: 1 }} />
+            <View style={{ flex: 1, alignItems: 'center', paddingHorizontal: 4 }}>
+              <Text style={styles.bannerTopTitle} numberOfLines={1}>{bannerWorkoutName}</Text>
+              <Text style={styles.bannerTopMeta} numberOfLines={1}>{bannerSessionLabel}</Text>
+            </View>
             <View style={{ position: 'relative' }}>
               <TouchableOpacity onPress={() => setDotsMenuOpen(true)} hitSlop={8} style={styles.floatIconBtn}>
                 <SymbolView name="ellipsis" size={18} tintColor="#fff" />
@@ -3025,7 +3080,6 @@ export default function TrainerWorkoutSessionScreen() {
           {/* bottom: exercise name + count (left) · timer control (right) */}
           <View style={styles.bannerBottom}>
             <View style={{ flex: 1 }}>
-              <Text style={styles.bannerOverline} numberOfLines={1}>{bannerOverline}</Text>
               <Text style={styles.bannerTitle} numberOfLines={1}>{bannerTitle}</Text>
               {activeHeaderIdx >= 0 && exercises.length > 0 && (
                 <Text style={styles.bannerCount}>{activeHeaderIdx + 1} / {exercises.length}</Text>
@@ -3916,6 +3970,23 @@ export default function TrainerWorkoutSessionScreen() {
           )}
         </View>
       </Modal>
+
+      {/* ── Merged pre-session overlay (Stage 2) — hands off to this Do Mode on Start */}
+      {showPreview && (
+        <SessionStartOverlay
+          exercises={previewExercises}
+          workoutName={workout?.name ?? ''}
+          sessionNumber={sessionCount + 1}
+          dateLabel={new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
+          sessionNote={previewSessionNote}
+          notedCount={previewNotedCount}
+          showNotesDot={hasTrainingNotes && !trainingNotesViewed}
+          onOpenMenu={() => setDotsMenuOpen(true)}
+          onStart={() => { startSession(workoutId!); createInProgressSession(); }}
+          onDismiss={handleBack}
+          onLockDone={() => setPreviewClosed(true)}
+        />
+      )}
     </View>
   );
 }
@@ -6227,8 +6298,10 @@ const styles = StyleSheet.create({
   combinedPillGlass: { flexDirection: 'row', alignItems: 'center', borderRadius: 20, overflow: 'hidden', paddingHorizontal: 14, paddingVertical: 7, gap: 10 },
   timerClockGlass: { width: 40, height: 40, borderRadius: 20, overflow: 'hidden', alignItems: 'center', justifyContent: 'center' },
   fixedBanner: { position: 'absolute', top: 0, left: 0, right: 0, zIndex: 10, overflow: 'hidden' },
-  bannerBottom: { position: 'absolute', left: 0, right: 0, bottom: 30, paddingHorizontal: 20, flexDirection: 'row', alignItems: 'flex-end', gap: 10 },
+  bannerBottom: { position: 'absolute', left: 0, right: 0, bottom: 46, paddingHorizontal: 20, flexDirection: 'row', alignItems: 'flex-end', gap: 10 },
   bannerOverline: { color: 'rgba(255,255,255,0.78)', fontSize: 11, fontWeight: '700', letterSpacing: 0.5, marginBottom: 5 },
+  bannerTopTitle: { color: '#fff', fontSize: 16, fontWeight: '700' },
+  bannerTopMeta: { color: 'rgba(255,255,255,0.6)', fontSize: 11, marginTop: 1 },
   bannerTitle: { color: '#fff', fontSize: 24, fontWeight: '700', letterSpacing: 0.2 },
   bannerCount: { color: 'rgba(255,255,255,0.72)', fontSize: 13, fontWeight: '600', marginTop: 3 },
   bannerCap: { position: 'absolute', bottom: 0, left: 0, right: 0, height: 26, backgroundColor: '#fff', borderTopLeftRadius: 26, borderTopRightRadius: 26 },

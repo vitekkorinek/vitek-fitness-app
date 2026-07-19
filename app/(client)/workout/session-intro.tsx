@@ -16,8 +16,13 @@ import { useAuth } from '@/context/AuthContext';
 import { supabase } from '@/lib/supabase';
 
 const ACCENT = '#24ac88';
+// MERGED_PREVIEW: launcher taps on a Push workout redirect straight into the
+// merged Do Mode (SessionStartOverlay renders the pre-session preview there),
+// skipping this screen. Every other case is unchanged. Flip to false to restore
+// the classic pre-session screen for Push. Mirror of MERGED_PREVIEW in [workoutId].tsx.
+const MERGED_PREVIEW = true;
 
-type ExItem = { id: string; name: string; thumbnail_url: string | null; order_index: number };
+type ExItem = { id: string; name: string; thumbnail_url: string | null; order_index: number; muscle_groups: string[]; secondary_muscle_groups: string[] };
 
 export default function SessionIntroScreen() {
   // `sessionDate` (YYYY-MM-DD) + `planned` describe the day/session that was tapped:
@@ -31,6 +36,7 @@ export default function SessionIntroScreen() {
   const insets = useSafeAreaInsets();
 
   const [workoutName, setWorkoutName] = useState('');
+  const [category, setCategory] = useState<string | null>(null);
   const [sessionCount, setSessionCount] = useState(0);
   const [exercises, setExercises] = useState<ExItem[]>([]);
   const [slideshowIdx, setSlideshowIdx] = useState(0);
@@ -114,10 +120,10 @@ export default function SessionIntroScreen() {
   useEffect(() => {
     if (!workoutId || !profile?.id) return;
     Promise.all([
-      supabase.from('workouts').select('name').eq('id', workoutId).single(),
+      supabase.from('workouts').select('name, category').eq('id', workoutId).single(),
       supabase
         .from('workout_exercises')
-        .select('id, order_index, exercises(id, name, thumbnail_url)')
+        .select('id, order_index, exercises(id, name, thumbnail_url, muscle_groups, secondary_muscle_groups)')
         .eq('workout_id', workoutId)
         .order('order_index'),
       supabase
@@ -127,18 +133,28 @@ export default function SessionIntroScreen() {
         .eq('client_id', profile.id)
         .eq('status', 'completed'),
     ]).then(([wRes, exRes, sessRes]) => {
-      if (wRes.data) setWorkoutName(wRes.data.name);
+      if (wRes.data) { setWorkoutName(wRes.data.name); setCategory((wRes.data as any).category ?? null); }
       setSessionCount((sessRes as any).count ?? 0);
       const exs: ExItem[] = ((exRes.data ?? []) as any[]).map(we => ({
         id: we.id,
         name: we.exercises?.name ?? '',
         thumbnail_url: we.exercises?.thumbnail_url ?? null,
         order_index: we.order_index,
+        muscle_groups: we.exercises?.muscle_groups ?? [],
+        secondary_muscle_groups: we.exercises?.secondary_muscle_groups ?? [],
       }));
       setExercises(exs);
       setLoading(false);
     });
   }, [workoutId, profile?.id]);
+
+  // MERGED_PREVIEW: send launcher Push taps straight to the merged Do Mode.
+  useEffect(() => {
+    if (loading) return;
+    if (MERGED_PREVIEW && category === 'Push' && isLauncher) {
+      router.replace(`/(client)/workout/${workoutId}` as any);
+    }
+  }, [loading, category, isLauncher]);
 
   useEffect(() => {
     if (loading) return;
@@ -206,6 +222,12 @@ export default function SessionIntroScreen() {
   );
 
   if (loading) {
+    return <View style={{ flex: 1, backgroundColor: '#000' }} />;
+  }
+
+  // MERGED_PREVIEW: launcher Push taps redirect into the merged Do Mode overlay
+  // (see the redirect effect above). Show black while the replace fires.
+  if (MERGED_PREVIEW && category === 'Push' && isLauncher) {
     return <View style={{ flex: 1, backgroundColor: '#000' }} />;
   }
 
