@@ -1,77 +1,130 @@
-import React from 'react';
-import { View, StyleSheet, ViewStyle } from 'react-native';
+import React, { useState } from 'react';
+import { View, StyleSheet, ViewStyle, LayoutChangeEvent } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { SymbolView, type SFSymbol } from 'expo-symbols';
-import { WorkoutCategory } from '@/lib/workoutCategories';
+import BodyHighlighter, { Slug } from 'react-native-body-highlighter';
+
+// The lib accepts `background` at runtime but omits it from its prop types (same as
+// MuscleThumb) — cast to keep our typed config without a type error.
+const BodyView = BodyHighlighter as unknown as React.ComponentType<any>;
 
 /**
  * CategoryCover — colored watermark cover for workout cards / Do Mode header.
  *
- * PROTOTYPE (July 2026): only 'Push' is wired up so far. The watermark is an
- * SF Symbol PLACEHOLDER — to be replaced with a real body-part silhouette
- * (Push = chest, Pull = back, …) once the concept is approved.
+ * The watermark is a faint anatomical body silhouette (via react-native-body-highlighter,
+ * same engine as MuscleThumb) with the category's trained muscles lit — Push = front torso
+ * with chest/shoulders/triceps, Pull = back, Arms = biceps/triceps, etc. Mobility uses a
+ * simple foam-roller glyph instead (no single muscle group).
  *
- * variant='color' → bright same-hue gradient (listing cards)
- * variant='muted' → charcoal/grey gradient (Do Mode header, won't fight the green UI)
+ * variant='color' → bright same-hue gradient (listing cards / headers)
+ * variant='muted' → darker, calmer version (unused for now, kept for the Do Mode header)
  */
 
-const CATEGORY_WATERMARK: Partial<Record<WorkoutCategory, SFSymbol>> = {
-  Push: 'figure.strengthtraining.traditional',
+type BodyCfg = { side: 'front' | 'back'; slugs: { slug: Slug; intensity: number }[]; yFocus: number; zoom?: number };
+type CatCfg = { grad: [string, string, string]; muted: [string, string, string]; body?: BodyCfg };
+
+// Deep, same-hue 3-stop gradients (home-tile register) per category.
+const CONFIG: Record<string, CatCfg> = {
+  'Push': {
+    grad: ['#C4392B', '#9E2B20', '#741E17'], muted: ['#4a3230', '#382624', '#281a19'],
+    body: { side: 'front', slugs: [{ slug: 'chest', intensity: 2 }, { slug: 'deltoids', intensity: 2 }, { slug: 'triceps', intensity: 1 }], yFocus: 0.26 },
+  },
+  'Pull': {
+    grad: ['#2C6BAD', '#1E4F80', '#143A5E'], muted: ['#33414e', '#26313b', '#1a232b'],
+    body: { side: 'back', slugs: [{ slug: 'upper-back', intensity: 2 }, { slug: 'trapezius', intensity: 2 }, { slug: 'lower-back', intensity: 1 }], yFocus: 0.30 },
+  },
+  'Upper Body': {
+    grad: ['#7E48B8', '#5E3489', '#432461'], muted: ['#413349', '#312739', '#221b28'],
+    body: { side: 'front', slugs: [{ slug: 'chest', intensity: 2 }, { slug: 'deltoids', intensity: 2 }, { slug: 'biceps', intensity: 1 }, { slug: 'abs', intensity: 1 }], yFocus: 0.26 },
+  },
+  'Arms': {
+    grad: ['#D2792E', '#A85A1E', '#7C4015'], muted: ['#48392c', '#372b21', '#271e17'],
+    body: { side: 'front', slugs: [{ slug: 'biceps', intensity: 2 }, { slug: 'triceps', intensity: 2 }, { slug: 'forearm', intensity: 1 }], yFocus: 0.32 },
+  },
+  'Lower Body': {
+    grad: ['#2E9A57', '#1F7442', '#155230'], muted: ['#2f4238', '#24322b', '#19231e'],
+    body: { side: 'front', slugs: [{ slug: 'quadriceps', intensity: 2 }, { slug: 'calves', intensity: 2 }], yFocus: 0.66, zoom: 2.1 },
+  },
+  'Full Body': {
+    grad: ['#D3A526', '#A87F17', '#7A5B0F'], muted: ['#47402c', '#363120', '#262117'],
+    // Zoomed OUT so the whole figure reads (head→calves), not a mid crop.
+    body: { side: 'front', slugs: [{ slug: 'chest', intensity: 2 }, { slug: 'abs', intensity: 2 }, { slug: 'quadriceps', intensity: 2 }, { slug: 'deltoids', intensity: 1 }, { slug: 'biceps', intensity: 1 }], yFocus: 0.40, zoom: 1.3 },
+  },
+  'Core': {
+    grad: ['#CE4C87', '#A5356A', '#78244B'], muted: ['#46333c', '#35272e', '#261a20'],
+    body: { side: 'front', slugs: [{ slug: 'abs', intensity: 2 }, { slug: 'obliques', intensity: 2 }], yFocus: 0.40 },
+  },
+  'Mobility': {
+    // richer, warmer bronze (the greyish beige read as dull next to the vibrant others).
+    // No single muscle → a full figure with a soft, even all-over glow (whole-body mobility).
+    grad: ['#C58A3C', '#9E6A29', '#6E481B'], muted: ['#443628', '#332920', '#241d16'],
+    body: {
+      side: 'front',
+      slugs: [
+        { slug: 'chest', intensity: 1 }, { slug: 'deltoids', intensity: 1 }, { slug: 'biceps', intensity: 1 },
+        { slug: 'forearm', intensity: 1 }, { slug: 'abs', intensity: 1 }, { slug: 'obliques', intensity: 1 },
+        { slug: 'quadriceps', intensity: 1 }, { slug: 'calves', intensity: 1 },
+      ],
+      yFocus: 0.40, zoom: 1.3,
+    },
+  },
 };
 
-// Deep, same-hue 3-stop gradients (home-tile register) for the bright card variant.
-const CATEGORY_GRADIENT: Partial<Record<WorkoutCategory, [string, string, string]>> = {
-  Push: ['#2C6BAD', '#1e4f80', '#143a5e'],
-};
+// Legacy categories fall back to their replacement's look.
+const LEGACY: Record<string, string> = { 'Legs': 'Lower Body', 'Recovery': 'Mobility' };
 
-// Muted (Do Mode header) variant: a DARK, desaturated version of the category hue —
-// charcoal-with-an-undertone so it stays calm next to the green UI but isn't lifeless grey.
-const CATEGORY_MUTED_GRADIENT: Partial<Record<WorkoutCategory, [string, string, string]>> = {
-  Push: ['#33414e', '#26313b', '#1a232b'],
-};
-
-const MUTED_FALLBACK: [string, string, string] = ['#3b4042', '#2c3032', '#1f2325'];
-const FALLBACK_GRADIENT: [string, string, string] = ['#2a5448', '#1f3f35', '#1a3832'];
+function resolve(category?: string | null): CatCfg | undefined {
+  if (!category) return undefined;
+  return CONFIG[category] ?? CONFIG[LEGACY[category] ?? ''];
+}
 
 export function categoryHasCover(category?: string | null): boolean {
-  return !!category && !!CATEGORY_WATERMARK[category as WorkoutCategory];
+  return !!resolve(category);
 }
 
 export default function CategoryCover({
   category,
   variant = 'color',
-  watermarkSize = 96,
   style,
 }: {
   category?: string | null;
   variant?: 'color' | 'muted';
-  watermarkSize?: number;
+  watermarkSize?: number; // accepted for back-compat; sizing is now measured from the box
   style?: ViewStyle;
 }) {
-  const cat = category as WorkoutCategory | undefined;
-  const wm = cat ? CATEGORY_WATERMARK[cat] : undefined;
-  const grad =
-    variant === 'muted'
-      ? (cat && CATEGORY_MUTED_GRADIENT[cat]) || MUTED_FALLBACK
-      : (cat && CATEGORY_GRADIENT[cat]) || FALLBACK_GRADIENT;
-  const wmColor = variant === 'muted' ? 'rgba(255,255,255,0.07)' : 'rgba(255,255,255,0.13)';
+  const [box, setBox] = useState({ w: 0, h: 0 });
+  const cfg = resolve(category);
+  const grad = cfg ? (variant === 'muted' ? cfg.muted : cfg.grad) : (['#2a5448', '#1f3f35', '#1a3832'] as [string, string, string]);
+
+  const bodyFill = variant === 'muted' ? 'rgba(255,255,255,0.055)' : 'rgba(255,255,255,0.10)';
+  const hl: [string, string] = variant === 'muted'
+    ? ['rgba(255,255,255,0.11)', 'rgba(255,255,255,0.19)']
+    : ['rgba(255,255,255,0.24)', 'rgba(255,255,255,0.44)'];
+
+  const onLayout = (e: LayoutChangeEvent) => {
+    const { width, height } = e.nativeEvent.layout;
+    if (width !== box.w || height !== box.h) setBox({ w: width, h: height });
+  };
+
+  // Body silhouette geometry — big + cropped so the trained region fills the card.
+  let bodyNode: React.ReactNode = null;
+  if (cfg?.body && box.h > 0) {
+    const b = cfg.body;
+    const scale = (box.h * (b.zoom ?? 2.3)) / 400;
+    const bodyH = 400 * scale;
+    const bodyW = 200 * scale;
+    const top = Math.round(box.h * 0.5 - b.yFocus * bodyH);
+    const left = Math.round(box.w - bodyW * 0.86);
+    bodyNode = (
+      <View style={{ position: 'absolute', top, left }}>
+        <BodyView data={b.slugs} side={b.side} scale={scale} colors={hl} background={bodyFill} />
+      </View>
+    );
+  }
 
   return (
-    <View style={[StyleSheet.absoluteFill, style]} pointerEvents="none">
-      <LinearGradient
-        colors={grad}
-        start={{ x: 0.4, y: 0 }}
-        end={{ x: 0.6, y: 1 }}
-        style={StyleSheet.absoluteFill}
-      />
-      {wm && (
-        <SymbolView
-          name={wm}
-          size={watermarkSize}
-          tintColor={wmColor}
-          style={{ position: 'absolute', right: -watermarkSize * 0.14, bottom: -watermarkSize * 0.14 }}
-        />
-      )}
+    <View style={[StyleSheet.absoluteFill, { overflow: 'hidden' }, style]} pointerEvents="none" onLayout={onLayout}>
+      <LinearGradient colors={grad} start={{ x: 0.35, y: 0 }} end={{ x: 0.65, y: 1 }} style={StyleSheet.absoluteFill} />
+      {bodyNode}
     </View>
   );
 }

@@ -17,9 +17,10 @@ import { supabase } from '@/lib/supabase';
 
 const ACCENT = '#24ac88';
 // MERGED_PREVIEW: launcher taps on a Push workout redirect straight into the
-// merged Do Mode (SessionStartOverlay renders the pre-session preview there),
-// skipping this screen. Every other case is unchanged. Flip to false to restore
-// the classic pre-session screen for Push. Mirror of MERGED_PREVIEW in [workoutId].tsx.
+// merged Do Mode, which renders the real exercise list read-only inside a sliding
+// preview panel (no separate overlay), skipping this screen. Every other case is
+// unchanged. Flip to false to restore the classic pre-session screen for Push.
+// Mirror of MERGED_PREVIEW in [workoutId].tsx.
 const MERGED_PREVIEW = true;
 
 type ExItem = { id: string; name: string; thumbnail_url: string | null; order_index: number; muscle_groups: string[]; secondary_muscle_groups: string[] };
@@ -225,8 +226,8 @@ export default function SessionIntroScreen() {
     return <View style={{ flex: 1, backgroundColor: '#000' }} />;
   }
 
-  // MERGED_PREVIEW: launcher Push taps redirect into the merged Do Mode overlay
-  // (see the redirect effect above). Show black while the replace fires.
+  // MERGED_PREVIEW: launcher Push taps redirect into the merged Do Mode preview
+  // panel (see the redirect effect above). Show black while the replace fires.
   if (MERGED_PREVIEW && category === 'Push' && isLauncher) {
     return <View style={{ flex: 1, backgroundColor: '#000' }} />;
   }

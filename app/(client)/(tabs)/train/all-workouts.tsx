@@ -25,6 +25,7 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/context/AuthContext';
 import { CATEGORY_COLORS, CATEGORY_OPTIONS, STRETCHING_CATEGORIES } from '@/lib/workoutCategories';
 import type { WorkoutCategory } from '@/lib/workoutCategories';
+import CategoryCover, { categoryHasCover } from '@/components/CategoryCover';
 
 type WorkoutRow = {
   id: string;
@@ -419,51 +420,61 @@ function WorkoutItem({ workout, onPress, thisWeekCount, onQuickLook }: { workout
   const gradColors = (CATEGORY_GRADIENTS[workout.category ?? ''] ?? GRADIENT_DEFAULT) as [string, string];
   const catColors = workout.category ? CATEGORY_COLORS[workout.category as WorkoutCategory] : null;
   const subtitle = [
-    workout.lastSessionDate ? formatShortDate(workout.lastSessionDate) : 'Not yet done',
+    workout.lastSessionDate ? `Done ${formatShortDate(workout.lastSessionDate)}` : 'Not yet done',
     workout.routineName ?? 'Standalone',
   ].join(' · ');
 
   return (
-    <TouchableOpacity style={[coverCardStyles.card, isDone && coverCardStyles.cardDone]} onPress={onPress} activeOpacity={0.92}>
-      {workout.cover_image_url ? (
-        <Image source={{ uri: workout.cover_image_url }} style={[StyleSheet.absoluteFill, isDone && { opacity: 0.55 }]} resizeMode="cover" />
-      ) : (
-        <LinearGradient colors={gradColors} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={[StyleSheet.absoluteFill, isDone && { opacity: 0.55 }]} />
-      )}
-      <LinearGradient
-        colors={['transparent', 'rgba(0,0,0,0.1)', 'rgba(0,0,0,0.6)']}
-        start={{ x: 0.5, y: 0 }}
-        end={{ x: 0.5, y: 1 }}
-        style={StyleSheet.absoluteFill}
-        pointerEvents="none"
-      />
-      {isDone && (
-        <View style={coverCardStyles.doneBadge}>
-          <Text style={coverCardStyles.doneBadgeText}>Done</Text>
-        </View>
-      )}
-      {onQuickLook && (
-        <TouchableOpacity style={[coverCardStyles.menuBtn, isDone && { right: 52 }]} onPress={onQuickLook} hitSlop={8} activeOpacity={0.6}>
-          <SymbolView name="ellipsis" size={15} tintColor="#fff" />
-        </TouchableOpacity>
-      )}
-      <View style={coverCardStyles.bottom}>
-        <View style={coverCardStyles.bottomLeft}>
-          <View style={coverCardStyles.nameRow}>
-            <Text style={coverCardStyles.itemName} numberOfLines={1}>{workout.name}</Text>
-            {!!thisWeekCount && thisWeekCount > 0 && !isDone && (
-              <View style={[coverCardStyles.checkBadge, thisWeekCount > 1 && { width: undefined, paddingHorizontal: 7 }]}>
-                <Text style={coverCardStyles.checkMark}>✓{thisWeekCount > 1 ? ` ×${thisWeekCount}` : ''}</Text>
+    <TouchableOpacity style={[coverCardStyles.cardWrap, isDone && coverCardStyles.cardDone]} onPress={onPress} activeOpacity={0.92}>
+      <View style={coverCardStyles.cardInner}>
+        {/* Cover (watermark / photo) with name + category pill */}
+        <View style={coverCardStyles.cover}>
+          {categoryHasCover(workout.category) ? (
+            <View style={[StyleSheet.absoluteFill, isDone && { opacity: 0.55 }]}>
+              <CategoryCover category={workout.category} variant="color" />
+            </View>
+          ) : workout.cover_image_url ? (
+            <Image source={{ uri: workout.cover_image_url }} style={[StyleSheet.absoluteFill, isDone && { opacity: 0.55 }]} resizeMode="cover" />
+          ) : (
+            <LinearGradient colors={gradColors} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={[StyleSheet.absoluteFill, isDone && { opacity: 0.55 }]} />
+          )}
+          <LinearGradient
+            colors={['transparent', 'rgba(0,0,0,0.35)']}
+            start={{ x: 0.5, y: 0.45 }}
+            end={{ x: 0.5, y: 1 }}
+            style={StyleSheet.absoluteFill}
+            pointerEvents="none"
+          />
+          {isDone && (
+            <View style={coverCardStyles.doneBadge}>
+              <Text style={coverCardStyles.doneBadgeText}>Done</Text>
+            </View>
+          )}
+          <View style={coverCardStyles.coverBottom}>
+            <View style={coverCardStyles.nameRow}>
+              <Text style={coverCardStyles.itemName} numberOfLines={1}>{workout.name}</Text>
+              {!!thisWeekCount && thisWeekCount > 0 && !isDone && (
+                <View style={[coverCardStyles.checkBadge, thisWeekCount > 1 && { width: undefined, paddingHorizontal: 7 }]}>
+                  <Text style={coverCardStyles.checkMark}>✓{thisWeekCount > 1 ? ` ×${thisWeekCount}` : ''}</Text>
+                </View>
+              )}
+            </View>
+            {catColors && !isDone && (
+              <View style={[coverCardStyles.catPill, { backgroundColor: catColors.border }]}>
+                <Text style={coverCardStyles.catPillText}>{workout.category}</Text>
               </View>
             )}
           </View>
-          <Text style={coverCardStyles.itemSub} numberOfLines={1}>{subtitle}</Text>
         </View>
-        {catColors && !isDone && (
-          <View style={[coverCardStyles.catPill, { backgroundColor: catColors.border }]}>
-            <Text style={coverCardStyles.catPillText}>{workout.category}</Text>
-          </View>
-        )}
+        {/* White footer: last-done + ⋯ */}
+        <View style={coverCardStyles.footer}>
+          <Text style={coverCardStyles.footerSub} numberOfLines={1}>{subtitle}</Text>
+          {onQuickLook && (
+            <TouchableOpacity style={coverCardStyles.footerMenuBtn} onPress={onQuickLook} hitSlop={10} activeOpacity={0.6}>
+              <SymbolView name="ellipsis" size={16} tintColor="#999" />
+            </TouchableOpacity>
+          )}
+        </View>
       </View>
     </TouchableOpacity>
   );
@@ -485,20 +496,26 @@ const CATEGORY_GRADIENTS: Record<string, [string, string]> = {
 const GRADIENT_DEFAULT: [string, string] = ['#2a2a2a', '#444444'];
 
 const coverCardStyles = StyleSheet.create({
-  card: {
-    height: 100, borderRadius: 14, overflow: 'hidden',
-    shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 8, elevation: 3,
+  cardWrap: {
+    borderRadius: 14, backgroundColor: '#fff',
+    shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.07, shadowRadius: 6, elevation: 2,
   },
+  cardInner: { borderRadius: 14, overflow: 'hidden', backgroundColor: '#fff' },
+  cover: { height: 94, overflow: 'hidden' },
   cardDone: { opacity: 0.75 },
-  bottom: {
+  coverBottom: {
     position: 'absolute', bottom: 0, left: 0, right: 0,
     flexDirection: 'row', alignItems: 'center',
-    paddingHorizontal: 10, paddingBottom: 8, gap: 8,
+    paddingHorizontal: 12, paddingBottom: 9, gap: 8,
   },
-  bottomLeft: { flex: 1, gap: 2 },
-  nameRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  itemName: { fontSize: 14, fontWeight: '600', color: '#ffffff', flexShrink: 1 },
-  itemSub:  { fontSize: 10, color: 'rgba(255,255,255,0.65)' },
+  nameRow: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 6 },
+  itemName: { fontSize: 15, fontWeight: '700', color: '#ffffff', flexShrink: 1 },
+  footer: {
+    flexDirection: 'row', alignItems: 'center',
+    paddingHorizontal: 12, paddingVertical: 9, gap: 8, backgroundColor: '#fff',
+  },
+  footerSub: { flex: 1, fontSize: 12, color: '#888' },
+  footerMenuBtn: { padding: 4 },
   catPill: {
     borderRadius: 100, paddingHorizontal: 8, paddingVertical: 3, flexShrink: 0,
   },
@@ -511,7 +528,6 @@ const coverCardStyles = StyleSheet.create({
   doneBadgeText: { fontSize: 9, fontWeight: '700', color: 'rgba(255,255,255,0.75)', letterSpacing: 0.5 },
   checkBadge: { width: 16, height: 16, borderRadius: 8, backgroundColor: '#24ac88', alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
   checkMark: { fontSize: 9, color: '#fff', fontWeight: '700', lineHeight: 13 },
-  menuBtn: { position: 'absolute', top: 8, right: 8, width: 28, height: 28, borderRadius: 14, backgroundColor: 'rgba(0,0,0,0.55)', alignItems: 'center', justifyContent: 'center' },
 });
 
 const BG     = '#faf9f7';
