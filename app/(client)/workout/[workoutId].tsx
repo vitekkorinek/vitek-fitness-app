@@ -139,8 +139,8 @@ const FIXED_HEADER = true;
 // The REAL Do Mode exercise list (supersets, real cards, real Info/video) is
 // rendered read-only inside a sliding "preview panel" before the session starts,
 // then locks into the running session on Start (no separate overlay/replica).
-// Reversible: flip to false to fully disable. Push-scoped + launcher-only for
-// testing (session-intro redirects those Push taps here without autoStart).
+// Reversible: flip to false to fully disable. Launcher-only (all categories):
+// session-intro redirects launcher taps here without autoStart.
 const MERGED_PREVIEW = true;
 
 // ─── Types ──────────────────────────────────────────────────────────────────────
@@ -3046,13 +3046,12 @@ export default function TrainerWorkoutSessionScreen() {
   if (previewInitRef.current === undefined && workout) {
     previewInitRef.current =
       MERGED_PREVIEW &&
-      workout.category === 'Push' &&
       !isFreeSession && !isViewOnly && !pastSession && !autoStart && !resumeSessionId &&
       !startedAt &&
       exercises.length > 0;
   }
   // usePanel: this session shows the real Do Mode list inside the sliding
-  // preview panel (Push launcher only, captured once by previewInitRef).
+  // preview panel (any-category launcher taps, captured once by previewInitRef).
   const usePanel = showFixedHeader && previewInitRef.current === true;
   const showPreviewChrome = usePanel && !previewClosed;
   const previewReadOnly = usePanel && previewPhase !== 'live';

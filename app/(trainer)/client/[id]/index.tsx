@@ -34,6 +34,7 @@ import NutritionTab from './nutrition-tab';
 import { relativeTime } from '@/lib/utils';
 import { CATEGORY_COLORS } from '@/lib/workoutCategories';
 import type { WorkoutCategory } from '@/lib/workoutCategories';
+import CategoryCover, { categoryHasCover, WORKOUT_COVER_PHOTOS_ENABLED } from '@/components/CategoryCover';
 import t from '@/i18n/en';
 import type {
   SessionPackage,
@@ -801,8 +802,10 @@ function PlanWorkoutFlow({ clientId, initialDate, onClose, onDone }: {
                         activeOpacity={0.85}
                         onPress={() => { setPlanPickedId(w.id); setPlanPickedName(w.name); setPlanStep('schedule'); }}
                       >
-                        {w.cover_image_url ? (
+                        {WORKOUT_COVER_PHOTOS_ENABLED && w.cover_image_url ? (
                           <Image source={{ uri: w.cover_image_url }} style={StyleSheet.absoluteFill} resizeMode="cover" />
+                        ) : categoryHasCover(w.category) ? (
+                          <CategoryCover category={w.category} variant="color" />
                         ) : (
                           <LinearGradient colors={[catColor, '#1a3832']} style={StyleSheet.absoluteFill} />
                         )}
@@ -979,6 +982,7 @@ type DayDetail = {
   workoutId: string | null;
   workoutName: string | null;
   coverImageUrl: string | null;
+  category: string | null;
   durationSeconds: number | null;
   exercisesDoneCount: number;
   exercisesTotal: number;
@@ -1226,6 +1230,7 @@ function TrainingTab({
       workoutId: session.workoutId,
       workoutName: session.workoutName,
       coverImageUrl: session.coverImageUrl,
+      category: session.category,
       durationSeconds: ses?.duration_seconds ?? null,
       exercisesDoneCount: loggedWeIds.size,
       exercisesTotal: wes.length,
@@ -1252,6 +1257,7 @@ function TrainingTab({
         workoutId: s.workoutId,
         workoutName: s.workoutName,
         coverImageUrl: s.coverImageUrl,
+        category: s.category,
         durationSeconds: null,
         exercisesDoneCount: 0,
         exercisesTotal: 0,
@@ -1483,8 +1489,10 @@ function TrainingTab({
                 >
                   <View style={sectionStyles.wCard}>
                     <View style={sectionStyles.wCover}>
-                      {c.coverUrl
+                      {WORKOUT_COVER_PHOTOS_ENABLED && c.coverUrl
                         ? <Image source={{ uri: c.coverUrl }} style={StyleSheet.absoluteFill} resizeMode="cover" />
+                        : categoryHasCover(c.category)
+                        ? <CategoryCover category={c.category} variant="color" />
                         : <LinearGradient colors={['#2a5448', '#1a3832']} style={StyleSheet.absoluteFill} />}
                       <LinearGradient colors={['transparent', 'rgba(0,0,0,0.5)']} style={StyleSheet.absoluteFill} pointerEvents="none" />
                       <Text style={sectionStyles.wName} numberOfLines={1}>{c.name}</Text>
@@ -1581,8 +1589,10 @@ function TrainingTab({
                 onPress={() => router.push(`/(trainer)/client/${clientId}/workout/${lastSessionWorkoutId}` as any)}
                 activeOpacity={0.92}
               >
-                {lastSessionCoverImageUrl ? (
+                {WORKOUT_COVER_PHOTOS_ENABLED && lastSessionCoverImageUrl ? (
                   <Image source={{ uri: lastSessionCoverImageUrl }} style={StyleSheet.absoluteFill} resizeMode="cover" />
+                ) : categoryHasCover(lastSessionCategory) ? (
+                  <CategoryCover category={lastSessionCategory} variant="color" />
                 ) : (
                   <LinearGradient
                     colors={(CATEGORY_GRADIENTS[lastSessionCategory ?? ''] ?? GRADIENT_DEFAULT) as [string, string]}
@@ -2139,8 +2149,10 @@ function WeekStripCard({
               activeOpacity={0.88}
             >
               <View style={wsStyles.sessCover}>
-                {session.coverImageUrl ? (
+                {WORKOUT_COVER_PHOTOS_ENABLED && session.coverImageUrl ? (
                   <Image source={{ uri: session.coverImageUrl }} style={StyleSheet.absoluteFill} resizeMode="cover" />
+                ) : categoryHasCover(session.category) ? (
+                  <CategoryCover category={session.category} variant="color" />
                 ) : (
                   <LinearGradient colors={['#2a5448', '#1a3832']} style={StyleSheet.absoluteFill} />
                 )}
@@ -2180,8 +2192,10 @@ function WeekStripCard({
             >
               {/* Cover image */}
               <View style={wsStyles.sessCover}>
-                {detail.coverImageUrl ? (
+                {WORKOUT_COVER_PHOTOS_ENABLED && detail.coverImageUrl ? (
                   <Image source={{ uri: detail.coverImageUrl }} style={StyleSheet.absoluteFill} resizeMode="cover" />
+                ) : categoryHasCover(detail.category) ? (
+                  <CategoryCover category={detail.category} variant="color" />
                 ) : (
                   <LinearGradient colors={['#2a5448', '#1a3832']} style={StyleSheet.absoluteFill} />
                 )}
@@ -4201,8 +4215,10 @@ function WorkoutRow({
 
   return (
     <TouchableOpacity style={coverCardStyles.card} onPress={onPress} activeOpacity={0.92}>
-      {workout.cover_image_url ? (
+      {WORKOUT_COVER_PHOTOS_ENABLED && workout.cover_image_url ? (
         <Image source={{ uri: workout.cover_image_url }} style={StyleSheet.absoluteFill} resizeMode="cover" />
+      ) : categoryHasCover(workout.category) ? (
+        <CategoryCover category={workout.category} variant="color" />
       ) : (
         <LinearGradient colors={gradColors} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill} />
       )}

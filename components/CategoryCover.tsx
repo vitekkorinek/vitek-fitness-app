@@ -77,6 +77,14 @@ function resolve(category?: string | null): CatCfg | undefined {
   return CONFIG[category] ?? CONFIG[LEGACY[category] ?? ''];
 }
 
+// Workout COVER cards show the category colour + body-silhouette watermark ONLY —
+// a real cover_image_url is intentionally NOT shown on covers (Vitek's call; we
+// built the per-category palette + watermarks so covers stay branded, not photos).
+// The photo JSX is kept behind this flag as dead code — flip to true to bring the
+// assigned cover photo back on the cards. (Does NOT affect the Do Mode header, which
+// shows the active EXERCISE's photo.)
+export const WORKOUT_COVER_PHOTOS_ENABLED = false;
+
 export function categoryHasCover(category?: string | null): boolean {
   return !!resolve(category);
 }

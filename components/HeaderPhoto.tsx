@@ -11,6 +11,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { View, Image, Text, PanResponder, StyleSheet, ViewStyle } from 'react-native';
 import { SymbolView } from 'expo-symbols';
+import { LinearGradient } from 'expo-linear-gradient';
 
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
 
@@ -80,29 +81,50 @@ export function HeaderPhotoPositioner({
   onChange,
   boxW,
   boxH,
+  exerciseName,
+  onDragStart,
+  onDragEnd,
 }: {
   uri: string;
   focusY: number;
   onChange: (y: number) => void;
   boxW: number;
   boxH: number;
+  exerciseName?: string;
+  onDragStart?: () => void;
+  onDragEnd?: () => void;
 }) {
   const aspect = useImageAspect(uri);
   const geom = aspect ? coverFocal(boxW, boxH, aspect, 1, focusY) : null;
   const overflowY = geom?.overflowY ?? 0;
+  // The PanResponder is created ONCE (ref) — on first render aspect is still null
+  // so overflowY is 0. Read it through a ref so the drag uses the LIVE value once
+  // the image measures (otherwise the drag silently no-ops forever).
+  const overflowRef = useRef(overflowY);
+  overflowRef.current = overflowY;
   const startFocus = useRef(focusY);
   const focusRef = useRef(focusY);
   focusRef.current = focusY;
+  // Refs so the once-created PanResponder always calls the latest callbacks.
+  const onChangeRef = useRef(onChange); onChangeRef.current = onChange;
+  const onDragStartRef = useRef(onDragStart); onDragStartRef.current = onDragStart;
+  const onDragEndRef = useRef(onDragEnd); onDragEndRef.current = onDragEnd;
 
   const pan = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: () => true,
       onMoveShouldSetPanResponder: (_, g) => Math.abs(g.dy) > 2,
-      onPanResponderGrant: () => { startFocus.current = focusRef.current; },
+      // Capture the vertical drag before the parent ScrollView can claim it.
+      onMoveShouldSetPanResponderCapture: (_, g) => Math.abs(g.dy) > 2,
+      onPanResponderTerminationRequest: () => false,
+      onPanResponderGrant: () => { startFocus.current = focusRef.current; onDragStartRef.current?.(); },
       onPanResponderMove: (_, g) => {
-        if (overflowY <= 0) return; // image already fits — nothing to pan
-        onChange(clamp(startFocus.current - g.dy / overflowY, 0, 1));
+        const ov = overflowRef.current;
+        if (ov <= 0) return; // image already fits — nothing to pan
+        onChangeRef.current(clamp(startFocus.current - g.dy / ov, 0, 1));
       },
+      onPanResponderRelease: () => { onDragEndRef.current?.(); },
+      onPanResponderTerminate: () => { onDragEndRef.current?.(); },
     })
   ).current;
 
@@ -113,6 +135,19 @@ export function HeaderPhotoPositioner({
       ) : (
         <Image source={{ uri }} style={{ width: boxW, height: boxH }} resizeMode="cover" />
       )}
+      {/* ── Do Mode header chrome, so the trainer sees EXACTLY what the session header shows ── */}
+      <LinearGradient
+        colors={['rgba(0,0,0,0.28)', 'transparent', 'rgba(0,0,0,0.55)']}
+        locations={[0, 0.42, 1]}
+        style={StyleSheet.absoluteFill}
+        pointerEvents="none"
+      />
+      <View style={styles.hdrBottom} pointerEvents="none">
+        <Text style={styles.hdrTitle} numberOfLines={1}>{exerciseName || 'Exercise name'}</Text>
+        <Text style={styles.hdrCount}>1 / 5</Text>
+      </View>
+      {/* white rounded cap — mirrors the Do Mode banner bottom where the cards begin */}
+      <View style={styles.hdrCap} pointerEvents="none" />
       {/* Hint chip — only meaningful when there is overflow to pan */}
       {overflowY > 1 && (
         <View style={styles.hint} pointerEvents="none">
@@ -126,8 +161,12 @@ export function HeaderPhotoPositioner({
 
 const styles = StyleSheet.create({
   frame: { overflow: 'hidden', borderRadius: 12, backgroundColor: '#e8e8e4' },
+  hdrBottom: { position: 'absolute', left: 16, right: 16, bottom: 22 },
+  hdrTitle: { color: '#fff', fontSize: 20, fontWeight: '700', letterSpacing: 0.2 },
+  hdrCount: { color: 'rgba(255,255,255,0.72)', fontSize: 12, fontWeight: '600', marginTop: 2 },
+  hdrCap: { position: 'absolute', left: 0, right: 0, bottom: 0, height: 14, backgroundColor: '#fff', borderTopLeftRadius: 14, borderTopRightRadius: 14 },
   hint: {
-    position: 'absolute', bottom: 8, alignSelf: 'center',
+    position: 'absolute', top: 8, alignSelf: 'center',
     flexDirection: 'row', alignItems: 'center', gap: 5,
     backgroundColor: 'rgba(0,0,0,0.5)', borderRadius: 100, paddingHorizontal: 10, paddingVertical: 5,
   },

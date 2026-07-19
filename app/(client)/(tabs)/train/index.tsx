@@ -23,7 +23,7 @@ import { useTabBarHeight } from '@/components/FloatingTabBar';
 import { SessionDetailsSheet } from '@/components/SessionDetailsSheet';
 import { RoutineDetailsSheet } from '@/components/RoutineDetailsSheet';
 import type { RoutineWorkoutPick } from '@/components/RoutineDetailsSheet';
-import CategoryCover, { categoryHasCover } from '@/components/CategoryCover';
+import CategoryCover, { categoryHasCover, WORKOUT_COVER_PHOTOS_ENABLED } from '@/components/CategoryCover';
 
 const BG     = '#faf9f7';
 const CARD   = '#ffffff';
@@ -822,13 +822,13 @@ export default function TrainTabScreen() {
               >
                 <View style={sectionStyles.wCard}>
                   <View style={sectionStyles.wCover}>
-                    {categoryHasCover(c.category) ? (
-                      <CategoryCover category={c.category} variant="color" watermarkSize={96} />
-                    ) : c.coverUrl ? (
+                    {WORKOUT_COVER_PHOTOS_ENABLED && c.coverUrl ? (
                       <>
                         <Image source={{ uri: c.coverUrl }} style={StyleSheet.absoluteFill} resizeMode="cover" />
                         <LinearGradient colors={['transparent', 'rgba(0,0,0,0.5)']} style={StyleSheet.absoluteFill} pointerEvents="none" />
                       </>
+                    ) : categoryHasCover(c.category) ? (
+                      <CategoryCover category={c.category} variant="color" watermarkSize={96} />
                     ) : (
                       <LinearGradient colors={['#2a5448', '#1a3832']} style={StyleSheet.absoluteFill} />
                     )}
@@ -919,8 +919,10 @@ export default function TrainTabScreen() {
                                 activeOpacity={0.7}
                               >
                                 <View style={startModalStyles.planThumb}>
-                                  {c.coverUrl
+                                  {WORKOUT_COVER_PHOTOS_ENABLED && c.coverUrl
                                     ? <Image source={{ uri: c.coverUrl }} style={StyleSheet.absoluteFill} resizeMode="cover" />
+                                    : categoryHasCover(c.category)
+                                    ? <CategoryCover category={c.category} variant="color" />
                                     : <LinearGradient colors={['#2a5448', '#1a3832']} style={StyleSheet.absoluteFill} />}
                                 </View>
                                 <Text style={startModalStyles.planName} numberOfLines={1}>{c.name}</Text>
@@ -1570,13 +1572,13 @@ function WeeklyGaugeCard({
                     onPress={() => session.workout_id && onOpenSession(session.workout_id, { date: selectedDate, planned: true })}
                     style={{ height: 62 }}
                   >
-                    {categoryHasCover(session.category) ? (
-                      <CategoryCover category={session.category} variant="color" watermarkSize={72} />
-                    ) : session.coverImageUrl ? (
+                    {WORKOUT_COVER_PHOTOS_ENABLED && session.coverImageUrl ? (
                       <>
                         <Image source={{ uri: session.coverImageUrl }} style={StyleSheet.absoluteFill} resizeMode="cover" />
                         <LinearGradient colors={['transparent', 'rgba(0,0,0,0.58)']} style={StyleSheet.absoluteFill} pointerEvents="none" />
                       </>
+                    ) : categoryHasCover(session.category) ? (
+                      <CategoryCover category={session.category} variant="color" watermarkSize={72} />
                     ) : (
                       <LinearGradient colors={['#2a5448', '#1a3832']} style={StyleSheet.absoluteFill} />
                     )}
@@ -1612,13 +1614,13 @@ function WeeklyGaugeCard({
                   onPress={() => session.workout_id && onOpenSession(session.workout_id, { date: selectedDate })}
                 >
                   <View style={{ height: 62 }}>
-                    {categoryHasCover(session.category) ? (
-                      <CategoryCover category={session.category} variant="color" watermarkSize={72} />
-                    ) : session.coverImageUrl ? (
+                    {WORKOUT_COVER_PHOTOS_ENABLED && session.coverImageUrl ? (
                       <>
                         <Image source={{ uri: session.coverImageUrl }} style={StyleSheet.absoluteFill} resizeMode="cover" />
                         <LinearGradient colors={['transparent', 'rgba(0,0,0,0.58)']} style={StyleSheet.absoluteFill} pointerEvents="none" />
                       </>
+                    ) : categoryHasCover(session.category) ? (
+                      <CategoryCover category={session.category} variant="color" watermarkSize={72} />
                     ) : (
                       <LinearGradient colors={['#2a5448', '#1a3832']} style={StyleSheet.absoluteFill} />
                     )}
@@ -1698,8 +1700,10 @@ function WeeklyGaugeCard({
           <View style={sessListStyles.sheetBody}>
             <Text style={sessListStyles.label}>WORKOUT DONE</Text>
             <View style={sessListStyles.singleCover}>
-              {singlePip?.coverImageUrl
+              {WORKOUT_COVER_PHOTOS_ENABLED && singlePip?.coverImageUrl
                 ? <Image source={{ uri: singlePip.coverImageUrl }} style={StyleSheet.absoluteFill} resizeMode="cover" />
+                : categoryHasCover(singlePip?.category)
+                ? <CategoryCover category={singlePip?.category} variant="color" />
                 : <LinearGradient colors={['#2a5448', '#1a3832']} style={StyleSheet.absoluteFill} />
               }
               <LinearGradient colors={['transparent', 'rgba(0,0,0,0.5)']} style={StyleSheet.absoluteFill} pointerEvents="none" />

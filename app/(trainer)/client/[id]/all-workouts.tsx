@@ -25,6 +25,7 @@ import { SessionDetailsSheet } from '@/components/SessionDetailsSheet';
 import { BottomSheet } from '@/components/BottomSheet';
 import { CATEGORY_COLORS, CATEGORY_OPTIONS, STRETCHING_CATEGORIES } from '@/lib/workoutCategories';
 import type { WorkoutCategory } from '@/lib/workoutCategories';
+import CategoryCover, { categoryHasCover, WORKOUT_COVER_PHOTOS_ENABLED } from '@/components/CategoryCover';
 
 type WorkoutRow = {
   id: string;
@@ -569,8 +570,10 @@ function WorkoutItem({
 
   return (
     <TouchableOpacity style={coverCardStyles.card} onPress={onPress} activeOpacity={0.92}>
-      {workout.cover_image_url ? (
+      {WORKOUT_COVER_PHOTOS_ENABLED && workout.cover_image_url ? (
         <Image source={{ uri: workout.cover_image_url }} style={StyleSheet.absoluteFill} resizeMode="cover" />
+      ) : categoryHasCover(workout.category) ? (
+        <CategoryCover category={workout.category} variant="color" />
       ) : (
         <LinearGradient colors={gradColors} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill} />
       )}

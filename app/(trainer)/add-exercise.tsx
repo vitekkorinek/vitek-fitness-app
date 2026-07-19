@@ -28,7 +28,9 @@ import t from '@/i18n/en';
 // The Do Mode header is full width × ~42% of screen height. The builder frames
 // the header crop at that same aspect so what the trainer sets is what shows.
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
-const HEADER_ASPECT = (SCREEN_H * 0.42) / SCREEN_W;
+// Match the Do Mode header exactly (HEADER_MAX = SCREEN_HEIGHT * 0.38) so the framer
+// shows the true crop the session header will use.
+const HEADER_ASPECT = (SCREEN_H * 0.38) / SCREEN_W;
 
 function makeUUID() {
   return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
@@ -82,6 +84,7 @@ export default function AddExerciseScreen() {
   const [uploadingNewVideo, setUploadingNewVideo] = useState(false);
   const [photoItems, setPhotoItems] = useState<PhotoItem[]>([]);
   const [headerFocusY, setHeaderFocusY] = useState(0.5);
+  const [scrollLocked, setScrollLocked] = useState(false); // freeze scroll while framing the header photo
 
   useEffect(() => {
     if (!isEdit) return;
@@ -297,6 +300,7 @@ export default function AddExerciseScreen() {
           contentContainerStyle={styles.formContent}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
+          scrollEnabled={!scrollLocked}
         >
           {/* Name */}
           <FormLabel title={t.library.addExercise.labelName} />
@@ -529,6 +533,9 @@ export default function AddExerciseScreen() {
                 onChange={setHeaderFocusY}
                 boxW={SCREEN_W - 40}
                 boxH={Math.round((SCREEN_W - 40) * HEADER_ASPECT)}
+                exerciseName={name}
+                onDragStart={() => setScrollLocked(true)}
+                onDragEnd={() => setScrollLocked(false)}
               />
             </>
           )}

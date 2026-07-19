@@ -16,6 +16,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SymbolView } from 'expo-symbols';
 import { LinearGradient } from 'expo-linear-gradient';
 import { supabase } from '@/lib/supabase';
+import CategoryCover, { categoryHasCover, WORKOUT_COVER_PHOTOS_ENABLED } from '@/components/CategoryCover';
 import { useAuth } from '@/context/AuthContext';
 
 type WorkoutRow = {
@@ -238,8 +239,10 @@ function WorkoutPickerRow({
       activeOpacity={0.85}
       disabled={disabled}
     >
-      {workout.cover_image_url ? (
+      {WORKOUT_COVER_PHOTOS_ENABLED && workout.cover_image_url ? (
         <Image source={{ uri: workout.cover_image_url }} style={StyleSheet.absoluteFill} resizeMode="cover" />
+      ) : categoryHasCover(workout.category) ? (
+        <CategoryCover category={workout.category} variant="color" />
       ) : (
         <LinearGradient colors={gradColors} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill} />
       )}

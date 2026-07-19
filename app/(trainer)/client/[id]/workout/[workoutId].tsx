@@ -120,6 +120,8 @@ import type { Workout } from '@/types/database';
 import en from '@/i18n/en';
 import MuscleThumb from '@/components/MuscleThumb';
 import { BottomSheet } from '@/components/BottomSheet';
+import CategoryCover, { categoryHasCover } from '@/components/CategoryCover';
+import { HeaderPhoto } from '@/components/HeaderPhoto';
 
 // ─── Types ──────────────────────────────────────────────────────────────────────
 
@@ -178,6 +180,7 @@ type SessionExercise = {
   extraPhotoUrls: string[];
   equipment: string | null;
   exerciseDescription: string | null;
+  headerFocusY?: number;
   isDone: boolean;
   addedAt: string | null;
   sets: SessionSet[];
@@ -325,6 +328,14 @@ function latestExerciseNote(ex: SessionExercise): NoteEntry | null {
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
+// ─── FIXED HEADER (option 2) ──────────────────────────────────────────────
+// New fixed banner header that stays pinned and shows the ACTIVE exercise's
+// photo + name + count (image follows whichever exercise you open). Trainer has
+// no pre-session preview panel — the trainer lands directly in the editable
+// running-look and starts manually via the header timer pill. Flip to false to
+// return to the old scroll-away header. Not used for past-session view.
+const FIXED_HEADER = true;
+
 // ─── Graph types & helpers (shared by ExerciseProgressSheet) ────────────────────
 
 type GraphPoint = { date: string; maxWeightKg: number; minWeightKg: number; reps: number | null; sessionId: string; workoutExerciseId: string; isThisWorkout: boolean; setNumber: number | null; totalSets: number; slotNumber: number | null; machineBrand: string | null; workoutName: string | null };
@@ -423,6 +434,19 @@ function GlassPanel({ style, children }: { style?: any; children: React.ReactNod
       {children}
     </BlurView>
   );
+}
+
+// The header timer/START/FINISH pill as a Liquid Glass capsule (shadow on an
+// outer wrapper; glass clipped inside). Tappable when onPress is given.
+function GlassPill({ onPress, children }: { onPress?: () => void; children: React.ReactNode }) {
+  const body = (
+    <View style={styles.combinedPillShadow}>
+      <GlassPanel style={styles.combinedPillGlass}>{children}</GlassPanel>
+    </View>
+  );
+  return onPress ? (
+    <TouchableOpacity onPress={onPress} activeOpacity={0.85}>{body}</TouchableOpacity>
+  ) : body;
 }
 
 // ─── useSheetDismissGesture ───────────────────────────────────────────────────────
@@ -607,6 +631,27 @@ export default function TrainerWorkoutSessionScreen() {
   const collapsedContentOpacity = scrollAnim.interpolate({ inputRange: [COLLAPSE_START + 10, COLLAPSE_END], outputRange: [0, 1], extrapolate: 'clamp' });
   const dotsOpacity = scrollAnim.interpolate({ inputRange: [COLLAPSE_START + 10, COLLAPSE_END], outputRange: [1, 0], extrapolate: 'clamp' });
 
+  // ── Fixed-header (option 2) state ──────────────────────────────────────
+  const [activeHeaderId, setActiveHeaderId] = useState<string | null>(null);
+  const [timerCollapsed, setTimerCollapsed] = useState(true);
+  // Keyboard height — drives the "Done" button (numeric keypads have no return key)
+  // + extra list padding so a focused set row can be scrolled clear of the keyboard.
+  const [kbHeight, setKbHeight] = useState(0);
+  const kbHeightRef = useRef(0);
+  const scrollOffsetRef = useRef(0);
+  // Ref indirection so the keyboard listener (mounted once) always calls the latest impl.
+  const scrollFocusedInputAboveKeyboardRef = useRef<(kbTopScreenY: number) => void>(() => {});
+  useEffect(() => {
+    const show = Keyboard.addListener('keyboardDidShow', e => {
+      const h = e.endCoordinates.height;
+      setKbHeight(h); kbHeightRef.current = h;
+      // Lift the focused input above the keyboard (+ the Done button).
+      requestAnimationFrame(() => scrollFocusedInputAboveKeyboardRef.current(e.endCoordinates.screenY));
+    });
+    const hide = Keyboard.addListener('keyboardWillHide', () => { setKbHeight(0); kbHeightRef.current = 0; });
+    return () => { show.remove(); hide.remove(); };
+  }, []);
+
   const [isEditMode, setIsEditMode] = useState(false);
   const isEditModeRef = useRef(false);
   const [selectedExerciseIds, setSelectedExerciseIds] = useState<Set<string>>(new Set());
@@ -747,7 +792,7 @@ export default function TrainerWorkoutSessionScreen() {
 
     const [{ data: wData }, { data: weData }, { data: clientData }] = await Promise.all([
       supabase.from('workouts').select('id, name, description, goal, client_id, routine_id, created_by, equipment_list, muscle_groups, order_index, notes, cover_image_url, category, stretch_type, created_at').eq('id', workoutId).single(),
-      supabase.from('workout_exercises').select('*, exercises(id, name, muscle_groups, secondary_muscle_groups, video_url, extra_video_urls, extra_photo_urls, thumbnail_url, equipment, description)').eq('workout_id', workoutId).eq('is_active', true).order('order_index'),
+      supabase.from('workout_exercises').select('*, exercises(id, name, muscle_groups, secondary_muscle_groups, video_url, extra_video_urls, extra_photo_urls, thumbnail_url, header_focus_y, equipment, description)').eq('workout_id', workoutId).eq('is_active', true).order('order_index'),
       supabase.from('users').select('name').eq('id', clientId).single(),
     ]);
 
@@ -1084,6 +1129,7 @@ export default function TrainerWorkoutSessionScreen() {
         extraPhotoUrls: (we.exercises as any)?.extra_photo_urls ?? [],
         equipment: we.exercises?.equipment ?? null,
         exerciseDescription: we.exercises?.description ?? null,
+        headerFocusY: (we.exercises as any)?.header_focus_y ?? 0.5,
         isDone: false,
         addedAt: wasAddedMidSession && we.created_at ? `Added · ${formatDate((we.created_at as string).split('T')[0])}` : null,
         slotNumber: exIdx + 1,
@@ -1601,9 +1647,42 @@ export default function TrainerWorkoutSessionScreen() {
     }
   };
 
+  // Scroll a card to the top of the list so its whole rounded card is visible —
+  // used when expanding a card (reveal full content).
+  const scrollCardToTop = (weId: string, delay = 80) => {
+    const di = listData.findIndex(it =>
+      it.kind === 'exercise'
+        ? it.exercise.workoutExerciseId === weId
+        : it.members.some(m => m.workoutExerciseId === weId)
+    );
+    if (di < 0) return;
+    // The fixed banner overlays the top bannerH of the list, so land the card top
+    // just BELOW the banner (viewOffset) rather than at y=0 behind it.
+    const viewOffset = FIXED_HEADER ? HEADER_MAX : 0;
+    setTimeout(() => { try { flatListRef.current?.scrollToIndex({ index: di, animated: true, viewPosition: 0, viewOffset }); } catch {} }, delay);
+  };
+
+  // Measure the currently-focused set input and, if the keyboard (+ Done button)
+  // covers it, scroll the list up just enough to reveal it.
+  const scrollFocusedInputAboveKeyboard = (kbTopScreenY: number) => {
+    const node: any = (TextInput as any).State?.currentlyFocusedInput?.();
+    if (!node?.measureInWindow) return;
+    node.measureInWindow((_x: number, y: number, _w: number, h: number) => {
+      if (!y && !h) return;
+      const target = kbTopScreenY - 44 - 14; // clear the keyboard + the Done button
+      const overflow = (y + h) - target;
+      if (overflow > 0) {
+        try { flatListRef.current?.scrollToOffset({ offset: scrollOffsetRef.current + overflow, animated: true }); } catch {}
+      }
+    });
+  };
+  scrollFocusedInputAboveKeyboardRef.current = scrollFocusedInputAboveKeyboard;
+
   const toggleExpand = (weId: string) => {
     const isExpanding = !expandedIds.has(weId);
     if (isExpanding) {
+      setActiveHeaderId(weId); // fixed header follows the exercise you open
+      scrollCardToTop(weId);   // reveal the full card content
       const exIdx = exercises.findIndex(e => e.workoutExerciseId === weId);
       // Feature 2: track interaction order for slot_order_history
       const ex = exIdx >= 0 ? exercises[exIdx] : null;
@@ -1702,6 +1781,11 @@ export default function TrainerWorkoutSessionScreen() {
     // Use ref so we always read the latest exercises, not a potentially stale closure
     const ex = exercisesRef.current[exIdx];
     if (!ex) return;
+    // If the keyboard is already open (switching from one input to another), re-lift the
+    // newly-focused input; the first open is handled by the keyboardDidShow listener.
+    if (kbHeightRef.current > 0) {
+      requestAnimationFrame(() => scrollFocusedInputAboveKeyboard(SCREEN_HEIGHT - kbHeightRef.current));
+    }
     const activeSets = ex.sets.filter(s => !s.isRemoved);
     const focusedIdx = activeSets.findIndex(s => s.localId === setLocalId);
     if (focusedIdx <= 0) return;
@@ -2843,11 +2927,59 @@ export default function TrainerWorkoutSessionScreen() {
   const equipmentList = workout?.equipment_list ?? [];
   const hasTrainingNotes = trainingTrainerNotes.length > 0 || trainingClientNotes.length > 0 || trainingNoteHistory.some(s => s.trainer.length > 0 || s.client.length > 0);
 
+  // ── Fixed-header banner data (option 2) ───────────────────────────────
+  const showFixedHeader = FIXED_HEADER && !pastSession;
+  const bannerH = HEADER_MAX; // same height as the old header
+  const activeHeaderEx = exercises.find(e => e.workoutExerciseId === activeHeaderId) ?? exercises[0] ?? null;
+  const activeHeaderIdx = activeHeaderEx ? exercises.findIndex(e => e.workoutExerciseId === activeHeaderEx.workoutExerciseId) : -1;
+  const bannerPhoto = activeHeaderEx?.extraPhotoUrls?.[0] ?? activeHeaderEx?.thumbnailUrl ?? workout?.cover_image_url ?? null;
+  const bannerTitle = activeHeaderEx?.exerciseName ?? (isFreeSession ? freeSessionName : workout?.name) ?? '—';
+  const bannerSessionLabel = isFreeSession
+    ? new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
+    : `Session ${sessionCount + 1} · ${new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}`;
+  const bannerWorkoutName = (isFreeSession ? freeSessionName : workout?.name) ?? '';
+
+  // Header timer/START control (the "Start-morph"): before start = expanded
+  // [00:00 · START] pill; on Start (isRunning) it collapses to the glass stopwatch
+  // icon (tap to re-expand to [timer · FINISH]). Edit mode shows a Done button.
+  const timerControl = isEditMode ? (
+    <TouchableOpacity style={styles.editDoneBtn} onPress={exitEditMode} activeOpacity={0.8}>
+      <Text style={styles.editDoneBtnText}>Done</Text>
+    </TouchableOpacity>
+  ) : isRunning && !pastSession ? (
+    timerCollapsed ? (
+      <TouchableOpacity onPress={() => setTimerCollapsed(false)} activeOpacity={0.85}>
+        <View style={styles.combinedPillShadow}>
+          <GlassPanel style={styles.timerClockGlass}>
+            <SymbolView name="stopwatch" size={18} tintColor={ACCENT} />
+          </GlassPanel>
+        </View>
+      </TouchableOpacity>
+    ) : (
+      <GlassPill>
+        <TouchableOpacity onPress={() => setTimerCollapsed(true)} hitSlop={8} activeOpacity={0.7}>
+          <Text style={styles.combinedPillTimerText}>{formatTimer(elapsed)}</Text>
+        </TouchableOpacity>
+        <View style={styles.combinedPillSep} />
+        <TouchableOpacity onPress={handleFinish} hitSlop={8} activeOpacity={0.7}>
+          <Text style={styles.combinedPillFinishText}>FINISH</Text>
+        </TouchableOpacity>
+      </GlassPill>
+    )
+  ) : (
+    <GlassPill onPress={handleStartPress}>
+      <Text style={styles.combinedPillTimerText}>{formatTimer(elapsed)}</Text>
+      <View style={styles.combinedPillSep} />
+      <Text style={styles.combinedPillFinishText}>START</Text>
+    </GlassPill>
+  );
+
   return (
     <View style={styles.root}>
       <StatusBar barStyle="light-content" />
 
-      {/* ── Static nav bar — scroll-driven crossfade */}
+      {/* ── Static nav bar (old scroll-away header) — only when NOT using the fixed banner */}
+      {!showFixedHeader && (
       <View style={[styles.collapsingHeader, { height: HEADER_MIN, zIndex: 10, overflow: 'hidden' }]}>
         {/* Background fades in as user scrolls — fully opaque at COLLAPSE_END so cards never bleed through */}
         <Animated.View style={[StyleSheet.absoluteFill, { opacity: navBgOpacity, overflow: 'hidden' }]}>
@@ -2894,19 +3026,77 @@ export default function TrainerWorkoutSessionScreen() {
           </View>
         </View>
       </View>
+      )}
+
+      {/* ── Fixed banner header (option 2): shows the ACTIVE exercise's photo + name + count */}
+      {showFixedHeader && (
+        <View style={[styles.fixedBanner, { height: bannerH }]}>
+          <View style={StyleSheet.absoluteFill}>
+            {bannerPhoto ? (
+              <HeaderPhoto uri={bannerPhoto} focusY={activeHeaderEx?.headerFocusY ?? 0.5} boxW={SCREEN_W} boxH={bannerH} />
+            ) : categoryHasCover(workout?.category) ? (
+              <CategoryCover category={workout?.category} variant="color" watermarkSize={150} />
+            ) : (
+              <LinearGradient colors={['#2d6b5a', '#244e43', '#1a3832']} start={{ x: 1, y: 0 }} end={{ x: 0, y: 1 }} style={StyleSheet.absoluteFill} />
+            )}
+            <LinearGradient colors={['rgba(0,0,0,0.28)', 'transparent', 'rgba(0,0,0,0.55)']} locations={[0, 0.42, 1]} style={StyleSheet.absoluteFill} pointerEvents="none" />
+          </View>
+
+          {/* top row: back (left) · workout title + session·date (center) · ⋯ (right) */}
+          <View style={{ flexDirection: 'row', alignItems: 'center', paddingTop: insets.top, paddingHorizontal: 12, height: insets.top + 52 }}>
+            <TouchableOpacity onPress={handleBack} hitSlop={8} style={styles.floatIconBtn}>
+              <SymbolView name="chevron.left" size={20} tintColor="#fff" />
+            </TouchableOpacity>
+            <View style={{ flex: 1, alignItems: 'center', paddingHorizontal: 4 }}>
+              {isFreeSession ? (
+                <TouchableOpacity onPress={() => { setFreeSessionNameDraft(freeSessionName); setEditFreeSessionName(true); }} activeOpacity={0.75} style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+                  <Text style={styles.bannerTopTitle} numberOfLines={1}>{bannerWorkoutName}</Text>
+                  <SymbolView name="pencil" size={11} tintColor="rgba(255,255,255,0.5)" />
+                </TouchableOpacity>
+              ) : (
+                <Text style={styles.bannerTopTitle} numberOfLines={1}>{bannerWorkoutName}</Text>
+              )}
+              <Text style={styles.bannerTopMeta} numberOfLines={1}>{bannerSessionLabel}</Text>
+            </View>
+            <View style={{ position: 'relative' }}>
+              <TouchableOpacity onPress={() => setDotsMenuOpen(true)} hitSlop={8} style={styles.floatIconBtn}>
+                <SymbolView name="ellipsis" size={18} tintColor="#fff" />
+              </TouchableOpacity>
+              {hasTrainingNotes && !trainingNotesViewed && (
+                <View style={{ position: 'absolute', top: 2, right: 2, width: 8, height: 8, borderRadius: 4, backgroundColor: '#24ac88', borderWidth: 1.5, borderColor: 'rgba(0,0,0,0.2)' }} pointerEvents="none" />
+              )}
+            </View>
+          </View>
+
+          {/* bottom: exercise name + count (left) · timer control (right) */}
+          <View style={styles.bannerBottom}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.bannerTitle} numberOfLines={1}>{bannerTitle}</Text>
+              {activeHeaderIdx >= 0 && exercises.length > 0 && (
+                <Text style={styles.bannerCount}>{activeHeaderIdx + 1} / {exercises.length}</Text>
+              )}
+            </View>
+            <View style={{ justifyContent: 'flex-end' }}>{timerControl}</View>
+          </View>
+
+          <View style={styles.bannerCap} pointerEvents="none" />
+        </View>
+      )}
 
       {/* ── Scrollable content */}
       <View style={{ flex: 1, backgroundColor: '#fff' }}>
-        <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        {/* KAV disabled — keyboard handled via kbHeight list-padding + focused-input auto-scroll (matches client) */}
+        <KeyboardAvoidingView style={{ flex: 1 }} behavior={undefined}>
           {pastSession ? (
             <ScrollView
               style={styles.scroll}
-              contentContainerStyle={{ paddingTop: 0, paddingHorizontal: 0, paddingBottom: insets.bottom + 32 }}
+              contentContainerStyle={{ paddingTop: 0, paddingHorizontal: 0, paddingBottom: insets.bottom + 32 + (kbHeight > 0 ? kbHeight : 0) }}
               keyboardShouldPersistTaps="handled"
               showsVerticalScrollIndicator={false}
               bounces={false}
               onScroll={({ nativeEvent }) => {
                 scrollAnim.setValue(nativeEvent.contentOffset.y);
+                scrollOffsetRef.current = nativeEvent.contentOffset.y;
                 setHeaderCollapsed(nativeEvent.contentOffset.y >= COLLAPSE_END);
               }}
               scrollEventThrottle={16}
@@ -2951,16 +3141,20 @@ export default function TrainerWorkoutSessionScreen() {
                 }
                 style={{ flex: 1, backgroundColor: '#fff' }}
                 containerStyle={{ flex: 1, backgroundColor: '#fff' }}
-                contentContainerStyle={{ paddingTop: 0, paddingHorizontal: 0, paddingBottom: insets.bottom + 90 }}
+                contentContainerStyle={{ paddingTop: 0, paddingHorizontal: 0, paddingBottom: insets.bottom + 90 + (kbHeight > 0 ? kbHeight : 0) }}
                 keyboardShouldPersistTaps="handled"
                 showsVerticalScrollIndicator={false}
                 dragItemOverflow
                 bounces={false}
                 onScrollOffsetChange={(offset) => {
                   scrollAnim.setValue(offset);
+                  scrollOffsetRef.current = offset;
                   setHeaderCollapsed(offset >= COLLAPSE_END);
                 }}
                 ListHeaderComponent={
+                  showFixedHeader ? (
+                    <View style={{ height: bannerH }} />
+                  ) : (
                   <View style={{ height: HEADER_MAX }}>
                     {workout?.cover_image_url ? (
                       <>
@@ -2990,6 +3184,7 @@ export default function TrainerWorkoutSessionScreen() {
                     </View>
                     <View style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: 26, backgroundColor: '#fff', borderTopLeftRadius: 26, borderTopRightRadius: 26 }} pointerEvents="none" />
                   </View>
+                  )
                 }
                 animationConfig={{ damping: 25, mass: 0.8, stiffness: 60, overshootClamping: true }}
                 onScrollToIndexFailed={({ index }) => {
@@ -3151,16 +3346,20 @@ export default function TrainerWorkoutSessionScreen() {
                 item.kind === 'exercise' ? item.exercise.workoutExerciseId : item.groupId
               }
               style={{ flex: 1, backgroundColor: '#fff' }}
-              contentContainerStyle={{ paddingTop: 0, paddingHorizontal: 0, paddingBottom: insets.bottom + 32 }}
+              contentContainerStyle={{ paddingTop: 0, paddingHorizontal: 0, paddingBottom: insets.bottom + 32 + (kbHeight > 0 ? kbHeight : 0) }}
               keyboardShouldPersistTaps="handled"
               showsVerticalScrollIndicator={false}
               bounces={false}
               onScroll={({ nativeEvent }) => {
                 scrollAnim.setValue(nativeEvent.contentOffset.y);
+                scrollOffsetRef.current = nativeEvent.contentOffset.y;
                 setHeaderCollapsed(nativeEvent.contentOffset.y >= COLLAPSE_END);
               }}
               scrollEventThrottle={16}
               ListHeaderComponent={
+                showFixedHeader ? (
+                  <View style={{ height: bannerH }} />
+                ) : (
                 <View style={{ height: HEADER_MAX }}>
                   {workout?.cover_image_url ? (
                     <>
@@ -3190,6 +3389,7 @@ export default function TrainerWorkoutSessionScreen() {
                   </View>
                   <View style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: 26, backgroundColor: '#fff', borderTopLeftRadius: 26, borderTopRightRadius: 26 }} pointerEvents="none" />
                 </View>
+                )
               }
               ListEmptyComponent={isFreeSession ? (
                 <View style={styles.freeEmptyState}>
@@ -3423,6 +3623,15 @@ export default function TrainerWorkoutSessionScreen() {
             );
           })()}
         </Animated.View>
+      )}
+
+      {/* ── Keyboard "Done" — pinned just above the keyboard (numeric keypads have no return key) ── */}
+      {kbHeight > 0 && (
+        <View style={{ position: 'absolute', right: 8, bottom: kbHeight + 4, zIndex: 100 }} pointerEvents="box-none">
+          <TouchableOpacity onPress={() => Keyboard.dismiss()} hitSlop={12} style={styles.kbdDoneBtn} activeOpacity={0.7}>
+            <Text style={styles.kbdDoneText}>Done</Text>
+          </TouchableOpacity>
+        </View>
       )}
 
       {/* ── Pending-done toast ───────────────────────────────────────── */}
@@ -6187,6 +6396,19 @@ const styles = StyleSheet.create({
   combinedPillSep: { width: 1, height: 14, backgroundColor: 'rgba(36,172,136,0.35)' },
   combinedPillTimerText: { color: '#24ac88', fontWeight: '700', fontSize: 13, fontVariant: ['tabular-nums'], letterSpacing: 0.4 },
   combinedPillFinishText: { color: '#24ac88', fontWeight: '700', fontSize: 13, letterSpacing: 0.4 },
+  // Fixed-header (option 2) glass timer pill + collapsed stopwatch + banner
+  combinedPillShadow: { borderRadius: 20, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.22, shadowRadius: 8, elevation: 4 },
+  combinedPillGlass: { flexDirection: 'row', alignItems: 'center', borderRadius: 20, overflow: 'hidden', paddingHorizontal: 14, paddingVertical: 7, gap: 10 },
+  timerClockGlass: { width: 40, height: 40, borderRadius: 20, overflow: 'hidden', alignItems: 'center', justifyContent: 'center' },
+  fixedBanner: { position: 'absolute', top: 0, left: 0, right: 0, zIndex: 10, overflow: 'hidden' },
+  bannerBottom: { position: 'absolute', left: 0, right: 0, bottom: 46, paddingHorizontal: 20, flexDirection: 'row', alignItems: 'flex-end', gap: 10 },
+  bannerTopTitle: { color: '#fff', fontSize: 16, fontWeight: '700' },
+  bannerTopMeta: { color: 'rgba(255,255,255,0.6)', fontSize: 11, marginTop: 1 },
+  bannerTitle: { color: '#fff', fontSize: 24, fontWeight: '700', letterSpacing: 0.2 },
+  bannerCount: { color: 'rgba(255,255,255,0.72)', fontSize: 13, fontWeight: '600', marginTop: 3 },
+  bannerCap: { position: 'absolute', bottom: 0, left: 0, right: 0, height: 26, backgroundColor: '#fff', borderTopLeftRadius: 26, borderTopRightRadius: 26 },
+  kbdDoneBtn: { backgroundColor: 'rgba(255,255,255,0.92)', borderRadius: 14, paddingHorizontal: 16, paddingVertical: 7, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.18, shadowRadius: 4, elevation: 3 },
+  kbdDoneText: { color: '#24ac88', fontSize: 16, fontWeight: '700' },
   startBtn: { backgroundColor: '#24ac88', borderRadius: 20, paddingHorizontal: 14, paddingVertical: 8 },
   startBtnText: { color: '#fff', fontWeight: '700', fontSize: 13, letterSpacing: 0.4 },
   finishBtn: { backgroundColor: '#24ac88', borderRadius: 20, paddingHorizontal: 14, paddingVertical: 8 },

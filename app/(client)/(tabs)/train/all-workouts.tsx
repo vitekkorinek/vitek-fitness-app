@@ -25,7 +25,7 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/context/AuthContext';
 import { CATEGORY_COLORS, CATEGORY_OPTIONS, STRETCHING_CATEGORIES } from '@/lib/workoutCategories';
 import type { WorkoutCategory } from '@/lib/workoutCategories';
-import CategoryCover, { categoryHasCover } from '@/components/CategoryCover';
+import CategoryCover, { categoryHasCover, WORKOUT_COVER_PHOTOS_ENABLED } from '@/components/CategoryCover';
 
 type WorkoutRow = {
   id: string;
@@ -429,12 +429,12 @@ function WorkoutItem({ workout, onPress, thisWeekCount, onQuickLook }: { workout
       <View style={coverCardStyles.cardInner}>
         {/* Cover (watermark / photo) with name + category pill */}
         <View style={coverCardStyles.cover}>
-          {categoryHasCover(workout.category) ? (
+          {WORKOUT_COVER_PHOTOS_ENABLED && workout.cover_image_url ? (
+            <Image source={{ uri: workout.cover_image_url }} style={[StyleSheet.absoluteFill, isDone && { opacity: 0.55 }]} resizeMode="cover" />
+          ) : categoryHasCover(workout.category) ? (
             <View style={[StyleSheet.absoluteFill, isDone && { opacity: 0.55 }]}>
               <CategoryCover category={workout.category} variant="color" />
             </View>
-          ) : workout.cover_image_url ? (
-            <Image source={{ uri: workout.cover_image_url }} style={[StyleSheet.absoluteFill, isDone && { opacity: 0.55 }]} resizeMode="cover" />
           ) : (
             <LinearGradient colors={gradColors} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={[StyleSheet.absoluteFill, isDone && { opacity: 0.55 }]} />
           )}

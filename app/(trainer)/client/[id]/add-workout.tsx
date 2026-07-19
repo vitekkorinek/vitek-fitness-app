@@ -19,6 +19,7 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/context/AuthContext';
 import { CATEGORY_OPTIONS, CATEGORY_COLORS } from '@/lib/workoutCategories';
 import type { WorkoutCategory } from '@/lib/workoutCategories';
+import CategoryCover, { categoryHasCover, WORKOUT_COVER_PHOTOS_ENABLED } from '@/components/CategoryCover';
 
 const HEADER = '#244e43';
 const ACCENT = '#24ac88';
@@ -375,8 +376,10 @@ export default function AddWorkoutToDayScreen() {
                       onPress={() => openWorkout(w)}
                       activeOpacity={0.9}
                     >
-                      {w.coverImageUrl ? (
+                      {WORKOUT_COVER_PHOTOS_ENABLED && w.coverImageUrl ? (
                         <Image source={{ uri: w.coverImageUrl }} style={StyleSheet.absoluteFill} resizeMode="cover" />
+                      ) : categoryHasCover(w.category) ? (
+                        <CategoryCover category={w.category} variant="color" />
                       ) : (
                         <LinearGradient
                           colors={[catColors?.border ?? '#2a4a3e', '#1a3832']}
@@ -425,8 +428,10 @@ export default function AddWorkoutToDayScreen() {
                       onPress={() => openTemplate(t)}
                       activeOpacity={0.9}
                     >
-                      {t.coverImageUrl ? (
+                      {WORKOUT_COVER_PHOTOS_ENABLED && t.coverImageUrl ? (
                         <Image source={{ uri: t.coverImageUrl }} style={StyleSheet.absoluteFill} resizeMode="cover" />
+                      ) : categoryHasCover(t.category) ? (
+                        <CategoryCover category={t.category} variant="color" />
                       ) : (
                         <LinearGradient
                           colors={[catColors?.border ?? '#2a4a3e', '#1a3832']}

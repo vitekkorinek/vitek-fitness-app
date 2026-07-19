@@ -149,10 +149,10 @@ export default function SessionIntroScreen() {
     });
   }, [workoutId, profile?.id]);
 
-  // MERGED_PREVIEW: send launcher Push taps straight to the merged Do Mode.
+  // MERGED_PREVIEW: send launcher taps (any category) straight to the merged Do Mode.
   useEffect(() => {
     if (loading) return;
-    if (MERGED_PREVIEW && category === 'Push' && isLauncher) {
+    if (MERGED_PREVIEW && isLauncher) {
       router.replace(`/(client)/workout/${workoutId}` as any);
     }
   }, [loading, category, isLauncher]);
@@ -226,9 +226,9 @@ export default function SessionIntroScreen() {
     return <View style={{ flex: 1, backgroundColor: '#000' }} />;
   }
 
-  // MERGED_PREVIEW: launcher Push taps redirect into the merged Do Mode preview
-  // panel (see the redirect effect above). Show black while the replace fires.
-  if (MERGED_PREVIEW && category === 'Push' && isLauncher) {
+  // MERGED_PREVIEW: launcher taps (any category) redirect into the merged Do Mode
+  // preview panel (see the redirect effect above). Show black while the replace fires.
+  if (MERGED_PREVIEW && isLauncher) {
     return <View style={{ flex: 1, backgroundColor: '#000' }} />;
   }
 
