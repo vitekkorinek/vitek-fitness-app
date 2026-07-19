@@ -376,33 +376,39 @@ export default function AddWorkoutToDayScreen() {
                       onPress={() => openWorkout(w)}
                       activeOpacity={0.9}
                     >
-                      {WORKOUT_COVER_PHOTOS_ENABLED && w.coverImageUrl ? (
-                        <Image source={{ uri: w.coverImageUrl }} style={StyleSheet.absoluteFill} resizeMode="cover" />
-                      ) : categoryHasCover(w.category) ? (
-                        <CategoryCover category={w.category} variant="color" />
-                      ) : (
-                        <LinearGradient
-                          colors={[catColors?.border ?? '#2a4a3e', '#1a3832']}
-                          style={StyleSheet.absoluteFill}
-                        />
-                      )}
-                      <View style={styles.cardScrim} />
-                      {!!clientFirstName && (
-                        <View style={styles.clientPill}>
-                          <SymbolView name="person.fill" size={9} tintColor="#fff" />
-                          <Text style={styles.clientPillText}>{clientFirstName}</Text>
-                        </View>
-                      )}
-                      <View style={styles.cardBottom}>
-                        <View style={styles.cardBottomLeft}>
-                          <Text style={styles.cardName} numberOfLines={1}>{w.name}</Text>
-                          <Text style={styles.cardSub} numberOfLines={1}>{subtitle}</Text>
-                        </View>
-                        {catColors && (
-                          <View style={[styles.catPill, { backgroundColor: catColors.border }]}>
-                            <Text style={styles.catPillText}>{w.category}</Text>
+                      <View style={styles.cardInner}>
+                        <View style={styles.cover}>
+                          {WORKOUT_COVER_PHOTOS_ENABLED && w.coverImageUrl ? (
+                            <Image source={{ uri: w.coverImageUrl }} style={StyleSheet.absoluteFill} resizeMode="cover" />
+                          ) : categoryHasCover(w.category) ? (
+                            <CategoryCover category={w.category} variant="color" />
+                          ) : (
+                            <LinearGradient
+                              colors={[catColors?.border ?? '#2a4a3e', '#1a3832']}
+                              style={StyleSheet.absoluteFill}
+                            />
+                          )}
+                          <View style={styles.cardScrim} />
+                          {!!clientFirstName && (
+                            <View style={styles.clientPill}>
+                              <SymbolView name="person.fill" size={9} tintColor="#fff" />
+                              <Text style={styles.clientPillText}>{clientFirstName}</Text>
+                            </View>
+                          )}
+                          <View style={styles.cardBottom}>
+                            <View style={styles.cardBottomLeft}>
+                              <Text style={styles.cardName} numberOfLines={1}>{w.name}</Text>
+                            </View>
+                            {catColors && (
+                              <View style={[styles.catPill, { backgroundColor: catColors.border }]}>
+                                <Text style={styles.catPillText}>{w.category}</Text>
+                              </View>
+                            )}
                           </View>
-                        )}
+                        </View>
+                        <View style={styles.footer}>
+                          <Text style={styles.footerSub} numberOfLines={1}>{subtitle}</Text>
+                        </View>
                       </View>
                     </TouchableOpacity>
                   );
@@ -428,32 +434,38 @@ export default function AddWorkoutToDayScreen() {
                       onPress={() => openTemplate(t)}
                       activeOpacity={0.9}
                     >
-                      {WORKOUT_COVER_PHOTOS_ENABLED && t.coverImageUrl ? (
-                        <Image source={{ uri: t.coverImageUrl }} style={StyleSheet.absoluteFill} resizeMode="cover" />
-                      ) : categoryHasCover(t.category) ? (
-                        <CategoryCover category={t.category} variant="color" />
-                      ) : (
-                        <LinearGradient
-                          colors={[catColors?.border ?? '#2a4a3e', '#1a3832']}
-                          style={StyleSheet.absoluteFill}
-                        />
-                      )}
-                      <View style={styles.cardScrim} />
-                      <View style={styles.templateBadge}>
-                        <Text style={styles.templateBadgeText}>TEMPLATE</Text>
-                      </View>
-                      <View style={styles.cardBottom}>
-                        <View style={styles.cardBottomLeft}>
-                          <Text style={styles.cardName} numberOfLines={1}>{t.name}</Text>
-                          <Text style={styles.cardSub} numberOfLines={1}>
+                      <View style={styles.cardInner}>
+                        <View style={styles.cover}>
+                          {WORKOUT_COVER_PHOTOS_ENABLED && t.coverImageUrl ? (
+                            <Image source={{ uri: t.coverImageUrl }} style={StyleSheet.absoluteFill} resizeMode="cover" />
+                          ) : categoryHasCover(t.category) ? (
+                            <CategoryCover category={t.category} variant="color" />
+                          ) : (
+                            <LinearGradient
+                              colors={[catColors?.border ?? '#2a4a3e', '#1a3832']}
+                              style={StyleSheet.absoluteFill}
+                            />
+                          )}
+                          <View style={styles.cardScrim} />
+                          <View style={styles.templateBadge}>
+                            <Text style={styles.templateBadgeText}>TEMPLATE</Text>
+                          </View>
+                          <View style={styles.cardBottom}>
+                            <View style={styles.cardBottomLeft}>
+                              <Text style={styles.cardName} numberOfLines={1}>{t.name}</Text>
+                            </View>
+                            {catColors && (
+                              <View style={[styles.catPill, { backgroundColor: catColors.border }]}>
+                                <Text style={styles.catPillText}>{t.category}</Text>
+                              </View>
+                            )}
+                          </View>
+                        </View>
+                        <View style={styles.footer}>
+                          <Text style={styles.footerSub} numberOfLines={1}>
                             {t.exerciseCount} {t.exerciseCount === 1 ? 'exercise' : 'exercises'}
                           </Text>
                         </View>
-                        {catColors && (
-                          <View style={[styles.catPill, { backgroundColor: catColors.border }]}>
-                            <Text style={styles.catPillText}>{t.category}</Text>
-                          </View>
-                        )}
                       </View>
                     </TouchableOpacity>
                   );
@@ -530,8 +542,13 @@ const styles = StyleSheet.create({
   emptyText: { fontSize: 14, color: MUTED },
 
   card: {
-    height: 100, borderRadius: 14, overflow: 'hidden', backgroundColor: '#2a4a3e',
+    borderRadius: 14, backgroundColor: '#fff',
+    shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.08, shadowRadius: 6, elevation: 3,
   },
+  cardInner: { borderRadius: 14, overflow: 'hidden', backgroundColor: '#fff' },
+  cover: { height: 94, overflow: 'hidden', backgroundColor: '#2a4a3e' },
+  footer: { paddingHorizontal: 10, paddingVertical: 9, backgroundColor: '#fff' },
+  footerSub: { fontSize: 12, color: '#888' },
   cardScrim: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: 'rgba(0,0,0,0.28)',

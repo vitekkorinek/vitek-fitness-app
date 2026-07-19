@@ -838,27 +838,24 @@ export default function TrainTabScreen() {
                         <Text style={sectionStyles.wCatPillText}>{c.category}</Text>
                       </View>
                     )}
-                    <TouchableOpacity
-                      style={sectionStyles.wMenuBtn}
-                      hitSlop={6}
-                      activeOpacity={0.7}
-                      onPress={() => openWorkoutDetails(c)}
-                    >
-                      <SymbolView name="ellipsis" size={14} tintColor="#fff" />
-                    </TouchableOpacity>
                   </View>
                   <View style={sectionStyles.wBody}>
-                    {c.routineName && (
-                      <View style={sectionStyles.wRoutineRow}>
-                        <RoutineIcon size={12} />
-                        <Text style={sectionStyles.wSub} numberOfLines={1}>{c.routineName}</Text>
-                      </View>
-                    )}
-                    {c.lastDoneDate ? (
-                      <Text style={[sectionStyles.wStatus, { color: ACCENT }]}>Done {formatShortDate(c.lastDoneDate)}</Text>
-                    ) : (
-                      <Text style={[sectionStyles.wStatus, { color: '#bbb' }]}>Never done</Text>
-                    )}
+                    <View style={{ flex: 1 }}>
+                      {c.routineName && (
+                        <View style={sectionStyles.wRoutineRow}>
+                          <RoutineIcon size={12} />
+                          <Text style={sectionStyles.wSub} numberOfLines={1}>{c.routineName}</Text>
+                        </View>
+                      )}
+                      {c.lastDoneDate ? (
+                        <Text style={[sectionStyles.wStatus, { color: ACCENT }]}>Done {formatShortDate(c.lastDoneDate)}</Text>
+                      ) : (
+                        <Text style={[sectionStyles.wStatus, { color: '#bbb' }]}>Never done</Text>
+                      )}
+                    </View>
+                    <TouchableOpacity style={sectionStyles.wFooterMenuBtn} hitSlop={8} activeOpacity={0.6} onPress={() => openWorkoutDetails(c)}>
+                      <SymbolView name="ellipsis" size={16} tintColor="#999" />
+                    </TouchableOpacity>
                   </View>
                 </View>
               </TouchableOpacity>
@@ -1827,7 +1824,8 @@ const sectionStyles = StyleSheet.create({
   wCatPill:       { position: 'absolute', bottom: 6, right: 8, borderRadius: 100, paddingHorizontal: 7, paddingVertical: 2 },
   wCatPillText:   { fontSize: 9, fontWeight: '700', color: '#fff' },
   wMenuBtn:       { position: 'absolute', top: 7, right: 7, width: 26, height: 26, borderRadius: 13, backgroundColor: 'rgba(0,0,0,0.5)', alignItems: 'center', justifyContent: 'center' },
-  wBody:          { flex: 1, justifyContent: 'flex-end', paddingTop: 7, paddingHorizontal: 9, paddingBottom: 9 },
+  wBody:          { flexDirection: 'row', alignItems: 'center', gap: 8, paddingTop: 7, paddingHorizontal: 9, paddingBottom: 9 },
+  wFooterMenuBtn: { padding: 4 },
   wRoutineRow:    { flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 2 },
   wSub:           { fontSize: 10, color: '#999', flexShrink: 1 },
   wStatus:        { fontSize: 10, fontWeight: '600', marginTop: 2 },

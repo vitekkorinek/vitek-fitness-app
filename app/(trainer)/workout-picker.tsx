@@ -239,32 +239,38 @@ function WorkoutPickerRow({
       activeOpacity={0.85}
       disabled={disabled}
     >
-      {WORKOUT_COVER_PHOTOS_ENABLED && workout.cover_image_url ? (
-        <Image source={{ uri: workout.cover_image_url }} style={StyleSheet.absoluteFill} resizeMode="cover" />
-      ) : categoryHasCover(workout.category) ? (
-        <CategoryCover category={workout.category} variant="color" />
-      ) : (
-        <LinearGradient colors={gradColors} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill} />
-      )}
-      <LinearGradient
-        colors={['transparent', 'rgba(0,0,0,0.15)', 'rgba(0,0,0,0.6)']}
-        start={{ x: 0.5, y: 0 }}
-        end={{ x: 0.5, y: 1 }}
-        style={StyleSheet.absoluteFill}
-        pointerEvents="none"
-      />
-      <View style={rowStyles.bottom}>
-        <View style={rowStyles.bottomLeft}>
-          <Text style={rowStyles.name} numberOfLines={1}>{workout.name}</Text>
-          <Text style={rowStyles.sub} numberOfLines={1}>{workout.clientName}</Text>
-        </View>
-        {copying ? (
-          <ActivityIndicator size="small" color="#fff" />
-        ) : workout.category ? (
-          <View style={rowStyles.pill}>
-            <Text style={rowStyles.pillText}>{workout.category}</Text>
+      <View style={rowStyles.cardInner}>
+        <View style={rowStyles.cover}>
+          {WORKOUT_COVER_PHOTOS_ENABLED && workout.cover_image_url ? (
+            <Image source={{ uri: workout.cover_image_url }} style={StyleSheet.absoluteFill} resizeMode="cover" />
+          ) : categoryHasCover(workout.category) ? (
+            <CategoryCover category={workout.category} variant="color" />
+          ) : (
+            <LinearGradient colors={gradColors} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill} />
+          )}
+          <LinearGradient
+            colors={['transparent', 'rgba(0,0,0,0.15)', 'rgba(0,0,0,0.6)']}
+            start={{ x: 0.5, y: 0 }}
+            end={{ x: 0.5, y: 1 }}
+            style={StyleSheet.absoluteFill}
+            pointerEvents="none"
+          />
+          <View style={rowStyles.bottom}>
+            <View style={rowStyles.bottomLeft}>
+              <Text style={rowStyles.name} numberOfLines={1}>{workout.name}</Text>
+            </View>
+            {copying ? (
+              <ActivityIndicator size="small" color="#fff" />
+            ) : workout.category ? (
+              <View style={rowStyles.pill}>
+                <Text style={rowStyles.pillText}>{workout.category}</Text>
+              </View>
+            ) : null}
           </View>
-        ) : null}
+        </View>
+        <View style={rowStyles.footer}>
+          <Text style={rowStyles.footerSub} numberOfLines={1}>{workout.clientName}</Text>
+        </View>
       </View>
     </TouchableOpacity>
   );
@@ -319,10 +325,14 @@ const styles = StyleSheet.create({
 
 const rowStyles = StyleSheet.create({
   card: {
-    height: 72, borderRadius: 14, overflow: 'hidden',
+    borderRadius: 14, backgroundColor: '#fff',
     shadowColor: '#000', shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.08, shadowRadius: 6, elevation: 3,
   },
+  cardInner: { borderRadius: 14, overflow: 'hidden', backgroundColor: '#fff' },
+  cover: { height: 72, overflow: 'hidden' },
+  footer: { paddingHorizontal: 12, paddingVertical: 8, backgroundColor: '#fff' },
+  footerSub: { fontSize: 12, color: '#888' },
   cardDisabled: { opacity: 0.5 },
   bottom: {
     position: 'absolute', bottom: 0, left: 0, right: 0,

@@ -798,38 +798,42 @@ function WorkoutItem({
 
   return (
     <TouchableOpacity style={coverCardStyles.card} onPress={onPress} activeOpacity={0.92}>
-      {WORKOUT_COVER_PHOTOS_ENABLED && workout.cover_image_url ? (
-        <Image source={{ uri: workout.cover_image_url }} style={StyleSheet.absoluteFill} resizeMode="cover" />
-      ) : categoryHasCover(workout.category) ? (
-        <CategoryCover category={workout.category} variant="color" />
-      ) : (
-        <LinearGradient colors={gradColors} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill} />
-      )}
-      <LinearGradient
-        colors={['transparent', 'rgba(0,0,0,0.1)', 'rgba(0,0,0,0.6)']}
-        start={{ x: 0.5, y: 0 }}
-        end={{ x: 0.5, y: 1 }}
-        style={StyleSheet.absoluteFill}
-        pointerEvents="none"
-      />
-      <TouchableOpacity style={[coverCardStyles.menuBtn, isDone && { right: 34 }]} onPress={onMenuPress} hitSlop={8} activeOpacity={0.5}>
-        <SymbolView name="ellipsis" size={14} tintColor="rgba(255,255,255,0.9)" />
-      </TouchableOpacity>
-      {isDone && (
-        <View style={coverCardStyles.doneBadge}>
-          <SymbolView name="checkmark" size={9} tintColor="#fff" />
-        </View>
-      )}
-      <View style={coverCardStyles.bottom}>
-        <View style={coverCardStyles.bottomLeft}>
-          <Text style={coverCardStyles.itemName} numberOfLines={1}>{workout.name}</Text>
-          <Text style={coverCardStyles.itemSub} numberOfLines={1}>{lastDoneText}</Text>
-        </View>
-        {catColors && (
-          <View style={[coverCardStyles.catPill, { backgroundColor: catColors.border }]}>
-            <Text style={coverCardStyles.catPillText}>{workout.category}</Text>
+      <View style={coverCardStyles.cardInner}>
+        <View style={coverCardStyles.cover}>
+          {WORKOUT_COVER_PHOTOS_ENABLED && workout.cover_image_url ? (
+            <Image source={{ uri: workout.cover_image_url }} style={StyleSheet.absoluteFill} resizeMode="cover" />
+          ) : categoryHasCover(workout.category) ? (
+            <CategoryCover category={workout.category} variant="color" />
+          ) : (
+            <LinearGradient colors={gradColors} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill} />
+          )}
+          <LinearGradient
+            colors={['transparent', 'rgba(0,0,0,0.1)', 'rgba(0,0,0,0.6)']}
+            start={{ x: 0.5, y: 0 }}
+            end={{ x: 0.5, y: 1 }}
+            style={StyleSheet.absoluteFill}
+            pointerEvents="none"
+          />
+          {isDone && (
+            <View style={coverCardStyles.doneBadge}>
+              <SymbolView name="checkmark" size={9} tintColor="#fff" />
+            </View>
+          )}
+          <View style={coverCardStyles.coverBottom}>
+            <Text style={coverCardStyles.itemName} numberOfLines={1}>{workout.name}</Text>
+            {catColors && (
+              <View style={[coverCardStyles.catPill, { backgroundColor: catColors.border }]}>
+                <Text style={coverCardStyles.catPillText}>{workout.category}</Text>
+              </View>
+            )}
           </View>
-        )}
+        </View>
+        <View style={coverCardStyles.footer}>
+          <Text style={coverCardStyles.footerSub} numberOfLines={1}>{lastDoneText}</Text>
+          <TouchableOpacity style={coverCardStyles.footerMenuBtn} onPress={onMenuPress} hitSlop={8} activeOpacity={0.5}>
+            <SymbolView name="ellipsis" size={16} tintColor="#999" />
+          </TouchableOpacity>
+        </View>
       </View>
     </TouchableOpacity>
   );
@@ -1026,17 +1030,21 @@ const styles = StyleSheet.create({
 
 const coverCardStyles = StyleSheet.create({
   card: {
-    height: 100, borderRadius: 14, overflow: 'hidden',
+    borderRadius: 14, backgroundColor: '#fff',
     shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.08, shadowRadius: 6, elevation: 3,
   },
+  cardInner: { borderRadius: 14, overflow: 'hidden', backgroundColor: '#fff' },
+  cover: { height: 94, overflow: 'hidden' },
   menuBtn: { position: 'absolute', top: 9, right: 10 },
-  bottom: {
+  coverBottom: {
     position: 'absolute', bottom: 0, left: 0, right: 0,
     flexDirection: 'row', alignItems: 'flex-end',
     paddingHorizontal: 10, paddingBottom: 8, gap: 8,
   },
-  bottomLeft: { flex: 1, gap: 2 },
-  itemName: { fontSize: 14, fontWeight: '600', color: '#ffffff' },
+  footer: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 10, paddingVertical: 9, gap: 8, backgroundColor: '#fff' },
+  footerSub: { flex: 1, fontSize: 12, color: '#888' },
+  footerMenuBtn: { padding: 4 },
+  itemName: { flex: 1, fontSize: 14, fontWeight: '600', color: '#ffffff' },
   itemSub: { fontSize: 10, color: 'rgba(255,255,255,0.65)' },
   catPill: {
     borderRadius: 100, paddingHorizontal: 8, paddingVertical: 3, flexShrink: 0,
