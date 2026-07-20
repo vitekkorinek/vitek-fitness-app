@@ -23,7 +23,7 @@ export const STRETCHING_CATEGORY_TO_STRETCH_TYPE: Record<string, 'upper_body' | 
 export const CATEGORY_COLORS: Record<WorkoutCategory, { border: string; pillBg: string; pillText: string }> = {
   'Push':                    { border: '#CC4B3C', pillBg: '#FBE9E6', pillText: '#8F2A1E' }, // red
   'Pull':                    { border: '#3B7DC4', pillBg: '#E7F1FB', pillText: '#1D4E86' }, // blue
-  'Upper Body':              { border: '#8C5AC6', pillBg: '#F1E9FB', pillText: '#5A2F92' }, // purple
+  'Upper Body':              { border: '#9B626D', pillBg: '#F2E6E9', pillText: '#5E3B44' }, // rosy clay (soft palette)
   'Arms':                    { border: '#E08A3C', pillBg: '#FBEEDD', pillText: '#985317' }, // orange
   'Lower Body':              { border: '#3E9E5E', pillBg: '#E5F5EB', pillText: '#1E6B3A' }, // green
   'Full Body':               { border: '#E0B12E', pillBg: '#FBF4DA', pillText: '#87680F' }, // amber

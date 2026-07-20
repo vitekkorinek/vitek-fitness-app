@@ -24,6 +24,7 @@ import { useAuth } from '@/context/AuthContext';
 import { SessionDetailsSheet } from '@/components/SessionDetailsSheet';
 import { BottomSheet } from '@/components/BottomSheet';
 import { CATEGORY_COLORS, CATEGORY_OPTIONS, STRETCHING_CATEGORIES } from '@/lib/workoutCategories';
+import { resolveWeeklyGoal } from '@/lib/weeklyGoal';
 import type { WorkoutCategory } from '@/lib/workoutCategories';
 import CategoryCover, { categoryHasCover, WORKOUT_COVER_PHOTOS_ENABLED } from '@/components/CategoryCover';
 
@@ -66,14 +67,11 @@ function getWeekBounds() {
 
 async function fetchWeeklyGoal(clientId: string): Promise<{ goal: number | null; completed: number }> {
   const { weekStart, weekEnd } = getWeekBounds();
-  const [subRes, userRes, sessRes] = await Promise.all([
-    supabase.from('availability_submissions').select('sessions_wanted').eq('client_id', clientId).eq('week_start', weekStart).maybeSingle(),
-    supabase.from('users').select('weekly_session_goal').eq('id', clientId).maybeSingle(),
+  const [userRes, sessRes] = await Promise.all([
+    supabase.from('users').select('weekly_session_goal, weekly_session_goal_prev, weekly_session_goal_effective_from').eq('id', clientId).maybeSingle(),
     supabase.from('sessions').select('id', { count: 'exact', head: true }).eq('client_id', clientId).eq('status', 'completed').gte('date', weekStart).lte('date', weekEnd),
   ]);
-  const sessionsWanted: number | null = (subRes.data as any)?.sessions_wanted ?? null;
-  const userGoal: number | null = (userRes.data as any)?.weekly_session_goal ?? null;
-  return { goal: sessionsWanted ?? userGoal, completed: (sessRes as any).count ?? 0 };
+  return { goal: resolveWeeklyGoal(userRes.data as any, weekStart), completed: (sessRes as any).count ?? 0 };
 }
 
 async function fetchAllWorkouts(clientId: string): Promise<WorkoutRow[]> {
@@ -575,7 +573,7 @@ function WorkoutItem({
           {WORKOUT_COVER_PHOTOS_ENABLED && workout.cover_image_url ? (
             <Image source={{ uri: workout.cover_image_url }} style={StyleSheet.absoluteFill} resizeMode="cover" />
           ) : categoryHasCover(workout.category) ? (
-            <CategoryCover category={workout.category} variant="color" />
+            <CategoryCover category={workout.category} variant="soft" />
           ) : (
             <LinearGradient colors={gradColors} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill} />
           )}

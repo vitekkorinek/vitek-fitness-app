@@ -2164,7 +2164,7 @@ function WorkoutLibraryRow({
           {WORKOUT_COVER_PHOTOS_ENABLED && workout.cover_image_url ? (
             <Image source={{ uri: workout.cover_image_url }} style={StyleSheet.absoluteFill} resizeMode="cover" />
           ) : categoryHasCover(workout.category) ? (
-            <CategoryCover category={workout.category} variant="color" />
+            <CategoryCover category={workout.category} variant="soft" />
           ) : (
             <LinearGradient colors={gradColors} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill} />
           )}
@@ -2255,7 +2255,7 @@ function TemplateLibraryRow({
           {WORKOUT_COVER_PHOTOS_ENABLED && template.cover_image_url ? (
             <Image source={{ uri: template.cover_image_url }} style={StyleSheet.absoluteFill} resizeMode="cover" />
           ) : categoryHasCover(template.category) ? (
-            <CategoryCover category={template.category} variant="color" />
+            <CategoryCover category={template.category} variant="soft" />
           ) : (
             <LinearGradient colors={gradColors} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill} />
           )}

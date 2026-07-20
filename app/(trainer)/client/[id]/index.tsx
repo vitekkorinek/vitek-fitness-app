@@ -32,6 +32,7 @@ import { useAuth } from '@/context/AuthContext';
 import { fetchClientTraining } from '@/lib/clientTraining';
 import NutritionTab from './nutrition-tab';
 import { relativeTime } from '@/lib/utils';
+import { mondayOf, addDaysStr } from '@/lib/weeklyGoal';
 import { CATEGORY_COLORS } from '@/lib/workoutCategories';
 import type { WorkoutCategory } from '@/lib/workoutCategories';
 import CategoryCover, { categoryHasCover, WORKOUT_COVER_PHOTOS_ENABLED } from '@/components/CategoryCover';
@@ -805,7 +806,7 @@ function PlanWorkoutFlow({ clientId, initialDate, onClose, onDone }: {
                         {WORKOUT_COVER_PHOTOS_ENABLED && w.cover_image_url ? (
                           <Image source={{ uri: w.cover_image_url }} style={StyleSheet.absoluteFill} resizeMode="cover" />
                         ) : categoryHasCover(w.category) ? (
-                          <CategoryCover category={w.category} variant="color" />
+                          <CategoryCover category={w.category} variant="soft" />
                         ) : (
                           <LinearGradient colors={[catColor, '#1a3832']} style={StyleSheet.absoluteFill} />
                         )}
@@ -1492,7 +1493,7 @@ function TrainingTab({
                       {WORKOUT_COVER_PHOTOS_ENABLED && c.coverUrl
                         ? <Image source={{ uri: c.coverUrl }} style={StyleSheet.absoluteFill} resizeMode="cover" />
                         : categoryHasCover(c.category)
-                        ? <CategoryCover category={c.category} variant="color" />
+                        ? <CategoryCover category={c.category} variant="soft" />
                         : <LinearGradient colors={['#2a5448', '#1a3832']} style={StyleSheet.absoluteFill} />}
                       <LinearGradient colors={['transparent', 'rgba(0,0,0,0.5)']} style={StyleSheet.absoluteFill} pointerEvents="none" />
                       <Text style={sectionStyles.wName} numberOfLines={1}>{c.name}</Text>
@@ -1589,7 +1590,7 @@ function TrainingTab({
                 {WORKOUT_COVER_PHOTOS_ENABLED && lastSessionCoverImageUrl ? (
                   <Image source={{ uri: lastSessionCoverImageUrl }} style={StyleSheet.absoluteFill} resizeMode="cover" />
                 ) : categoryHasCover(lastSessionCategory) ? (
-                  <CategoryCover category={lastSessionCategory} variant="color" />
+                  <CategoryCover category={lastSessionCategory} variant="soft" />
                 ) : (
                   <LinearGradient
                     colors={(CATEGORY_GRADIENTS[lastSessionCategory ?? ''] ?? GRADIENT_DEFAULT) as [string, string]}
@@ -2149,7 +2150,7 @@ function WeekStripCard({
                 {WORKOUT_COVER_PHOTOS_ENABLED && session.coverImageUrl ? (
                   <Image source={{ uri: session.coverImageUrl }} style={StyleSheet.absoluteFill} resizeMode="cover" />
                 ) : categoryHasCover(session.category) ? (
-                  <CategoryCover category={session.category} variant="color" />
+                  <CategoryCover category={session.category} variant="soft" />
                 ) : (
                   <LinearGradient colors={['#2a5448', '#1a3832']} style={StyleSheet.absoluteFill} />
                 )}
@@ -2192,7 +2193,7 @@ function WeekStripCard({
                 {WORKOUT_COVER_PHOTOS_ENABLED && detail.coverImageUrl ? (
                   <Image source={{ uri: detail.coverImageUrl }} style={StyleSheet.absoluteFill} resizeMode="cover" />
                 ) : categoryHasCover(detail.category) ? (
-                  <CategoryCover category={detail.category} variant="color" />
+                  <CategoryCover category={detail.category} variant="soft" />
                 ) : (
                   <LinearGradient colors={['#2a5448', '#1a3832']} style={StyleSheet.absoluteFill} />
                 )}
@@ -2246,7 +2247,7 @@ function WeekStripCard({
             <Pressable style={addPopStyles.card} onPress={() => {}}>
               <Text style={addPopStyles.heading}>Add Session</Text>
               <TouchableOpacity style={addPopStyles.option} activeOpacity={0.7}
-                onPress={() => { setNoSessModal(false); router.push(`/(trainer)/workout-builder?clientId=${clientId}` as any); }}>
+                onPress={() => { setNoSessModal(false); router.push(`/(trainer)/workout-builder?clientId=${clientId}&scheduleDate=${selectedDate}` as any); }}>
                 <SymbolView name="square.and.pencil" size={18} tintColor="#244e43" />
                 <Text style={addPopStyles.optionText}>Create new workout</Text>
               </TouchableOpacity>
@@ -3559,10 +3560,57 @@ const avt = StyleSheet.create({
 function WeeklySessionGoalField({ clientId, initialValue }: { clientId: string; initialValue: number | null }) {
   const [value, setValue] = useState<number | null>(initialValue);
 
+  // Setting the goal is effective-dated so it is remembered per week: a CHANGE takes
+  // effect from next week (the current + past weeks keep the previous number); the very
+  // first time a goal is set it applies from this week. See lib/weeklyGoal.ts.
   async function pick(v: number) {
-    const next = value === v ? null : v;
+    const next = value === v ? null : v; // tapping the selected value clears the goal
     setValue(next);
-    await supabase.from('users').update({ weekly_session_goal: next }).eq('id', clientId);
+
+    const mondayCur = mondayOf(new Date());
+    const mondayNext = addDaysStr(mondayCur, 7);
+
+    if (next == null) {
+      await supabase.from('users').update({
+        weekly_session_goal: null,
+        weekly_session_goal_prev: null,
+        weekly_session_goal_effective_from: null,
+      }).eq('id', clientId);
+      return;
+    }
+
+    const { data } = await supabase
+      .from('users')
+      .select('weekly_session_goal, weekly_session_goal_effective_from')
+      .eq('id', clientId)
+      .maybeSingle();
+    const curGoal: number | null = (data as any)?.weekly_session_goal ?? null;
+    const curFrom: string | null = (data as any)?.weekly_session_goal_effective_from ?? null;
+
+    if (curGoal == null) {
+      // First goal ever (or re-set after clearing) → applies from THIS week onward.
+      await supabase.from('users').update({
+        weekly_session_goal: next,
+        weekly_session_goal_prev: null,
+        weekly_session_goal_effective_from: mondayCur,
+      }).eq('id', clientId);
+      return;
+    }
+    if (next === curGoal) return; // no change
+
+    if (curFrom === mondayNext) {
+      // A change was already made this week (pending for next week) — just update the
+      // pending value; keep prev so THIS week still shows the truly-current number.
+      await supabase.from('users').update({ weekly_session_goal: next }).eq('id', clientId);
+    } else {
+      // Changing an established goal → the new value applies from NEXT week; the current
+      // and past weeks keep the previous number.
+      await supabase.from('users').update({
+        weekly_session_goal: next,
+        weekly_session_goal_prev: curGoal,
+        weekly_session_goal_effective_from: mondayNext,
+      }).eq('id', clientId);
+    }
   }
 
   return (
@@ -3581,7 +3629,7 @@ function WeeklySessionGoalField({ clientId, initialValue }: { clientId: string; 
             </TouchableOpacity>
           ))}
         </View>
-        <Text style={wsg.desc}>Total sessions per week including solo training</Text>
+        <Text style={wsg.desc}>Total sessions per week including solo training. Changing the goal takes effect from next week — the current week keeps its number.</Text>
       </View>
     </>
   );
@@ -4216,7 +4264,7 @@ function WorkoutRow({
       {WORKOUT_COVER_PHOTOS_ENABLED && workout.cover_image_url ? (
         <Image source={{ uri: workout.cover_image_url }} style={StyleSheet.absoluteFill} resizeMode="cover" />
       ) : categoryHasCover(workout.category) ? (
-        <CategoryCover category={workout.category} variant="color" />
+        <CategoryCover category={workout.category} variant="soft" />
       ) : (
         <LinearGradient colors={gradColors} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill} />
       )}

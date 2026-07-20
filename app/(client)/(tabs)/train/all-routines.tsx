@@ -22,6 +22,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/context/AuthContext';
 import { CATEGORY_COLORS } from '@/lib/workoutCategories';
+import { resolveWeeklyGoal } from '@/lib/weeklyGoal';
 import type { WorkoutCategory } from '@/lib/workoutCategories';
 import { SessionDetailsSheet } from '@/components/SessionDetailsSheet';
 import { RoutineDetailsSheet } from '@/components/RoutineDetailsSheet';
@@ -67,14 +68,11 @@ async function fetchWeeklyGoal(clientId: string): Promise<{ goal: number | null;
   const weekStart = `${mon.getFullYear()}-${pad(mon.getMonth() + 1)}-${pad(mon.getDate())}`;
   const sun = new Date(mon.getFullYear(), mon.getMonth(), mon.getDate() + 6);
   const weekEnd = `${sun.getFullYear()}-${pad(sun.getMonth() + 1)}-${pad(sun.getDate())}`;
-  const [subRes, userRes, sessRes] = await Promise.all([
-    supabase.from('availability_submissions').select('sessions_wanted').eq('client_id', clientId).eq('week_start', weekStart).maybeSingle(),
-    supabase.from('users').select('weekly_session_goal').eq('id', clientId).maybeSingle(),
+  const [userRes, sessRes] = await Promise.all([
+    supabase.from('users').select('weekly_session_goal, weekly_session_goal_prev, weekly_session_goal_effective_from').eq('id', clientId).maybeSingle(),
     supabase.from('sessions').select('id', { count: 'exact', head: true }).eq('client_id', clientId).eq('status', 'completed').gte('date', weekStart).lte('date', weekEnd),
   ]);
-  const sessionsWanted: number | null = (subRes.data as any)?.sessions_wanted ?? null;
-  const userGoal: number | null = (userRes.data as any)?.weekly_session_goal ?? null;
-  return { goal: sessionsWanted ?? userGoal, completed: sessRes.count ?? 0 };
+  return { goal: resolveWeeklyGoal(userRes.data as any, weekStart), completed: sessRes.count ?? 0 };
 }
 
 async function fetchAllRoutines(clientId: string): Promise<RoutineRow[]> {

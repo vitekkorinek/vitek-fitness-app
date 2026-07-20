@@ -52,14 +52,18 @@ export default function SessionIntroScreen() {
   const hasDate = !!sessionDate;
   const isPast = hasDate && !isPlanned && (sessionDate as string) < todayStr;
   const isLauncher = !hasDate && !isPlanned;
+  // A planned session becomes performable once its day has arrived (today) — or if it
+  // was planned for a day that has already passed (overdue). Only FUTURE planned days
+  // stay view-only. Performing it logs/converts it as of today (see Do Mode).
+  const isPlannedDue = isPlanned && hasDate && (sessionDate as string) <= todayStr;
   // Start is offered only when the client can actually train it now: a fresh launch,
-  // or repeating a past session (which logs a brand-new session dated today).
-  const showStart = isLauncher || isPast;
+  // repeating a past session, or a planned session whose day has come.
+  const showStart = isLauncher || isPast || isPlannedDue;
   // View-only Do Mode header pill:
   //  - 'finished' → completed session (today/past): non-clickable "mm:ss · FINISHED" pill
-  //  - 'start'    → launcher/not-done: clickable "00:00 · Start today" pill (begins logging)
-  //  - 'none'     → planned/future day: no pill (nothing to start yet)
-  const viewMode = isPlanned ? 'none' : hasDate ? 'finished' : 'start';
+  //  - 'start'    → launcher/not-done/planned-due: clickable "00:00 · Start today" pill (begins logging)
+  //  - 'none'     → future planned day: no pill (nothing to start yet)
+  const viewMode = isPlannedDue ? 'start' : isPlanned ? 'none' : hasDate ? 'finished' : 'start';
 
   // Alternating-layers crossfade:
   // Layer 1 is always rendered. Layer 2 sits on top, animated.
@@ -149,13 +153,15 @@ export default function SessionIntroScreen() {
     });
   }, [workoutId, profile?.id]);
 
-  // MERGED_PREVIEW: send launcher taps (any category) straight to the merged Do Mode.
+  // MERGED_PREVIEW: send launcher taps (any category) — and a planned session whose day
+  // has come — straight to the merged Do Mode preview (starting from the preview converts
+  // the scheduled row). Future planned days keep the read-only intro below.
   useEffect(() => {
     if (loading) return;
-    if (MERGED_PREVIEW && isLauncher) {
+    if (MERGED_PREVIEW && (isLauncher || isPlannedDue)) {
       router.replace(`/(client)/workout/${workoutId}` as any);
     }
-  }, [loading, category, isLauncher]);
+  }, [loading, category, isLauncher, isPlannedDue]);
 
   useEffect(() => {
     if (loading) return;
@@ -226,9 +232,9 @@ export default function SessionIntroScreen() {
     return <View style={{ flex: 1, backgroundColor: '#000' }} />;
   }
 
-  // MERGED_PREVIEW: launcher taps (any category) redirect into the merged Do Mode
-  // preview panel (see the redirect effect above). Show black while the replace fires.
-  if (MERGED_PREVIEW && isLauncher) {
+  // MERGED_PREVIEW: launcher taps (any category) + planned-due sessions redirect into the
+  // merged Do Mode preview panel (see the redirect effect above). Black while replace fires.
+  if (MERGED_PREVIEW && (isLauncher || isPlannedDue)) {
     return <View style={{ flex: 1, backgroundColor: '#000' }} />;
   }
 

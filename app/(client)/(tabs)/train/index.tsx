@@ -14,6 +14,7 @@ import { useAuth } from '@/context/AuthContext';
 import { supabase } from '@/lib/supabase';
 import { useSessionStore } from '@/store/sessionStore';
 import { fetchClientTraining } from '@/lib/clientTraining';
+import { resolveWeeklyGoal } from '@/lib/weeklyGoal';
 import { CATEGORY_COLORS } from '@/lib/workoutCategories';
 import type { WorkoutCategory } from '@/lib/workoutCategories';
 import type { ClientTrainingData } from '@/lib/clientTraining';
@@ -519,14 +520,11 @@ export default function TrainTabScreen() {
     if (!profile?.id) return;
     const weekStart = dates[0];
     const weekEnd   = dates[6];
-    const [submissionRes, userRes, completedRes] = await Promise.all([
-      supabase.from('availability_submissions').select('sessions_wanted').eq('client_id', profile.id).eq('week_start', weekStart).maybeSingle(),
-      supabase.from('users').select('weekly_session_goal').eq('id', profile.id).maybeSingle(),
+    const [userRes, completedRes] = await Promise.all([
+      supabase.from('users').select('weekly_session_goal, weekly_session_goal_prev, weekly_session_goal_effective_from').eq('id', profile.id).maybeSingle(),
       supabase.from('sessions').select('id', { count: 'exact', head: true }).eq('client_id', profile.id).eq('status', 'completed').gte('date', weekStart).lte('date', weekEnd),
     ]);
-    const sessionsWanted: number | null = (submissionRes.data as any)?.sessions_wanted ?? null;
-    const userGoal: number | null = (userRes.data as any)?.weekly_session_goal ?? null;
-    setWeeklyGoal(sessionsWanted ?? userGoal);
+    setWeeklyGoal(resolveWeeklyGoal(userRes.data as any, weekStart));
     setWeeklyCompleted(completedRes.count ?? 0);
   }, [profile?.id]);
 
@@ -540,12 +538,11 @@ export default function TrainTabScreen() {
     const dates = getWeekDates(0);
     const weekStart = dates[0];
     const weekEnd   = dates[6];
-    const [submissionRes, userRes, completedRes] = await Promise.all([
-      supabase.from('availability_submissions').select('sessions_wanted').eq('client_id', profile.id).eq('week_start', weekStart).maybeSingle(),
-      supabase.from('users').select('weekly_session_goal').eq('id', profile.id).maybeSingle(),
+    const [userRes, completedRes] = await Promise.all([
+      supabase.from('users').select('weekly_session_goal, weekly_session_goal_prev, weekly_session_goal_effective_from').eq('id', profile.id).maybeSingle(),
       supabase.from('sessions').select('id', { count: 'exact', head: true }).eq('client_id', profile.id).eq('status', 'completed').gte('date', weekStart).lte('date', weekEnd),
     ]);
-    const goal: number | null = (submissionRes.data as any)?.sessions_wanted ?? (userRes.data as any)?.weekly_session_goal ?? null;
+    const goal: number | null = resolveWeeklyGoal(userRes.data as any, weekStart);
     if (goal == null) return;
     const reached = (completedRes.count ?? 0) >= goal;
     const storeKey = `goalCelebrated:${weekStart}`;
@@ -828,7 +825,7 @@ export default function TrainTabScreen() {
                         <LinearGradient colors={['transparent', 'rgba(0,0,0,0.5)']} style={StyleSheet.absoluteFill} pointerEvents="none" />
                       </>
                     ) : categoryHasCover(c.category) ? (
-                      <CategoryCover category={c.category} variant="color" watermarkSize={96} />
+                      <CategoryCover category={c.category} variant="soft" watermarkSize={96} />
                     ) : (
                       <LinearGradient colors={['#2a5448', '#1a3832']} style={StyleSheet.absoluteFill} />
                     )}
@@ -919,7 +916,7 @@ export default function TrainTabScreen() {
                                   {WORKOUT_COVER_PHOTOS_ENABLED && c.coverUrl
                                     ? <Image source={{ uri: c.coverUrl }} style={StyleSheet.absoluteFill} resizeMode="cover" />
                                     : categoryHasCover(c.category)
-                                    ? <CategoryCover category={c.category} variant="color" />
+                                    ? <CategoryCover category={c.category} variant="soft" />
                                     : <LinearGradient colors={['#2a5448', '#1a3832']} style={StyleSheet.absoluteFill} />}
                                 </View>
                                 <Text style={startModalStyles.planName} numberOfLines={1}>{c.name}</Text>
@@ -1575,7 +1572,7 @@ function WeeklyGaugeCard({
                         <LinearGradient colors={['transparent', 'rgba(0,0,0,0.58)']} style={StyleSheet.absoluteFill} pointerEvents="none" />
                       </>
                     ) : categoryHasCover(session.category) ? (
-                      <CategoryCover category={session.category} variant="color" watermarkSize={72} />
+                      <CategoryCover category={session.category} variant="soft" watermarkSize={72} />
                     ) : (
                       <LinearGradient colors={['#2a5448', '#1a3832']} style={StyleSheet.absoluteFill} />
                     )}
@@ -1591,7 +1588,7 @@ function WeeklyGaugeCard({
                   <View style={gcStyles.hlWrap}>
                     <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
                       <Text style={gcStyles.plannedNote}>
-                        {selectedDate === todayStr ? 'Planned for today — tap + to log it' : "Planned — you'll log it on the day"}
+                        {selectedDate === todayStr ? 'Planned for today — tap to start' : "Planned — you'll do it on the day"}
                       </Text>
                       <TouchableOpacity onPress={() => onShowSessionMenu(session)} hitSlop={8} activeOpacity={0.5}>
                         <SymbolView name="ellipsis" size={15} tintColor={MUTED} />
@@ -1617,7 +1614,7 @@ function WeeklyGaugeCard({
                         <LinearGradient colors={['transparent', 'rgba(0,0,0,0.58)']} style={StyleSheet.absoluteFill} pointerEvents="none" />
                       </>
                     ) : categoryHasCover(session.category) ? (
-                      <CategoryCover category={session.category} variant="color" watermarkSize={72} />
+                      <CategoryCover category={session.category} variant="soft" watermarkSize={72} />
                     ) : (
                       <LinearGradient colors={['#2a5448', '#1a3832']} style={StyleSheet.absoluteFill} />
                     )}
@@ -1700,7 +1697,7 @@ function WeeklyGaugeCard({
               {WORKOUT_COVER_PHOTOS_ENABLED && singlePip?.coverImageUrl
                 ? <Image source={{ uri: singlePip.coverImageUrl }} style={StyleSheet.absoluteFill} resizeMode="cover" />
                 : categoryHasCover(singlePip?.category)
-                ? <CategoryCover category={singlePip?.category} variant="color" />
+                ? <CategoryCover category={singlePip?.category} variant="soft" />
                 : <LinearGradient colors={['#2a5448', '#1a3832']} style={StyleSheet.absoluteFill} />
               }
               <LinearGradient colors={['transparent', 'rgba(0,0,0,0.5)']} style={StyleSheet.absoluteFill} pointerEvents="none" />

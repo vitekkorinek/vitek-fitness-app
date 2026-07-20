@@ -2222,8 +2222,41 @@ export default function TrainerWorkoutSessionScreen() {
     const today = new Date().toISOString().split('T')[0];
     // Client may be logging a workout for a day other than today (past week etc.) —
     // honour the date they picked on the Training tab, then clear it.
-    const logDate = useSessionStore.getState().pendingLogDate ?? today;
+    const pendingLogDate = useSessionStore.getState().pendingLogDate;
+    const logDate = pendingLogDate ?? today;
     useSessionStore.getState().clearPendingLogDate();
+
+    // If this workout has a planned (scheduled) session whose day has arrived (date <=
+    // today), performing it should CONVERT that row into this session — so the "PLANNED"
+    // card becomes the completed one instead of leaving a dangling plan + a duplicate.
+    // Only when performing for today (no explicit past-day log via pendingLogDate).
+    if (!isFreeSession && workoutId && !pendingLogDate) {
+      const { data: sched } = await supabase
+        .from('sessions')
+        .select('id')
+        .eq('client_id', clientId)
+        .eq('workout_id', workoutId)
+        .eq('status', 'scheduled')
+        .lte('date', today)
+        .order('date', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (sched) {
+        const { data: upd } = await supabase
+          .from('sessions')
+          .update({ status: 'in_progress', date: logDate })
+          .eq('id', (sched as any).id)
+          .select('id')
+          .single();
+        if (upd) {
+          activeSessionIdRef.current = (upd as any).id;
+          setActiveSessionId((upd as any).id);
+          setBridgeActiveSessionId((upd as any).id);
+          return;
+        }
+      }
+    }
+
     console.log('[session] creating in_progress: workout_id=', workoutId, 'client_id=', clientId, 'date=', logDate);
     const { data, error } = await supabase
       .from('sessions')

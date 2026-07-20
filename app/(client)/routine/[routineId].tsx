@@ -382,7 +382,7 @@ function WorkoutItem({ workout, isDone, onPress, onQuickLook }: {
           {WORKOUT_COVER_PHOTOS_ENABLED && workout.cover_image_url ? (
             <Image source={{ uri: workout.cover_image_url }} style={StyleSheet.absoluteFill} resizeMode="cover" />
           ) : categoryHasCover(workout.category) ? (
-            <CategoryCover category={workout.category} variant="color" />
+            <CategoryCover category={workout.category} variant="soft" />
           ) : (
             <LinearGradient colors={gradColors} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill} />
           )}

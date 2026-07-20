@@ -381,7 +381,7 @@ export default function AddWorkoutToDayScreen() {
                           {WORKOUT_COVER_PHOTOS_ENABLED && w.coverImageUrl ? (
                             <Image source={{ uri: w.coverImageUrl }} style={StyleSheet.absoluteFill} resizeMode="cover" />
                           ) : categoryHasCover(w.category) ? (
-                            <CategoryCover category={w.category} variant="color" />
+                            <CategoryCover category={w.category} variant="soft" />
                           ) : (
                             <LinearGradient
                               colors={[catColors?.border ?? '#2a4a3e', '#1a3832']}
@@ -439,7 +439,7 @@ export default function AddWorkoutToDayScreen() {
                           {WORKOUT_COVER_PHOTOS_ENABLED && t.coverImageUrl ? (
                             <Image source={{ uri: t.coverImageUrl }} style={StyleSheet.absoluteFill} resizeMode="cover" />
                           ) : categoryHasCover(t.category) ? (
-                            <CategoryCover category={t.category} variant="color" />
+                            <CategoryCover category={t.category} variant="soft" />
                           ) : (
                             <LinearGradient
                               colors={[catColors?.border ?? '#2a4a3e', '#1a3832']}

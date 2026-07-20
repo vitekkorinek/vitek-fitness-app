@@ -2074,6 +2074,37 @@ export default function TrainerWorkoutSessionScreen() {
   const createInProgressSession = async () => {
     if (activeSessionIdRef.current) return;
     const today = new Date().toISOString().split('T')[0];
+
+    // If this workout has a planned (scheduled) session whose day has arrived (date <=
+    // today), performing it CONVERTS that row into this session — so the planned card
+    // becomes the completed one instead of leaving a dangling plan + a duplicate.
+    if (!isFreeSession && workoutId) {
+      const { data: sched } = await supabase
+        .from('sessions')
+        .select('id')
+        .eq('client_id', clientId)
+        .eq('workout_id', workoutId)
+        .eq('status', 'scheduled')
+        .lte('date', today)
+        .order('date', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (sched) {
+        const { data: upd } = await supabase
+          .from('sessions')
+          .update({ status: 'in_progress', date: today })
+          .eq('id', (sched as any).id)
+          .select('id')
+          .single();
+        if (upd) {
+          activeSessionIdRef.current = (upd as any).id;
+          setActiveSessionId((upd as any).id);
+          setBridgeActiveSessionId((upd as any).id);
+          return;
+        }
+      }
+    }
+
     console.log('[session] creating in_progress: workout_id=', workoutId, 'client_id=', clientId, 'date=', today);
     const { data, error } = await supabase
       .from('sessions')
