@@ -153,15 +153,18 @@ export default function SessionIntroScreen() {
     });
   }, [workoutId, profile?.id]);
 
-  // MERGED_PREVIEW: send launcher taps (any category) — and a planned session whose day
-  // has come — straight to the merged Do Mode preview (starting from the preview converts
-  // the scheduled row). Future planned days keep the read-only intro below.
+  // MERGED_PREVIEW: send launcher taps (any category) AND every planned session straight
+  // to the merged Do Mode preview. A planned-DUE session opens a normal (startable) preview
+  // — starting from it converts the scheduled row. A FUTURE planned session opens the same
+  // preview LOCKED (previewLocked=1): the client can review the exercises but there is no
+  // start affordance yet (it isn't its day).
   useEffect(() => {
     if (loading) return;
-    if (MERGED_PREVIEW && (isLauncher || isPlannedDue)) {
-      router.replace(`/(client)/workout/${workoutId}` as any);
+    if (MERGED_PREVIEW && (isLauncher || isPlanned)) {
+      const suffix = isPlanned && !isPlannedDue ? `?previewLocked=1&plannedDate=${sessionDate}` : '';
+      router.replace(`/(client)/workout/${workoutId}${suffix}` as any);
     }
-  }, [loading, category, isLauncher, isPlannedDue]);
+  }, [loading, category, isLauncher, isPlanned, isPlannedDue, sessionDate]);
 
   useEffect(() => {
     if (loading) return;
@@ -232,9 +235,9 @@ export default function SessionIntroScreen() {
     return <View style={{ flex: 1, backgroundColor: '#000' }} />;
   }
 
-  // MERGED_PREVIEW: launcher taps (any category) + planned-due sessions redirect into the
+  // MERGED_PREVIEW: launcher taps (any category) + ALL planned sessions redirect into the
   // merged Do Mode preview panel (see the redirect effect above). Black while replace fires.
-  if (MERGED_PREVIEW && (isLauncher || isPlannedDue)) {
+  if (MERGED_PREVIEW && (isLauncher || isPlanned)) {
     return <View style={{ flex: 1, backgroundColor: '#000' }} />;
   }
 

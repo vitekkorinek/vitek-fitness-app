@@ -517,7 +517,10 @@ export default function TrainerWorkoutSessionScreen() {
   const PREVIEW_PEEK = PREVIEW_HANDLE_CONTENT + PREVIEW_LANDING_GAP; // visible sliver while parked (no card)
   const PREVIEW_PARK = SCREEN_HEIGHT - PREVIEW_PEEK - HEADER_MAX; // panel translateY when parked
 
-  const { workoutId, autoStart, resumeSessionId, resumeStartedAt, viewOnly, viewMode } = useLocalSearchParams<{ workoutId: string; autoStart?: string; resumeSessionId?: string; resumeStartedAt?: string; viewOnly?: string; viewMode?: string }>();
+  const { workoutId, autoStart, resumeSessionId, resumeStartedAt, viewOnly, viewMode, previewLocked, plannedDate } = useLocalSearchParams<{ workoutId: string; autoStart?: string; resumeSessionId?: string; resumeStartedAt?: string; viewOnly?: string; viewMode?: string; previewLocked?: string; plannedDate?: string }>();
+  // previewLocked=1 → a FUTURE planned session: show the merged preview (read-only, review
+  // its exercises) but with NO start affordance — it isn't its day yet.
+  const isPreviewLocked = previewLocked === '1';
   const isViewOnly = viewOnly === '1';
   // View-only is always read-only (never startable — Start is only ever the "Start session
   // today" button on the pre-session screen). Header pill: a completed session shows a
@@ -3152,7 +3155,7 @@ export default function TrainerWorkoutSessionScreen() {
       )}
       <Text style={styles.combinedPillFinishText}>FINISHED</Text>
     </GlassPill>
-  ) : isViewOnly ? null : (
+  ) : isViewOnly || isPreviewLocked ? null : (
     <GlassPill onPress={handleStartPress}>
       <Text style={styles.combinedPillTimerText}>{formatTimer(elapsed)}</Text>
       <View style={styles.combinedPillSep} />
@@ -3331,10 +3334,19 @@ export default function TrainerWorkoutSessionScreen() {
               <View style={styles.previewHandlePill} />
               <Text style={styles.previewHandleHint}>{previewPhase === 'landing' ? 'Pull up to review' : 'Drag down to collapse'}</Text>
             </View>
-            <TouchableOpacity style={styles.previewStartBtn} onPress={startFromPreview} activeOpacity={0.85}>
-              <SymbolView name="play.fill" size={15} tintColor="#fff" />
-              <Text style={styles.previewStartText}>Start session</Text>
-            </TouchableOpacity>
+            {isPreviewLocked ? (
+              <View style={styles.previewPlannedPill}>
+                <SymbolView name="calendar" size={15} tintColor="#999" />
+                <Text style={styles.previewPlannedText}>
+                  {plannedDate ? `Planned for ${new Date(plannedDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}` : 'Planned'}
+                </Text>
+              </View>
+            ) : (
+              <TouchableOpacity style={styles.previewStartBtn} onPress={startFromPreview} activeOpacity={0.85}>
+                <SymbolView name="play.fill" size={15} tintColor="#fff" />
+                <Text style={styles.previewStartText}>Start session</Text>
+              </TouchableOpacity>
+            )}
           </Animated.View>
         )}
         <KeyboardAvoidingView style={{ flex: 1 }} behavior={undefined}>
@@ -6595,6 +6607,8 @@ const styles = StyleSheet.create({
   kbdDoneText: { color: '#24ac88', fontSize: 16, fontWeight: '700' },
   previewStartBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: '#24ac88', borderRadius: 100, paddingVertical: 15, marginTop: 14, marginHorizontal: 16, alignSelf: 'stretch' },
   previewStartText: { color: '#fff', fontWeight: '700', fontSize: 16 },
+  previewPlannedPill: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: '#f0f0ee', borderRadius: 100, paddingVertical: 15, marginTop: 14, marginHorizontal: 16, alignSelf: 'stretch' },
+  previewPlannedText: { color: '#999', fontWeight: '700', fontSize: 15 },
   previewChrome: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 11 },
   previewTopBar: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12 },
   previewTitleBlock: { position: 'absolute', left: 0, right: 0, paddingHorizontal: 20 },
