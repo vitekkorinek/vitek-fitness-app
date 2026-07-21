@@ -388,7 +388,6 @@ export default function GroceryListScreen() {
       </Modal>
 
       <LightHeader
-        plain
         left={<HeaderIcon onPress={() => smartBack(router)}><SymbolView name="chevron.left" size={24} tintColor={HEADER_ICON} weight="semibold" /></HeaderIcon>}
         title="Grocery List"
         right={<HeaderIcon onPress={() => router.navigate('/(client)' as any)}><VFIcon size={26} color={HEADER_ICON} /></HeaderIcon>}

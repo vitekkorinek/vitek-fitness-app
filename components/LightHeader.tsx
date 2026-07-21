@@ -24,11 +24,19 @@ const BG    = '#faf9f7';
 const TEXT   = '#1a1a1a';
 export const HEADER_ICON = '#244e43'; // brand green — use for header glyphs
 
-// Glass-header tint colour. A faint MINT (not the off-white BG) so the see-through
-// header carries a whisper of brand green for character, while staying light enough
-// to keep the dark-green glyphs + title legible over any content. Tune the green
-// here; the dark-green tint was rejected (kills contrast with the dark glyphs).
-const TINT = '150,201,178'; // light mint rgb — was '250,249,247' (off-white)
+/**
+ * Tint variant. `false` (current) = NEUTRAL off-white wash, the same on every
+ * screen — Vitek's July-2026 call after A/B-ing it against the mint.
+ * Flip to `true` to bring back the faint MINT brand wash (long tail below the nav
+ * row, `TINT` + `TINT_DROP`). That's the whole revert — nothing else to change.
+ * Last commit where the mint shipped: `4edf75e`.
+ */
+const GREEN_TINT = false;
+
+// Mint wash colour (only used when GREEN_TINT). A faint mint so the see-through
+// header carries a whisper of brand green while staying light enough to keep the
+// dark-green glyphs + title legible. Dark-green was rejected (kills contrast).
+const TINT = '150,201,178'; // light mint rgb
 
 export const HEADER_ROW_HEIGHT = 58;
 // Strip BELOW the nav row over which the blur + tint smoothly RAMP TO ZERO (via a
@@ -49,7 +57,7 @@ export function useHeaderHeight() {
 }
 
 export function LightHeader({
-  left, title, right, overlay, solid, plain,
+  left, title, right, overlay, solid,
 }: {
   left?: ReactNode;
   title: string;
@@ -59,10 +67,6 @@ export function LightHeader({
    *  it instead of ghosting through the blur. Use when dense content scrolls under
    *  the header and the translucent look reads as messy. */
   solid?: boolean;
-  /** Neutral (off-white) tint instead of the green mint wash — the original
-   *  see-through look. Used on the nutrition screens for an A/B comparison with the
-   *  green-tinted main tabs. */
-  plain?: boolean;
 }) {
   const insets = useSafeAreaInsets();
   const rowBottom = insets.top + HEADER_ROW_HEIGHT;
@@ -116,13 +120,13 @@ export function LightHeader({
         </MaskedView>
       </View>
       {/* Tint — its OWN gradient rendered ON TOP of the blur (so the light frost
-          doesn't wash it out). Two variants for an A/B test:
-          • GREEN (default): a mint wash with a LONG tail extending BELOW the nav row
-            (TINT_DROP) so the colour dissolves gently into the page, not cutting off
-            at the title. Not clipped to the header, not masked with the blur.
-          • PLAIN (`plain`): the original neutral off-white tint, short fade within the
-            header only (for legibility, no colour character) — the see-through look. */}
-      {plain ? (
+          doesn't wash it out). Driven by GREEN_TINT above:
+          • NEUTRAL (current): off-white tint, short fade within the header only — for
+            legibility, no colour character. The see-through look, same app-wide.
+          • MINT (GREEN_TINT=true): a green wash with a LONG tail extending BELOW the
+            nav row (TINT_DROP) so the colour dissolves gently into the page rather
+            than cutting off at the title. Not clipped, not masked with the blur. */}
+      {!GREEN_TINT ? (
         <LinearGradient
           pointerEvents="none"
           colors={['rgba(250,249,247,0.7)', 'rgba(250,249,247,0.34)', 'rgba(250,249,247,0)']}

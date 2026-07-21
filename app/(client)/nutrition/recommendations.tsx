@@ -152,7 +152,6 @@ export default function RecommendationsScreen() {
       )}
 
       <LightHeader
-        plain
         left={<HeaderIcon onPress={() => smartBack(router)}><SymbolView name="chevron.left" size={24} tintColor={HEADER_ICON} weight="semibold" /></HeaderIcon>}
         title="Recommendations"
         right={<HeaderIcon onPress={() => router.navigate('/(client)' as any)}><VFIcon size={26} color={HEADER_ICON} /></HeaderIcon>}

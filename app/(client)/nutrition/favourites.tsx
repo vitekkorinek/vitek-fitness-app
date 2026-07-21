@@ -1526,7 +1526,6 @@ export default function FavouritesScreen() {
 
       {/* Glass header */}
       <LightHeader
-        plain
         left={
           <HeaderIcon
             onPress={() => {
