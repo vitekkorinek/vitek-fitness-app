@@ -26,7 +26,8 @@ import { SessionDetailsSheet } from '@/components/SessionDetailsSheet';
 import { BottomSheet } from '@/components/BottomSheet';
 import { CATEGORY_COLORS } from '@/lib/workoutCategories';
 import type { WorkoutCategory } from '@/lib/workoutCategories';
-import CategoryCover, { categoryHasCover, WORKOUT_COVER_PHOTOS_ENABLED } from '@/components/CategoryCover';
+import WorkoutPaperCover from '@/components/WorkoutPaperCover';
+import { fetchExerciseNames } from '@/lib/exerciseNames';
 import type { Routine } from '@/types/database';
 
 type RoutineWorkout = {
@@ -36,6 +37,7 @@ type RoutineWorkout = {
   category: string | null;
   cover_image_url: string | null;
   lastSessionDate: string | null;
+  exerciseNames: string[];
 };
 
 type TemplateRow = {
@@ -62,6 +64,7 @@ async function fetchRoutineDetail(routineId: string, clientId: string): Promise<
   }
 
   const workoutIds = (workoutData as any[]).map(w => w.id);
+  const exerciseMap = await fetchExerciseNames(workoutIds);
   const { data: sessionsData } = await supabase
     .from('sessions')
     .select('workout_id, date, created_at')
@@ -96,6 +99,7 @@ async function fetchRoutineDetail(routineId: string, clientId: string): Promise<
       category: w.category ?? null,
       cover_image_url: w.cover_image_url ?? null,
       lastSessionDate: lastDateMap.get(w.id) ?? null,
+      exerciseNames: exerciseMap.get(w.id) ?? [],
     })),
     currentCycleDone,
     cycleJustCompleted,
@@ -799,37 +803,20 @@ function WorkoutItem({
   return (
     <TouchableOpacity style={coverCardStyles.card} onPress={onPress} activeOpacity={0.92}>
       <View style={coverCardStyles.cardInner}>
-        <View style={coverCardStyles.cover}>
-          {WORKOUT_COVER_PHOTOS_ENABLED && workout.cover_image_url ? (
-            <Image source={{ uri: workout.cover_image_url }} style={StyleSheet.absoluteFill} resizeMode="cover" />
-          ) : categoryHasCover(workout.category) ? (
-            <CategoryCover category={workout.category} variant="soft" />
-          ) : (
-            <LinearGradient colors={gradColors} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill} />
-          )}
-          <LinearGradient
-            colors={['transparent', 'rgba(0,0,0,0.1)', 'rgba(0,0,0,0.6)']}
-            start={{ x: 0.5, y: 0 }}
-            end={{ x: 0.5, y: 1 }}
-            style={StyleSheet.absoluteFill}
-            pointerEvents="none"
-          />
-          {isDone && (
-            <View style={coverCardStyles.doneBadge}>
-              <SymbolView name="checkmark" size={9} tintColor="#fff" />
-            </View>
-          )}
-          <View style={coverCardStyles.coverBottom}>
-            <Text style={coverCardStyles.itemName} numberOfLines={1}>{workout.name}</Text>
-            {catColors && (
-              <View style={[coverCardStyles.catPill, { backgroundColor: catColors.border }]}>
-                <Text style={coverCardStyles.catPillText}>{workout.category}</Text>
-              </View>
-            )}
-          </View>
-        </View>
+        <WorkoutPaperCover category={workout.category} exerciseNames={workout.exerciseNames} />
+        {/* Name demoted from the cover to the footer — the exercises are the content now. */}
         <View style={coverCardStyles.footer}>
-          <Text style={coverCardStyles.footerSub} numberOfLines={1}>{lastDoneText}</Text>
+          <View style={coverCardStyles.footerLeft}>
+            <View style={coverCardStyles.nameRow}>
+              <Text style={coverCardStyles.itemName} numberOfLines={1}>{workout.name}</Text>
+              {isDone && (
+                <View style={coverCardStyles.doneBadge}>
+                  <SymbolView name="checkmark" size={9} tintColor="#fff" />
+                </View>
+              )}
+            </View>
+            <Text style={coverCardStyles.footerSub} numberOfLines={1}>{lastDoneText}</Text>
+          </View>
           <TouchableOpacity style={coverCardStyles.footerMenuBtn} onPress={onMenuPress} hitSlop={8} activeOpacity={0.5}>
             <SymbolView name="ellipsis" size={16} tintColor="#999" />
           </TouchableOpacity>
@@ -1034,26 +1021,17 @@ const coverCardStyles = StyleSheet.create({
     shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.08, shadowRadius: 6, elevation: 3,
   },
   cardInner: { borderRadius: 14, overflow: 'hidden', backgroundColor: '#fff' },
-  cover: { height: 94, overflow: 'hidden' },
   menuBtn: { position: 'absolute', top: 9, right: 10 },
-  coverBottom: {
-    position: 'absolute', bottom: 0, left: 0, right: 0,
-    flexDirection: 'row', alignItems: 'flex-end',
-    paddingHorizontal: 10, paddingBottom: 8, gap: 8,
-  },
-  footer: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 10, paddingVertical: 9, gap: 8, backgroundColor: '#fff' },
-  footerSub: { flex: 1, fontSize: 12, color: '#888' },
+  footer: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 6, gap: 8, backgroundColor: '#fff' },
+  footerLeft: { flex: 1 },
+  footerSub: { fontSize: 11, color: '#999' },
   footerMenuBtn: { padding: 4 },
-  itemName: { flex: 1, fontSize: 14, fontWeight: '600', color: '#ffffff' },
+  nameRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  itemName: { fontSize: 15, fontWeight: '700', color: '#1a1a1a', flexShrink: 1 },
   itemSub: { fontSize: 10, color: 'rgba(255,255,255,0.65)' },
-  catPill: {
-    borderRadius: 100, paddingHorizontal: 8, paddingVertical: 3, flexShrink: 0,
-  },
-  catPillText: { fontSize: 9, fontWeight: '700', color: '#ffffff' },
   doneBadge: {
-    position: 'absolute', top: 8, right: 8,
-    width: 18, height: 18, borderRadius: 9,
-    backgroundColor: ACCENT,
+    width: 16, height: 16, borderRadius: 8,
+    backgroundColor: ACCENT, flexShrink: 0,
     alignItems: 'center', justifyContent: 'center',
   },
 });

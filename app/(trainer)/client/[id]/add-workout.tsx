@@ -19,7 +19,8 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/context/AuthContext';
 import { CATEGORY_OPTIONS, CATEGORY_COLORS } from '@/lib/workoutCategories';
 import type { WorkoutCategory } from '@/lib/workoutCategories';
-import CategoryCover, { categoryHasCover, WORKOUT_COVER_PHOTOS_ENABLED } from '@/components/CategoryCover';
+import WorkoutPaperCover from '@/components/WorkoutPaperCover';
+import { fetchExerciseNames, fetchTemplateExerciseNames } from '@/lib/exerciseNames';
 
 const HEADER = '#244e43';
 const ACCENT = '#24ac88';
@@ -39,6 +40,7 @@ type PickerWorkout = {
   clientName: string;
   lastSessionDate: string | null;
   createdAt: string;
+  exerciseNames: string[];
 };
 
 type PickerTemplate = {
@@ -47,6 +49,7 @@ type PickerTemplate = {
   category: string | null;
   coverImageUrl: string | null;
   exerciseCount: number;
+  exerciseNames: string[];
   createdAt: string;
 };
 
@@ -78,12 +81,15 @@ async function fetchAllWorkouts(trainerId: string): Promise<PickerWorkout[]> {
   if (!wRows?.length) return [];
 
   const workoutIds = (wRows as any[]).map(w => w.id);
-  const { data: sessions } = await supabase
-    .from('sessions')
-    .select('workout_id, date')
-    .in('workout_id', workoutIds)
-    .eq('status', 'completed')
-    .order('date', { ascending: false });
+  const [{ data: sessions }, exerciseMap] = await Promise.all([
+    supabase
+      .from('sessions')
+      .select('workout_id, date')
+      .in('workout_id', workoutIds)
+      .eq('status', 'completed')
+      .order('date', { ascending: false }),
+    fetchExerciseNames(workoutIds),
+  ]);
 
   const lastDateMap = new Map<string, string>();
   (sessions ?? []).forEach((s: any) => {
@@ -98,6 +104,7 @@ async function fetchAllWorkouts(trainerId: string): Promise<PickerWorkout[]> {
     clientId: w.client_id,
     clientName: (w.users as any)?.name ?? 'Unknown',
     lastSessionDate: lastDateMap.get(w.id) ?? null,
+    exerciseNames: exerciseMap.get(w.id) ?? [],
     createdAt: w.created_at,
   }));
 }
@@ -112,19 +119,16 @@ async function fetchTemplates(trainerId: string): Promise<PickerTemplate[]> {
   if (!tRows?.length) return [];
 
   const ids = (tRows as any[]).map(t => t.id);
-  const { data: teRows } = await supabase
-    .from('template_exercises')
-    .select('template_id')
-    .in('template_id', ids);
-  const countMap = new Map<string, number>();
-  (teRows ?? []).forEach((te: any) => countMap.set(te.template_id, (countMap.get(te.template_id) ?? 0) + 1));
+  // One query covers both the count and the cover's exercise list.
+  const nameMap = await fetchTemplateExerciseNames(ids);
 
   return (tRows as any[]).map(t => ({
     id: t.id,
     name: t.name,
     category: t.category ?? null,
     coverImageUrl: t.cover_image_url ?? null,
-    exerciseCount: countMap.get(t.id) ?? 0,
+    exerciseCount: (nameMap.get(t.id) ?? []).length,
+    exerciseNames: nameMap.get(t.id) ?? [],
     createdAt: t.created_at,
   }));
 }
@@ -377,36 +381,16 @@ export default function AddWorkoutToDayScreen() {
                       activeOpacity={0.9}
                     >
                       <View style={styles.cardInner}>
-                        <View style={styles.cover}>
-                          {WORKOUT_COVER_PHOTOS_ENABLED && w.coverImageUrl ? (
-                            <Image source={{ uri: w.coverImageUrl }} style={StyleSheet.absoluteFill} resizeMode="cover" />
-                          ) : categoryHasCover(w.category) ? (
-                            <CategoryCover category={w.category} variant="soft" />
-                          ) : (
-                            <LinearGradient
-                              colors={[catColors?.border ?? '#2a4a3e', '#1a3832']}
-                              style={StyleSheet.absoluteFill}
-                            />
-                          )}
-                          <View style={styles.cardScrim} />
+                        <WorkoutPaperCover category={w.category} exerciseNames={w.exerciseNames}>
                           {!!clientFirstName && (
                             <View style={styles.clientPill}>
                               <SymbolView name="person.fill" size={9} tintColor="#fff" />
                               <Text style={styles.clientPillText}>{clientFirstName}</Text>
                             </View>
                           )}
-                          <View style={styles.cardBottom}>
-                            <View style={styles.cardBottomLeft}>
-                              <Text style={styles.cardName} numberOfLines={1}>{w.name}</Text>
-                            </View>
-                            {catColors && (
-                              <View style={[styles.catPill, { backgroundColor: catColors.border }]}>
-                                <Text style={styles.catPillText}>{w.category}</Text>
-                              </View>
-                            )}
-                          </View>
-                        </View>
+                        </WorkoutPaperCover>
                         <View style={styles.footer}>
+                          <Text style={styles.cardName} numberOfLines={1}>{w.name}</Text>
                           <Text style={styles.footerSub} numberOfLines={1}>{subtitle}</Text>
                         </View>
                       </View>
@@ -435,33 +419,13 @@ export default function AddWorkoutToDayScreen() {
                       activeOpacity={0.9}
                     >
                       <View style={styles.cardInner}>
-                        <View style={styles.cover}>
-                          {WORKOUT_COVER_PHOTOS_ENABLED && t.coverImageUrl ? (
-                            <Image source={{ uri: t.coverImageUrl }} style={StyleSheet.absoluteFill} resizeMode="cover" />
-                          ) : categoryHasCover(t.category) ? (
-                            <CategoryCover category={t.category} variant="soft" />
-                          ) : (
-                            <LinearGradient
-                              colors={[catColors?.border ?? '#2a4a3e', '#1a3832']}
-                              style={StyleSheet.absoluteFill}
-                            />
-                          )}
-                          <View style={styles.cardScrim} />
+                        <WorkoutPaperCover category={t.category} exerciseNames={t.exerciseNames}>
                           <View style={styles.templateBadge}>
                             <Text style={styles.templateBadgeText}>TEMPLATE</Text>
                           </View>
-                          <View style={styles.cardBottom}>
-                            <View style={styles.cardBottomLeft}>
-                              <Text style={styles.cardName} numberOfLines={1}>{t.name}</Text>
-                            </View>
-                            {catColors && (
-                              <View style={[styles.catPill, { backgroundColor: catColors.border }]}>
-                                <Text style={styles.catPillText}>{t.category}</Text>
-                              </View>
-                            )}
-                          </View>
-                        </View>
+                        </WorkoutPaperCover>
                         <View style={styles.footer}>
+                          <Text style={styles.cardName} numberOfLines={1}>{t.name}</Text>
                           <Text style={styles.footerSub} numberOfLines={1}>
                             {t.exerciseCount} {t.exerciseCount === 1 ? 'exercise' : 'exercises'}
                           </Text>
@@ -546,23 +510,10 @@ const styles = StyleSheet.create({
     shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.08, shadowRadius: 6, elevation: 3,
   },
   cardInner: { borderRadius: 14, overflow: 'hidden', backgroundColor: '#fff' },
-  cover: { height: 94, overflow: 'hidden', backgroundColor: '#2a4a3e' },
-  footer: { paddingHorizontal: 10, paddingVertical: 9, backgroundColor: '#fff' },
-  footerSub: { fontSize: 12, color: '#888' },
-  cardScrim: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0,0,0,0.28)',
-  },
-  cardBottom: {
-    position: 'absolute', left: 0, right: 0, bottom: 0,
-    flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between',
-    padding: 10, gap: 8,
-  },
-  cardBottomLeft: { flex: 1 },
-  cardName: { fontSize: 14, fontWeight: '600', color: '#fff' },
+  footer: { paddingHorizontal: 12, paddingVertical: 6, backgroundColor: '#fff' },
+  footerSub: { fontSize: 11, color: '#999' },
+  cardName: { fontSize: 15, fontWeight: '700', color: '#1a1a1a' },
   cardSub: { fontSize: 10, color: 'rgba(255,255,255,0.65)', marginTop: 2 },
-  catPill: { borderRadius: 100, paddingHorizontal: 8, paddingVertical: 3 },
-  catPillText: { fontSize: 9, fontWeight: '700', color: '#fff' },
   templateBadge: {
     position: 'absolute', top: 8, left: 8,
     backgroundColor: 'rgba(0,0,0,0.55)', borderRadius: 100,

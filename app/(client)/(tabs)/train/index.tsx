@@ -25,6 +25,8 @@ import { SessionDetailsSheet } from '@/components/SessionDetailsSheet';
 import { RoutineDetailsSheet } from '@/components/RoutineDetailsSheet';
 import type { RoutineWorkoutPick } from '@/components/RoutineDetailsSheet';
 import CategoryCover, { categoryHasCover, WORKOUT_COVER_PHOTOS_ENABLED } from '@/components/CategoryCover';
+import WorkoutPaperCover from '@/components/WorkoutPaperCover';
+import { fetchExerciseNames } from '@/lib/exerciseNames';
 
 const BG     = '#faf9f7';
 const CARD   = '#ffffff';
@@ -165,6 +167,7 @@ type WeekSession = {
   coverImageUrl: string | null;
   category: string | null;
   status: 'completed' | 'scheduled';
+  exerciseNames: string[];
 };
 
 type ExerciseRow = { name: string; weId: string; done: boolean; currentMax: number; prevMax: number | null };
@@ -179,6 +182,7 @@ type WorkoutCard = {
   category: string | null;
   routineName: string | null;
   lastDoneDate: string | null;
+  exerciseNames: string[];
 };
 
 type RoutineWorkoutItem = {
@@ -326,6 +330,9 @@ export default function TrainTabScreen() {
       .in('status', ['completed', 'scheduled'])
       .gte('date', dates[0])
       .lte('date', dates[6]);
+    const exMap = await fetchExerciseNames(
+      Array.from(new Set((data ?? []).map((s: any) => s.workout_id).filter(Boolean)))
+    );
     setWeekSessions((data ?? []).map((s: any) => ({
       id: s.id,
       date: s.date,
@@ -336,6 +343,7 @@ export default function TrainTabScreen() {
       coverImageUrl: s.workouts?.cover_image_url ?? null,
       category: s.workouts?.category ?? null,
       status: s.status,
+      exerciseNames: s.workout_id ? (exMap.get(s.workout_id) ?? []) : [],
     })));
   }, [profile?.id]);
 
@@ -362,8 +370,11 @@ export default function TrainTabScreen() {
       if (s.workout_id && !lastDone.has(s.workout_id)) lastDone.set(s.workout_id, s.date);
     }
 
-    const cards: WorkoutCard[] = ((wData ?? []) as any[])
-      .filter(w => !w.category || !STRETCHING_CATS.includes(w.category))
+    const visible = ((wData ?? []) as any[])
+      .filter(w => !w.category || !STRETCHING_CATS.includes(w.category));
+    const exMap = await fetchExerciseNames(visible.map(w => w.id));
+
+    const cards: WorkoutCard[] = visible
       .map(w => ({
         id: w.id,
         name: w.name,
@@ -371,6 +382,7 @@ export default function TrainTabScreen() {
         category: w.category ?? null,
         routineName: w.routines?.name ?? null,
         lastDoneDate: lastDone.get(w.id) ?? null,
+        exerciseNames: exMap.get(w.id) ?? [],
       }));
 
     // Most recently done first; never-done fall to the end (kept in created-desc order).
@@ -818,37 +830,19 @@ export default function TrainTabScreen() {
                 onPress={() => router.push(`/(client)/workout/session-intro?workoutId=${c.id}` as any)}
               >
                 <View style={sectionStyles.wCard}>
-                  <View style={sectionStyles.wCover}>
-                    {WORKOUT_COVER_PHOTOS_ENABLED && c.coverUrl ? (
-                      <>
-                        <Image source={{ uri: c.coverUrl }} style={StyleSheet.absoluteFill} resizeMode="cover" />
-                        <LinearGradient colors={['transparent', 'rgba(0,0,0,0.5)']} style={StyleSheet.absoluteFill} pointerEvents="none" />
-                      </>
-                    ) : categoryHasCover(c.category) ? (
-                      <CategoryCover category={c.category} variant="soft" watermarkSize={96} />
-                    ) : (
-                      <LinearGradient colors={['#2a5448', '#1a3832']} style={StyleSheet.absoluteFill} />
-                    )}
-                    <Text style={sectionStyles.wName} numberOfLines={1}>{c.name}</Text>
-                    {c.category && (
-                      <View style={[sectionStyles.wCatPill, { backgroundColor: CATEGORY_COLORS[c.category as WorkoutCategory]?.border ?? ACCENT }]}>
-                        <Text style={sectionStyles.wCatPillText}>{c.category}</Text>
-                      </View>
-                    )}
-                  </View>
+                  <WorkoutPaperCover category={c.category} exerciseNames={c.exerciseNames} size="mini" />
                   <View style={sectionStyles.wBody}>
+                    {/* Name + ONE sub line, same shape as the full card's footer — the
+                        routine used to be its own row, which made cards with a routine a
+                        line taller than those without. */}
                     <View style={{ flex: 1 }}>
-                      {c.routineName && (
-                        <View style={sectionStyles.wRoutineRow}>
-                          <RoutineIcon size={12} />
-                          <Text style={sectionStyles.wSub} numberOfLines={1}>{c.routineName}</Text>
-                        </View>
-                      )}
-                      {c.lastDoneDate ? (
-                        <Text style={[sectionStyles.wStatus, { color: ACCENT }]}>Done {formatShortDate(c.lastDoneDate)}</Text>
-                      ) : (
-                        <Text style={[sectionStyles.wStatus, { color: '#bbb' }]}>Never done</Text>
-                      )}
+                      <Text style={sectionStyles.wName} numberOfLines={1}>{c.name}</Text>
+                      <Text style={sectionStyles.wStatus} numberOfLines={1}>
+                        <Text style={{ color: c.lastDoneDate ? ACCENT : '#bbb' }}>
+                          {c.lastDoneDate ? `Done ${formatShortDate(c.lastDoneDate)}` : 'Never done'}
+                        </Text>
+                        {!!c.routineName && <Text style={sectionStyles.wSub}> · {c.routineName}</Text>}
+                      </Text>
                     </View>
                     <TouchableOpacity style={sectionStyles.wFooterMenuBtn} hitSlop={8} activeOpacity={0.6} onPress={() => openWorkoutDetails(c)}>
                       <SymbolView name="ellipsis" size={16} tintColor="#999" />
@@ -1564,32 +1558,17 @@ function WeeklyGaugeCard({
                   <TouchableOpacity
                     activeOpacity={0.88}
                     onPress={() => session.workout_id && onOpenSession(session.workout_id, { date: selectedDate, planned: true })}
-                    style={{ height: 62 }}
                   >
-                    {WORKOUT_COVER_PHOTOS_ENABLED && session.coverImageUrl ? (
-                      <>
-                        <Image source={{ uri: session.coverImageUrl }} style={StyleSheet.absoluteFill} resizeMode="cover" />
-                        <LinearGradient colors={['transparent', 'rgba(0,0,0,0.58)']} style={StyleSheet.absoluteFill} pointerEvents="none" />
-                      </>
-                    ) : categoryHasCover(session.category) ? (
-                      <CategoryCover category={session.category} variant="soft" watermarkSize={72} />
-                    ) : (
-                      <LinearGradient colors={['#2a5448', '#1a3832']} style={StyleSheet.absoluteFill} />
-                    )}
-                    <View style={gcStyles.plannedBadge}><Text style={gcStyles.plannedBadgeText}>PLANNED</Text></View>
-                    <Text style={gcStyles.sessName} numberOfLines={1}>{session.workoutName ?? 'Session'}</Text>
-                    <Text style={gcStyles.sessDate}>{formatShortDate(selectedDate)}</Text>
-                    {session.category && (
-                      <View style={[gcStyles.sessCatPill, { backgroundColor: CATEGORY_COLORS[session.category as WorkoutCategory]?.border ?? ACCENT }]}>
-                        <Text style={gcStyles.sessCatPillText}>{session.category}</Text>
-                      </View>
-                    )}
+                    <WorkoutPaperCover
+                      category={session.category}
+                      exerciseNames={session.exerciseNames}
+                      size="strip"
+                    />
                   </TouchableOpacity>
                   <View style={gcStyles.hlWrap}>
-                    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-                      <Text style={gcStyles.plannedNote}>
-                        {selectedDate === todayStr ? 'Planned for today — tap to start' : "Planned — you'll do it on the day"}
-                      </Text>
+                    <View style={gcStyles.hlRow}>
+                      <Text style={gcStyles.sessFooterName} numberOfLines={1}>{session.workoutName ?? 'Session'}</Text>
+                      <View style={gcStyles.plannedBadge}><Text style={gcStyles.plannedBadgeText}>PLANNED</Text></View>
                       <TouchableOpacity onPress={() => onShowSessionMenu(session)} hitSlop={8} activeOpacity={0.5}>
                         <SymbolView name="ellipsis" size={15} tintColor={MUTED} />
                       </TouchableOpacity>
@@ -1607,43 +1586,29 @@ function WeeklyGaugeCard({
                   activeOpacity={0.88}
                   onPress={() => session.workout_id && onOpenSession(session.workout_id, { date: selectedDate })}
                 >
-                  <View style={{ height: 62 }}>
-                    {WORKOUT_COVER_PHOTOS_ENABLED && session.coverImageUrl ? (
-                      <>
-                        <Image source={{ uri: session.coverImageUrl }} style={StyleSheet.absoluteFill} resizeMode="cover" />
-                        <LinearGradient colors={['transparent', 'rgba(0,0,0,0.58)']} style={StyleSheet.absoluteFill} pointerEvents="none" />
-                      </>
-                    ) : categoryHasCover(session.category) ? (
-                      <CategoryCover category={session.category} variant="soft" watermarkSize={72} />
-                    ) : (
-                      <LinearGradient colors={['#2a5448', '#1a3832']} style={StyleSheet.absoluteFill} />
-                    )}
-                    <View style={gcStyles.checkBadge}><Text style={gcStyles.checkMark}>✓</Text></View>
-                    <Text style={gcStyles.sessName} numberOfLines={1}>{session.workoutName ?? 'Session'}</Text>
-                    <Text style={gcStyles.sessDate}>{formatShortDate(selectedDate)}</Text>
-                    {session.category && (
-                      <View style={[gcStyles.sessCatPill, { backgroundColor: CATEGORY_COLORS[session.category as WorkoutCategory]?.border ?? ACCENT }]}>
-                        <Text style={gcStyles.sessCatPillText}>{session.category}</Text>
-                      </View>
-                    )}
+                  <View>
+                    <WorkoutPaperCover
+                      category={session.category}
+                      exerciseNames={session.exerciseNames}
+                      size="strip"
+                    />
                   </View>
+                  {/* One row: name, then the two stats as bare icon+value — the "Duration"
+                      and "Exercises" labels were redundant next to their own icons. */}
                   <View style={gcStyles.hlWrap}>
-                    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', marginBottom: 8 }}>
-                      <TouchableOpacity onPress={() => onShowSessionMenu(session)} hitSlop={8} activeOpacity={0.5}>
-                        <SymbolView name="ellipsis" size={15} tintColor={MUTED} />
-                      </TouchableOpacity>
-                    </View>
-                    <View style={{ flexDirection: 'row' }}>
+                    <View style={gcStyles.hlRow}>
+                      <Text style={gcStyles.sessFooterName} numberOfLines={1}>{session.workoutName ?? 'Session'}</Text>
                       <View style={gcStyles.hlChip}>
                         <SymbolView name="timer" size={13} tintColor={ACCENT} />
                         <Text style={gcStyles.hlVal}>{formatDuration(session.duration_seconds)}</Text>
-                        <Text style={gcStyles.hlMeta}>Duration</Text>
                       </View>
                       <View style={gcStyles.hlChip}>
                         <SymbolView name="checkmark.circle.fill" size={13} tintColor={ACCENT} />
                         <Text style={gcStyles.hlVal}>{sessionDetail ? `${sessionDetail.exercisesDone} / ${sessionDetail.exercisesTotal}` : '—'}</Text>
-                        <Text style={gcStyles.hlMeta}>Exercises</Text>
                       </View>
+                      <TouchableOpacity onPress={() => onShowSessionMenu(session)} hitSlop={8} activeOpacity={0.5}>
+                        <SymbolView name="ellipsis" size={15} tintColor={MUTED} />
+                      </TouchableOpacity>
                     </View>
                   </View>
                 </TouchableOpacity>
@@ -1760,18 +1725,14 @@ const gcStyles = StyleSheet.create({
   sessCard:       { borderRadius: 12, overflow: 'hidden', backgroundColor: '#fff' },
   checkBadge:     { position: 'absolute', top: 8, right: 8, width: 18, height: 18, borderRadius: 9, backgroundColor: '#24ac88', alignItems: 'center', justifyContent: 'center' },
   checkMark:      { fontSize: 10, color: '#fff', fontWeight: '700', lineHeight: 14 },
-  plannedBadge:   { position: 'absolute', top: 8, right: 8, borderRadius: 100, backgroundColor: '#f5a623', paddingHorizontal: 8, paddingVertical: 3 },
+  plannedBadge:   { borderRadius: 100, backgroundColor: '#f5a623', paddingHorizontal: 8, paddingVertical: 3, marginRight: 10, flexShrink: 0 },
   plannedBadgeText: { fontSize: 8, fontWeight: '800', color: '#fff', letterSpacing: 0.5 },
-  plannedNote:    { flex: 1, fontSize: 12, color: MUTED, marginRight: 8 },
-  sessName:       { position: 'absolute', top: 8, left: 8, right: 34, fontSize: 12, fontWeight: '600', color: '#fff' },
-  sessDate:       { position: 'absolute', bottom: 6, left: 8, fontSize: 9, color: 'rgba(255,255,255,0.6)' },
-  sessCatPill:    { position: 'absolute', bottom: 6, right: 8, borderRadius: 100, paddingHorizontal: 8, paddingVertical: 2 },
-  sessCatPillText:{ fontSize: 9, fontWeight: '700', color: '#fff' },
-  hlWrap:         { paddingHorizontal: 10, paddingTop: 8, paddingBottom: 4, backgroundColor: '#fff' },
+  sessFooterName: { flex: 1, fontSize: 15, fontWeight: '700', color: '#1a1a1a' },
+  hlWrap:         { paddingHorizontal: 12, paddingVertical: 8, backgroundColor: '#fff' },
+  hlRow:          { flexDirection: 'row', alignItems: 'center', gap: 12 },
   hlLabel:        { fontSize: 7, fontWeight: '700', color: '#999', letterSpacing: 0.6, textTransform: 'uppercase', marginBottom: 8, textAlign: 'center' },
-  hlChip:         { flex: 1, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 4 },
+  hlChip:         { flexDirection: 'row', alignItems: 'center', gap: 4, flexShrink: 0 },
   hlVal:          { fontSize: 13, fontWeight: '700', color: '#1a1a1a' },
-  hlMeta:         { fontSize: 13, color: '#999' },
   hlDivider:      { height: 1, backgroundColor: '#eeeeec', marginVertical: 8 },
   exRow:          { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 4 },
   exDot:          { width: 7, height: 7, borderRadius: 3.5, marginRight: 8, flexShrink: 0 },
@@ -1814,20 +1775,19 @@ const sectionStyles = StyleSheet.create({
   seeAll:         { fontSize: 12, color: '#24ac88', fontWeight: '500' },
   hScroll:        { paddingHorizontal: 16, gap: 10 },
 
-  wCardOuter:     { width: 180, borderRadius: 14, backgroundColor: '#fff', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 8, elevation: 3 },
+  wCardOuter:     { width: 212, height: 127, borderRadius: 14, backgroundColor: '#fff', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 8, elevation: 3 },
   wCard:          { flex: 1, borderRadius: 14, overflow: 'hidden', backgroundColor: '#fff' },
   wCover:         { height: 90 },
-  wName:          { position: 'absolute', bottom: 6, left: 8, right: 60, fontSize: 13, fontWeight: '700', color: '#fff' },
+  wName:          { fontSize: 15, fontWeight: '700', color: '#1a1a1a' },
   wCatPill:       { position: 'absolute', bottom: 6, right: 8, borderRadius: 100, paddingHorizontal: 7, paddingVertical: 2 },
   wCatPillText:   { fontSize: 9, fontWeight: '700', color: '#fff' },
   wMenuBtn:       { position: 'absolute', top: 7, right: 7, width: 26, height: 26, borderRadius: 13, backgroundColor: 'rgba(0,0,0,0.5)', alignItems: 'center', justifyContent: 'center' },
-  wBody:          { flexDirection: 'row', alignItems: 'center', gap: 8, paddingTop: 7, paddingHorizontal: 9, paddingBottom: 9 },
+  wBody:          { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 12, paddingVertical: 6 },
   wFooterMenuBtn: { padding: 4 },
-  wRoutineRow:    { flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 2 },
-  wSub:           { fontSize: 10, color: '#999', flexShrink: 1 },
-  wStatus:        { fontSize: 10, fontWeight: '600', marginTop: 2 },
+  wSub:           { fontSize: 11, fontWeight: '400', color: '#999' },
+  wStatus:        { fontSize: 11, fontWeight: '600' },
 
-  seeAllCard:     { width: 80, minHeight: 134, borderRadius: 14, backgroundColor: 'rgba(36,172,136,0.08)', borderWidth: 1.5, borderStyle: 'dashed', borderColor: 'rgba(36,172,136,0.3)', alignItems: 'center', justifyContent: 'center', gap: 6 },
+  seeAllCard:     { width: 80, height: 127, borderRadius: 14, backgroundColor: 'rgba(36,172,136,0.08)', borderWidth: 1.5, borderStyle: 'dashed', borderColor: 'rgba(36,172,136,0.3)', alignItems: 'center', justifyContent: 'center', gap: 6 },
   seeAllArrow:    { fontSize: 18, color: '#24ac88' },
   seeAllCardText: { fontSize: 11, color: '#24ac88', fontWeight: '600', textAlign: 'center' },
 

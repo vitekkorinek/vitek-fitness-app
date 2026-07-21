@@ -26,7 +26,8 @@ import { BottomSheet } from '@/components/BottomSheet';
 import { CATEGORY_COLORS, CATEGORY_OPTIONS, STRETCHING_CATEGORIES } from '@/lib/workoutCategories';
 import { resolveWeeklyGoal } from '@/lib/weeklyGoal';
 import type { WorkoutCategory } from '@/lib/workoutCategories';
-import CategoryCover, { categoryHasCover, WORKOUT_COVER_PHOTOS_ENABLED } from '@/components/CategoryCover';
+import WorkoutPaperCover from '@/components/WorkoutPaperCover';
+import { fetchExerciseNames } from '@/lib/exerciseNames';
 
 type WorkoutRow = {
   id: string;
@@ -40,6 +41,7 @@ type WorkoutRow = {
   createdAt: string;
   thisWeekCount: number;
   isStretch: boolean;
+  exerciseNames: string[];
 };
 
 function formatShortDate(dateStr: string): string {
@@ -90,12 +92,15 @@ async function fetchAllWorkouts(clientId: string): Promise<WorkoutRow[]> {
   const allRows = wRows as any[];
 
   const workoutIds = allRows.map(w => w.id);
-  const { data: sessions } = await supabase
-    .from('sessions')
-    .select('workout_id, date')
-    .in('workout_id', workoutIds)
-    .eq('status', 'completed')
-    .order('date', { ascending: false });
+  const [{ data: sessions }, exerciseMap] = await Promise.all([
+    supabase
+      .from('sessions')
+      .select('workout_id, date')
+      .in('workout_id', workoutIds)
+      .eq('status', 'completed')
+      .order('date', { ascending: false }),
+    fetchExerciseNames(workoutIds),
+  ]);
 
   const lastDateMap = new Map<string, string>();
   const thisWeekCountMap = new Map<string, number>();
@@ -118,6 +123,7 @@ async function fetchAllWorkouts(clientId: string): Promise<WorkoutRow[]> {
     createdAt: w.created_at,
     thisWeekCount: thisWeekCountMap.get(w.id) ?? 0,
     isStretch: STRETCHING_CATEGORIES.includes(w.category),
+    exerciseNames: exerciseMap.get(w.id) ?? [],
   }));
 }
 
@@ -569,23 +575,11 @@ function WorkoutItem({
   return (
     <TouchableOpacity style={coverCardStyles.card} onPress={onPress} activeOpacity={0.92}>
       <View style={coverCardStyles.cardInner}>
-        <View style={coverCardStyles.cover}>
-          {WORKOUT_COVER_PHOTOS_ENABLED && workout.cover_image_url ? (
-            <Image source={{ uri: workout.cover_image_url }} style={StyleSheet.absoluteFill} resizeMode="cover" />
-          ) : categoryHasCover(workout.category) ? (
-            <CategoryCover category={workout.category} variant="soft" />
-          ) : (
-            <LinearGradient colors={gradColors} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill} />
-          )}
-          <LinearGradient
-            colors={['transparent', 'rgba(0,0,0,0.1)', 'rgba(0,0,0,0.6)']}
-            start={{ x: 0.5, y: 0 }}
-            end={{ x: 0.5, y: 1 }}
-            style={StyleSheet.absoluteFill}
-            pointerEvents="none"
-          />
-          <View style={coverCardStyles.coverBottom}>
-            <View style={[coverCardStyles.nameRow, { flex: 1 }]}>
+        <WorkoutPaperCover category={workout.category} exerciseNames={workout.exerciseNames} />
+        {/* Name demoted from the cover to the footer — the exercises are the content now. */}
+        <View style={coverCardStyles.footer}>
+          <View style={coverCardStyles.footerLeft}>
+            <View style={coverCardStyles.nameRow}>
               <Text style={coverCardStyles.itemName} numberOfLines={1}>{workout.name}</Text>
               {workout.thisWeekCount > 0 && workout.status !== 'completed' && (
                 <View style={[coverCardStyles.checkBadge, workout.thisWeekCount > 1 && { width: undefined, paddingHorizontal: 5 }]}>
@@ -593,15 +587,8 @@ function WorkoutItem({
                 </View>
               )}
             </View>
-            {catColors && (
-              <View style={[coverCardStyles.catPill, { backgroundColor: catColors.border }]}>
-                <Text style={coverCardStyles.catPillText}>{workout.category}</Text>
-              </View>
-            )}
+            <Text style={coverCardStyles.footerSub} numberOfLines={1}>{subtitle}</Text>
           </View>
-        </View>
-        <View style={coverCardStyles.footer}>
-          <Text style={coverCardStyles.footerSub} numberOfLines={1}>{subtitle}</Text>
           {isTrainer && (
             <TouchableOpacity style={coverCardStyles.footerMenuBtn} onPress={onMenuPress} hitSlop={8} activeOpacity={0.5}>
               <SymbolView name="ellipsis" size={16} tintColor="#999" />
@@ -728,24 +715,15 @@ const coverCardStyles = StyleSheet.create({
     shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.08, shadowRadius: 6, elevation: 3,
   },
   cardInner: { borderRadius: 14, overflow: 'hidden', backgroundColor: '#fff' },
-  cover: { height: 94, overflow: 'hidden' },
   menuBtn: { position: 'absolute', top: 9, right: 10 },
-  coverBottom: {
-    position: 'absolute', bottom: 0, left: 0, right: 0,
-    flexDirection: 'row', alignItems: 'center',
-    paddingHorizontal: 10, paddingBottom: 8, gap: 8,
-  },
-  footer: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 10, paddingVertical: 9, gap: 8, backgroundColor: '#fff' },
-  footerSub: { flex: 1, fontSize: 12, color: '#888' },
+  footer: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 6, gap: 8, backgroundColor: '#fff' },
+  footerLeft: { flex: 1 },
+  footerSub: { fontSize: 11, color: '#999' },
   footerMenuBtn: { padding: 4 },
   bottomLeft: { flex: 1, gap: 2 },
   nameRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  itemName: { fontSize: 14, fontWeight: '600', color: '#ffffff', flexShrink: 1 },
+  itemName: { fontSize: 15, fontWeight: '700', color: '#1a1a1a', flexShrink: 1 },
   itemSub: { fontSize: 10, color: 'rgba(255,255,255,0.65)' },
-  catPill: {
-    borderRadius: 100, paddingHorizontal: 8, paddingVertical: 3, flexShrink: 0,
-  },
-  catPillText: { fontSize: 9, fontWeight: '700', color: '#ffffff' },
   checkBadge: { width: 16, height: 16, borderRadius: 8, backgroundColor: '#24ac88', alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
   checkMark: { fontSize: 9, color: '#fff', fontWeight: '700', lineHeight: 13 },
 });

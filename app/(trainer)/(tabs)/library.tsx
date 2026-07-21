@@ -43,7 +43,8 @@ import {
 import { relativeTime } from '@/lib/utils';
 import { CATEGORY_COLORS, CATEGORY_OPTIONS, STRETCHING_CATEGORIES } from '@/lib/workoutCategories';
 import type { WorkoutCategory } from '@/lib/workoutCategories';
-import CategoryCover, { categoryHasCover, WORKOUT_COVER_PHOTOS_ENABLED } from '@/components/CategoryCover';
+import WorkoutPaperCover from '@/components/WorkoutPaperCover';
+import { fetchExerciseNames, fetchTemplateExerciseNames } from '@/lib/exerciseNames';
 import t from '@/i18n/en';
 import type { Exercise } from '@/types/database';
 
@@ -77,6 +78,7 @@ type LibraryWorkout = {
   routineIsActive: boolean;
   lastSessionDate: string | null;
   createdAt: string;
+  exerciseNames: string[];
 };
 
 type Recipe = {
@@ -130,12 +132,15 @@ async function fetchLibraryWorkouts(trainerId: string): Promise<LibraryWorkout[]
   if (!wRows?.length) return [];
 
   const workoutIds = (wRows as any[]).map(w => w.id);
-  const { data: sessions } = await supabase
-    .from('sessions')
-    .select('workout_id, date')
-    .in('workout_id', workoutIds)
-    .eq('status', 'completed')
-    .order('date', { ascending: false });
+  const [{ data: sessions }, exerciseMap] = await Promise.all([
+    supabase
+      .from('sessions')
+      .select('workout_id, date')
+      .in('workout_id', workoutIds)
+      .eq('status', 'completed')
+      .order('date', { ascending: false }),
+    fetchExerciseNames(workoutIds),
+  ]);
 
   const lastDateMap = new Map<string, string>();
   (sessions ?? []).forEach((s: any) => {
@@ -156,6 +161,7 @@ async function fetchLibraryWorkouts(trainerId: string): Promise<LibraryWorkout[]
     routineIsActive: (w.routines as any)?.status === 'active',
     lastSessionDate: lastDateMap.get(w.id) ?? null,
     createdAt: w.created_at,
+    exerciseNames: exerciseMap.get(w.id) ?? [],
   }));
 
   const performed = rows
@@ -175,6 +181,7 @@ type LibraryTemplate = {
   stretch_type: 'upper_body' | 'lower_body' | 'full_body' | null;
   cover_image_url: string | null;
   exerciseCount: number;
+  exerciseNames: string[];
   createdAt: string;
 };
 
@@ -188,9 +195,8 @@ async function fetchLibraryTemplates(trainerId: string): Promise<LibraryTemplate
   if (!tRows?.length) return [];
 
   const ids = (tRows as any[]).map(t => t.id);
-  const { data: teRows } = await supabase.from('template_exercises').select('template_id').in('template_id', ids);
-  const countMap = new Map<string, number>();
-  (teRows ?? []).forEach((te: any) => countMap.set(te.template_id, (countMap.get(te.template_id) ?? 0) + 1));
+  // One query now covers both the count and the cover's exercise list.
+  const nameMap = await fetchTemplateExerciseNames(ids);
 
   return (tRows as any[]).map(t => ({
     id: t.id,
@@ -198,7 +204,8 @@ async function fetchLibraryTemplates(trainerId: string): Promise<LibraryTemplate
     category: t.category ?? null,
     stretch_type: t.stretch_type ?? null,
     cover_image_url: t.cover_image_url ?? null,
-    exerciseCount: countMap.get(t.id) ?? 0,
+    exerciseCount: (nameMap.get(t.id) ?? []).length,
+    exerciseNames: nameMap.get(t.id) ?? [],
     createdAt: t.created_at,
   }));
 }
@@ -2152,46 +2159,26 @@ function WorkoutLibraryRow({
     );
   }
 
-  const gradColors = (CATEGORY_GRADIENTS[workout.category ?? ''] ?? GRADIENT_DEFAULT) as [string, string];
-  const catColors = workout.category ? CATEGORY_COLORS[workout.category as WorkoutCategory] : null;
   const clientFirstName = (workout.clientName ?? '').split(' ')[0];
   const subtitle = workout.lastSessionDate ? formatShortDate(workout.lastSessionDate) : 'Not yet done';
 
   return (
     <TouchableOpacity style={coverCardStyles.card} onPress={onPress} activeOpacity={0.92}>
       <View style={coverCardStyles.cardInner}>
-        <View style={coverCardStyles.cover}>
-          {WORKOUT_COVER_PHOTOS_ENABLED && workout.cover_image_url ? (
-            <Image source={{ uri: workout.cover_image_url }} style={StyleSheet.absoluteFill} resizeMode="cover" />
-          ) : categoryHasCover(workout.category) ? (
-            <CategoryCover category={workout.category} variant="soft" />
-          ) : (
-            <LinearGradient colors={gradColors} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill} />
-          )}
-          <LinearGradient
-            colors={['transparent', 'rgba(0,0,0,0.1)', 'rgba(0,0,0,0.6)']}
-            start={{ x: 0.5, y: 0 }}
-            end={{ x: 0.5, y: 1 }}
-            style={StyleSheet.absoluteFill}
-            pointerEvents="none"
-          />
+        <WorkoutPaperCover category={workout.category} exerciseNames={workout.exerciseNames}>
           {!!clientFirstName && (
             <View style={coverCardStyles.clientPill}>
               <SymbolView name="person.fill" size={9} tintColor="#fff" />
               <Text style={coverCardStyles.clientPillText}>{clientFirstName}</Text>
             </View>
           )}
-          <View style={coverCardStyles.coverBottom}>
-            <Text style={coverCardStyles.itemName} numberOfLines={1}>{workout.name}</Text>
-            {catColors && (
-              <View style={[coverCardStyles.catPill, { backgroundColor: catColors.border }]}>
-                <Text style={coverCardStyles.catPillText}>{workout.category}</Text>
-              </View>
-            )}
-          </View>
-        </View>
+        </WorkoutPaperCover>
+        {/* Name demoted from the cover to the footer — the exercises are the content now. */}
         <View style={coverCardStyles.footer}>
-          <Text style={coverCardStyles.footerSub} numberOfLines={1}>{subtitle}</Text>
+          <View style={coverCardStyles.footerLeft}>
+            <Text style={coverCardStyles.itemName} numberOfLines={1}>{workout.name}</Text>
+            <Text style={coverCardStyles.footerSub} numberOfLines={1}>{subtitle}</Text>
+          </View>
           <TouchableOpacity style={coverCardStyles.footerMenuBtn} onPress={onMenuPress} hitSlop={8} activeOpacity={0.5}>
             <SymbolView name="ellipsis" size={16} tintColor="#999" />
           </TouchableOpacity>
@@ -2244,43 +2231,22 @@ function TemplateLibraryRow({
     );
   }
 
-  const gradColors = (CATEGORY_GRADIENTS[template.category ?? ''] ?? GRADIENT_DEFAULT) as [string, string];
-  const catColors = template.category ? CATEGORY_COLORS[template.category as WorkoutCategory] : null;
   const subtitle = `${template.exerciseCount} ${template.exerciseCount === 1 ? 'exercise' : 'exercises'}`;
 
   return (
     <TouchableOpacity style={coverCardStyles.card} onPress={onPress} activeOpacity={0.92}>
       <View style={coverCardStyles.cardInner}>
-        <View style={coverCardStyles.cover}>
-          {WORKOUT_COVER_PHOTOS_ENABLED && template.cover_image_url ? (
-            <Image source={{ uri: template.cover_image_url }} style={StyleSheet.absoluteFill} resizeMode="cover" />
-          ) : categoryHasCover(template.category) ? (
-            <CategoryCover category={template.category} variant="soft" />
-          ) : (
-            <LinearGradient colors={gradColors} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill} />
-          )}
-          <LinearGradient
-            colors={['transparent', 'rgba(0,0,0,0.1)', 'rgba(0,0,0,0.6)']}
-            start={{ x: 0.5, y: 0 }}
-            end={{ x: 0.5, y: 1 }}
-            style={StyleSheet.absoluteFill}
-            pointerEvents="none"
-          />
+        <WorkoutPaperCover category={template.category} exerciseNames={template.exerciseNames}>
           <View style={tmplStyles.badge}>
             <SymbolView name="rectangle.stack" size={10} tintColor="rgba(255,255,255,0.9)" />
             <Text style={tmplStyles.badgeText}>TEMPLATE</Text>
           </View>
-          <View style={coverCardStyles.coverBottom}>
-            <Text style={coverCardStyles.itemName} numberOfLines={1}>{template.name}</Text>
-            {catColors && (
-              <View style={[coverCardStyles.catPill, { backgroundColor: catColors.border }]}>
-                <Text style={coverCardStyles.catPillText}>{template.category}</Text>
-              </View>
-            )}
-          </View>
-        </View>
+        </WorkoutPaperCover>
         <View style={coverCardStyles.footer}>
-          <Text style={coverCardStyles.footerSub} numberOfLines={1}>{subtitle}</Text>
+          <View style={coverCardStyles.footerLeft}>
+            <Text style={coverCardStyles.itemName} numberOfLines={1}>{template.name}</Text>
+            <Text style={coverCardStyles.footerSub} numberOfLines={1}>{subtitle}</Text>
+          </View>
           <TouchableOpacity style={coverCardStyles.footerMenuBtn} onPress={onMenuPress} hitSlop={8} activeOpacity={0.5}>
             <SymbolView name="ellipsis" size={16} tintColor="#999" />
           </TouchableOpacity>
@@ -2647,21 +2613,12 @@ const coverCardStyles = StyleSheet.create({
     shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.08, shadowRadius: 6, elevation: 3,
   },
   cardInner: { borderRadius: 14, overflow: 'hidden', backgroundColor: '#fff' },
-  cover: { height: 94, overflow: 'hidden' },
-  coverBottom: {
-    position: 'absolute', bottom: 0, left: 0, right: 0,
-    flexDirection: 'row', alignItems: 'flex-end',
-    paddingHorizontal: 10, paddingBottom: 8, gap: 8,
-  },
-  footer: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 10, paddingVertical: 9, gap: 8, backgroundColor: '#fff' },
-  footerSub: { flex: 1, fontSize: 12, color: '#888' },
+  footer: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 6, gap: 8, backgroundColor: '#fff' },
+  footerLeft: { flex: 1 },
+  footerSub: { fontSize: 11, color: '#999' },
   footerMenuBtn: { padding: 4 },
   menuBtn: { position: 'absolute', top: 9, right: 10 },
-  itemName: { flex: 1, fontSize: 14, fontWeight: '600', color: '#ffffff' },
-  catPill: {
-    borderRadius: 100, paddingHorizontal: 8, paddingVertical: 3, flexShrink: 0,
-  },
-  catPillText: { fontSize: 9, fontWeight: '700', color: '#ffffff' },
+  itemName: { fontSize: 15, fontWeight: '700', color: '#1a1a1a' },
   clientPill: {
     position: 'absolute', top: 9, left: 10,
     flexDirection: 'row', alignItems: 'center', gap: 3,

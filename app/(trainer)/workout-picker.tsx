@@ -16,7 +16,8 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SymbolView } from 'expo-symbols';
 import { LinearGradient } from 'expo-linear-gradient';
 import { supabase } from '@/lib/supabase';
-import CategoryCover, { categoryHasCover, WORKOUT_COVER_PHOTOS_ENABLED } from '@/components/CategoryCover';
+import WorkoutPaperCover from '@/components/WorkoutPaperCover';
+import { fetchExerciseNames } from '@/lib/exerciseNames';
 import { useAuth } from '@/context/AuthContext';
 
 type WorkoutRow = {
@@ -26,6 +27,7 @@ type WorkoutRow = {
   cover_image_url: string | null;
   client_id: string;
   clientName: string;
+  exerciseNames: string[];
 };
 
 async function fetchAllWorkouts(): Promise<WorkoutRow[]> {
@@ -37,10 +39,10 @@ async function fetchAllWorkouts(): Promise<WorkoutRow[]> {
   if (!workouts?.length) return [];
 
   const clientIds = [...new Set((workouts as any[]).map(w => w.client_id))];
-  const { data: users } = await supabase
-    .from('users')
-    .select('id, name')
-    .in('id', clientIds);
+  const [{ data: users }, exerciseMap] = await Promise.all([
+    supabase.from('users').select('id, name').in('id', clientIds),
+    fetchExerciseNames((workouts as any[]).map(w => w.id)),
+  ]);
 
   const nameMap = new Map<string, string>();
   (users ?? []).forEach((u: any) => nameMap.set(u.id, u.name ?? 'Unknown'));
@@ -52,6 +54,7 @@ async function fetchAllWorkouts(): Promise<WorkoutRow[]> {
     cover_image_url: w.cover_image_url ?? null,
     client_id: w.client_id,
     clientName: nameMap.get(w.client_id) ?? 'Unknown',
+    exerciseNames: exerciseMap.get(w.id) ?? [],
   }));
 }
 
@@ -240,35 +243,13 @@ function WorkoutPickerRow({
       disabled={disabled}
     >
       <View style={rowStyles.cardInner}>
-        <View style={rowStyles.cover}>
-          {WORKOUT_COVER_PHOTOS_ENABLED && workout.cover_image_url ? (
-            <Image source={{ uri: workout.cover_image_url }} style={StyleSheet.absoluteFill} resizeMode="cover" />
-          ) : categoryHasCover(workout.category) ? (
-            <CategoryCover category={workout.category} variant="soft" />
-          ) : (
-            <LinearGradient colors={gradColors} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill} />
+        <WorkoutPaperCover category={workout.category} exerciseNames={workout.exerciseNames} size="mini">
+          {copying && (
+            <View style={rowStyles.copySpinner}><ActivityIndicator size="small" color={ACCENT} /></View>
           )}
-          <LinearGradient
-            colors={['transparent', 'rgba(0,0,0,0.15)', 'rgba(0,0,0,0.6)']}
-            start={{ x: 0.5, y: 0 }}
-            end={{ x: 0.5, y: 1 }}
-            style={StyleSheet.absoluteFill}
-            pointerEvents="none"
-          />
-          <View style={rowStyles.bottom}>
-            <View style={rowStyles.bottomLeft}>
-              <Text style={rowStyles.name} numberOfLines={1}>{workout.name}</Text>
-            </View>
-            {copying ? (
-              <ActivityIndicator size="small" color="#fff" />
-            ) : workout.category ? (
-              <View style={rowStyles.pill}>
-                <Text style={rowStyles.pillText}>{workout.category}</Text>
-              </View>
-            ) : null}
-          </View>
-        </View>
+        </WorkoutPaperCover>
         <View style={rowStyles.footer}>
+          <Text style={rowStyles.name} numberOfLines={1}>{workout.name}</Text>
           <Text style={rowStyles.footerSub} numberOfLines={1}>{workout.clientName}</Text>
         </View>
       </View>
@@ -330,22 +311,10 @@ const rowStyles = StyleSheet.create({
     shadowOpacity: 0.08, shadowRadius: 6, elevation: 3,
   },
   cardInner: { borderRadius: 14, overflow: 'hidden', backgroundColor: '#fff' },
-  cover: { height: 72, overflow: 'hidden' },
-  footer: { paddingHorizontal: 12, paddingVertical: 8, backgroundColor: '#fff' },
-  footerSub: { fontSize: 12, color: '#888' },
+  footer: { paddingHorizontal: 12, paddingVertical: 6, backgroundColor: '#fff' },
+  footerSub: { fontSize: 11, color: '#999' },
+  copySpinner: { position: 'absolute', top: 8, right: 10 },
   cardDisabled: { opacity: 0.5 },
-  bottom: {
-    position: 'absolute', bottom: 0, left: 0, right: 0,
-    flexDirection: 'row', alignItems: 'flex-end',
-    paddingHorizontal: 12, paddingBottom: 10, gap: 8,
-  },
-  bottomLeft: { flex: 1, gap: 2 },
-  name: { fontSize: 13, fontWeight: '600', color: '#fff' },
+  name: { fontSize: 15, fontWeight: '700', color: '#1a1a1a' },
   sub: { fontSize: 10, color: 'rgba(255,255,255,0.65)' },
-  pill: {
-    backgroundColor: 'rgba(255,255,255,0.15)',
-    borderWidth: 0.5, borderColor: 'rgba(255,255,255,0.3)',
-    borderRadius: 100, paddingHorizontal: 8, paddingVertical: 3, flexShrink: 0,
-  },
-  pillText: { fontSize: 9, fontWeight: '500', color: '#fff' },
 });

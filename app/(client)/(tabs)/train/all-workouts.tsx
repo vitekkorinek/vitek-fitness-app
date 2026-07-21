@@ -26,7 +26,8 @@ import { useAuth } from '@/context/AuthContext';
 import { CATEGORY_COLORS, CATEGORY_OPTIONS, STRETCHING_CATEGORIES } from '@/lib/workoutCategories';
 import { resolveWeeklyGoal } from '@/lib/weeklyGoal';
 import type { WorkoutCategory } from '@/lib/workoutCategories';
-import CategoryCover, { categoryHasCover, WORKOUT_COVER_PHOTOS_ENABLED } from '@/components/CategoryCover';
+import WorkoutPaperCover from '@/components/WorkoutPaperCover';
+import { fetchExerciseNames } from '@/lib/exerciseNames';
 
 type WorkoutRow = {
   id: string;
@@ -39,6 +40,7 @@ type WorkoutRow = {
   lastSessionDate: string | null;
   createdAt: string;
   thisWeekCount: number;
+  exerciseNames: string[];
 };
 
 function formatShortDate(dateStr: string): string {
@@ -87,12 +89,15 @@ async function fetchAllWorkouts(clientId: string): Promise<WorkoutRow[]> {
   if (!wRows?.length) return [];
 
   const workoutIds = (wRows as any[]).map(w => w.id);
-  const { data: sessions } = await supabase
-    .from('sessions')
-    .select('workout_id, date')
-    .in('workout_id', workoutIds)
-    .eq('status', 'completed')
-    .order('date', { ascending: false });
+  const [{ data: sessions }, exerciseMap] = await Promise.all([
+    supabase
+      .from('sessions')
+      .select('workout_id, date')
+      .in('workout_id', workoutIds)
+      .eq('status', 'completed')
+      .order('date', { ascending: false }),
+    fetchExerciseNames(workoutIds),
+  ]);
 
   const lastDateMap = new Map<string, string>();
   const thisWeekCountMap = new Map<string, number>();
@@ -114,6 +119,7 @@ async function fetchAllWorkouts(clientId: string): Promise<WorkoutRow[]> {
     lastSessionDate: lastDateMap.get(w.id) ?? null,
     createdAt: w.created_at,
     thisWeekCount: thisWeekCountMap.get(w.id) ?? 0,
+    exerciseNames: exerciseMap.get(w.id) ?? [],
   }));
 }
 
@@ -415,7 +421,6 @@ const wpStyles = StyleSheet.create({
 
 function WorkoutItem({ workout, onPress, thisWeekCount, onQuickLook }: { workout: WorkoutRow; onPress: () => void; thisWeekCount?: number; onQuickLook?: () => void }) {
   const isDone = workout.status === 'completed';
-  const gradColors = (CATEGORY_GRADIENTS[workout.category ?? ''] ?? GRADIENT_DEFAULT) as [string, string];
   const catColors = workout.category ? CATEGORY_COLORS[workout.category as WorkoutCategory] : null;
   const subtitle = [
     workout.lastSessionDate ? `Done ${formatShortDate(workout.lastSessionDate)}` : 'Not yet done',
@@ -425,30 +430,22 @@ function WorkoutItem({ workout, onPress, thisWeekCount, onQuickLook }: { workout
   return (
     <TouchableOpacity style={[coverCardStyles.cardWrap, isDone && coverCardStyles.cardDone]} onPress={onPress} activeOpacity={0.92}>
       <View style={coverCardStyles.cardInner}>
-        {/* Cover (watermark / photo) with name + category pill */}
-        <View style={coverCardStyles.cover}>
-          {WORKOUT_COVER_PHOTOS_ENABLED && workout.cover_image_url ? (
-            <Image source={{ uri: workout.cover_image_url }} style={[StyleSheet.absoluteFill, isDone && { opacity: 0.55 }]} resizeMode="cover" />
-          ) : categoryHasCover(workout.category) ? (
-            <View style={[StyleSheet.absoluteFill, isDone && { opacity: 0.55 }]}>
-              <CategoryCover category={workout.category} variant="soft" />
-            </View>
-          ) : (
-            <LinearGradient colors={gradColors} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={[StyleSheet.absoluteFill, isDone && { opacity: 0.55 }]} />
-          )}
-          <LinearGradient
-            colors={['transparent', 'rgba(0,0,0,0.35)']}
-            start={{ x: 0.5, y: 0.45 }}
-            end={{ x: 0.5, y: 1 }}
-            style={StyleSheet.absoluteFill}
-            pointerEvents="none"
-          />
+        <WorkoutPaperCover
+          category={isDone ? null : workout.category}
+          exerciseNames={workout.exerciseNames}
+          style={isDone ? { opacity: 0.55 } : undefined}
+        >
           {isDone && (
             <View style={coverCardStyles.doneBadge}>
               <Text style={coverCardStyles.doneBadgeText}>Done</Text>
             </View>
           )}
-          <View style={coverCardStyles.coverBottom}>
+        </WorkoutPaperCover>
+        {/* White footer: name (demoted from the cover — the exercises are the content now,
+            but the name is still the workout's handle for search, Do Mode's header and
+            session history) + last-done + ⋯ */}
+        <View style={coverCardStyles.footer}>
+          <View style={coverCardStyles.footerLeft}>
             <View style={coverCardStyles.nameRow}>
               <Text style={coverCardStyles.itemName} numberOfLines={1}>{workout.name}</Text>
               {!!thisWeekCount && thisWeekCount > 0 && !isDone && (
@@ -457,16 +454,8 @@ function WorkoutItem({ workout, onPress, thisWeekCount, onQuickLook }: { workout
                 </View>
               )}
             </View>
-            {catColors && !isDone && (
-              <View style={[coverCardStyles.catPill, { backgroundColor: catColors.border }]}>
-                <Text style={coverCardStyles.catPillText}>{workout.category}</Text>
-              </View>
-            )}
+            <Text style={coverCardStyles.footerSub} numberOfLines={1}>{subtitle}</Text>
           </View>
-        </View>
-        {/* White footer: last-done + ⋯ */}
-        <View style={coverCardStyles.footer}>
-          <Text style={coverCardStyles.footerSub} numberOfLines={1}>{subtitle}</Text>
           {onQuickLook && (
             <TouchableOpacity style={coverCardStyles.footerMenuBtn} onPress={onQuickLook} hitSlop={10} activeOpacity={0.6}>
               <SymbolView name="ellipsis" size={16} tintColor="#999" />
@@ -480,50 +469,28 @@ function WorkoutItem({ workout, onPress, thisWeekCount, onQuickLook }: { workout
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
-const CATEGORY_GRADIENTS: Record<string, [string, string]> = {
-  'Push':       ['#1e4a7a', '#7BB3E8'],
-  'Pull':       ['#0d2e5a', '#2C6BAD'],
-  'Upper Body': ['#1a3d6e', '#4A90D9'],
-  'Lower Body': ['#2a1f5e', '#7B68C8'],
-  'Legs':       ['#1e1652', '#5548A8'],
-  'Full Body':  ['#6b2e12', '#E8845A'],
-  'Core':       ['#6b4012', '#E8A84A'],
-  'Mobility':   ['#0d3d2e', '#24ac88'],
-  'Recovery':   ['#4a2a2a', '#C4A0A0'],
-};
-const GRADIENT_DEFAULT: [string, string] = ['#2a2a2a', '#444444'];
-
 const coverCardStyles = StyleSheet.create({
   cardWrap: {
     borderRadius: 14, backgroundColor: '#fff',
     shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.07, shadowRadius: 6, elevation: 2,
   },
   cardInner: { borderRadius: 14, overflow: 'hidden', backgroundColor: '#fff' },
-  cover: { height: 94, overflow: 'hidden' },
   cardDone: { opacity: 0.75 },
-  coverBottom: {
-    position: 'absolute', bottom: 0, left: 0, right: 0,
-    flexDirection: 'row', alignItems: 'center',
-    paddingHorizontal: 12, paddingBottom: 9, gap: 8,
-  },
-  nameRow: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 6 },
-  itemName: { fontSize: 15, fontWeight: '700', color: '#ffffff', flexShrink: 1 },
+  nameRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  itemName: { fontSize: 15, fontWeight: '700', color: '#1a1a1a', flexShrink: 1 },
   footer: {
     flexDirection: 'row', alignItems: 'center',
-    paddingHorizontal: 12, paddingVertical: 9, gap: 8, backgroundColor: '#fff',
+    paddingHorizontal: 12, paddingVertical: 6, gap: 8, backgroundColor: '#fff',
   },
-  footerSub: { flex: 1, fontSize: 12, color: '#888' },
+  footerLeft: { flex: 1 },
+  footerSub: { fontSize: 11, color: '#999' },
   footerMenuBtn: { padding: 4 },
-  catPill: {
-    borderRadius: 100, paddingHorizontal: 8, paddingVertical: 3, flexShrink: 0,
-  },
-  catPillText: { fontSize: 9, fontWeight: '700', color: '#ffffff' },
   doneBadge: {
     position: 'absolute', top: 8, right: 8,
-    backgroundColor: 'rgba(0,0,0,0.45)', borderRadius: 100,
+    backgroundColor: 'rgba(0,0,0,0.06)', borderRadius: 100,
     paddingHorizontal: 8, paddingVertical: 3,
   },
-  doneBadgeText: { fontSize: 9, fontWeight: '700', color: 'rgba(255,255,255,0.75)', letterSpacing: 0.5 },
+  doneBadgeText: { fontSize: 9, fontWeight: '700', color: '#8a8a86', letterSpacing: 0.5 },
   checkBadge: { width: 16, height: 16, borderRadius: 8, backgroundColor: '#24ac88', alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
   checkMark: { fontSize: 9, color: '#fff', fontWeight: '700', lineHeight: 13 },
 });
