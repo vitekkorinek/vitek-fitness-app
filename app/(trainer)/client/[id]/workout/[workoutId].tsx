@@ -297,23 +297,25 @@ function calcTotal(weightKg: number | null, equipment: string | null, barWeightK
   return String(weightKg);
 }
 
-// Compact "what's on the card" set summary for the collapsed row.
-// Shows the values as they appear in the set inputs (typed value, else the planned target),
-// e.g. "12 × 42kg   ·   8 × 46kg   ·   8 × 50kg   …". First 3 real sets, then a "…" if more.
-function buildSetsSummary(sets: SessionSet[]): string | null {
+// Compact "what's on the card" set chips for the collapsed row (Virtuagym-style).
+// Shows the values as they appear in the set inputs (typed value, else the planned target)
+// as little boxes — kg on top, reps below (same order as the KG/REPS set-row columns).
+// One chip per real set, ALWAYS — nothing logged reads "0 kg / 0×" so every card keeps
+// the same rhythm. First 3 sets, then a "…" if more.
+// `hasNote` marks a set carrying a (non-deleted) set note → green dot on the chip.
+type SetChip = { key: string; top: string; bottom: string; hasNote: boolean };
+function buildSetChips(sets: SessionSet[]): SetChip[] {
   const rows = sets.filter(s => !s.isRemoved && !s.isDropset);
-  const parts: string[] = [];
-  for (const s of rows) {
+  return rows.map(s => {
     const w = (s.weightKg && s.weightKg.trim()) || (s.targetWeightKg != null ? String(s.targetWeightKg) : '');
     const r = (s.repsCompleted && s.repsCompleted.trim()) || (s.targetReps != null ? String(s.targetReps) : '');
-    if (!w && !r) continue;
-    if (w && r) parts.push(`${r} × ${w}kg`);
-    else if (w) parts.push(`${w}kg`);
-    else parts.push(`${r}×`);
-  }
-  if (parts.length === 0) return null;
-  const shown = parts.slice(0, 3).join('   ·   ');
-  return parts.length > 3 ? `${shown}   …` : shown;
+    return {
+      key: s.localId,
+      top: `${w || '0'} kg`,
+      bottom: `${r || '0'}×`,
+      hasNote: s.trainerNotes.some(n => !n.isDeleted) || s.clientNotes.some(n => !n.isDeleted),
+    };
+  });
 }
 
 // The most recent note to surface at the bottom of an expanded card.
@@ -561,12 +563,28 @@ export default function TrainerWorkoutSessionScreen() {
   const [restTotalSecs, setRestTotalSecs] = useState(60);
   const [restRunning, setRestRunning] = useState(false);
   const [restInputText, setRestInputText] = useState('60');
+  // Running-rest pill drag: offset from its default bottom-right spot. Taps (< 6px move)
+  // fall through to the pill's touchables; a real move steals the responder and drags.
+  // The chosen spot persists for the rest of the session (ref-held ValueXY).
+  const restPillDrag = useRef(new Animated.ValueXY({ x: 0, y: 0 })).current;
+  const restPillPanResponder = useRef(
+    PanResponder.create({
+      onMoveShouldSetPanResponder: (_e, g) => Math.abs(g.dx) > 6 || Math.abs(g.dy) > 6,
+      onMoveShouldSetPanResponderCapture: (_e, g) => Math.abs(g.dx) > 6 || Math.abs(g.dy) > 6,
+      onPanResponderGrant: () => { restPillDrag.extractOffset(); },
+      onPanResponderMove: Animated.event([null, { dx: restPillDrag.x, dy: restPillDrag.y }], { useNativeDriver: false }),
+      onPanResponderRelease: () => { restPillDrag.flattenOffset(); },
+      onPanResponderTerminate: () => { restPillDrag.flattenOffset(); },
+    })
+  ).current;
   const [restOvertimeSecs, setRestOvertimeSecs] = useState(0);
   const [exercisePhotos, setExercisePhotos] = useState<Map<string, string[]>>(new Map());
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const activeSessionIdRef = useRef<string | null>(null);
   const startedAtRef = useRef(startedAt);
   startedAtRef.current = startedAt;
+  // Long-press on the banner photo → view it full-screen, uncropped (tap to close)
+  const [bannerPeek, setBannerPeek] = useState<string | null>(null);
   const [peekModal, setPeekModal] = useState<
     | { type: 'photo'; urls: string[]; idx: number; weId: string }
     | { type: 'video'; url: string }
@@ -2032,6 +2050,19 @@ export default function TrainerWorkoutSessionScreen() {
     }));
   };
 
+  const editSetNote = async (exIdx: number, setLocalId: string, role: 'trainer' | 'client', noteId: string, text: string) => {
+    handleEditBeforeStart();
+    setExercises(prev => prev.map((ex, i) => i !== exIdx ? ex : {
+      ...ex, sets: ex.sets.map(s => s.localId !== setLocalId ? s : {
+        ...s,
+        trainerNotes: role === 'trainer' ? s.trainerNotes.map(n => n.id === noteId ? { ...n, text } : n) : s.trainerNotes,
+        clientNotes: role === 'client' ? s.clientNotes.map(n => n.id === noteId ? { ...n, text } : n) : s.clientNotes,
+      }),
+    }));
+    // Persisted rows update in place; unpersisted ones carry the new text via the save-time safety net.
+    await supabase.from('notes').update({ content: text }).eq('id', noteId);
+  };
+
   const addExerciseNote = async (exIdx: number, text: string) => {
     handleEditBeforeStart();
     const entry: NoteEntry = { id: generateUUID(), text, date: todayLabel() };
@@ -2050,6 +2081,15 @@ export default function TrainerWorkoutSessionScreen() {
     setExercises(prev => prev.map((ex, i) => i !== exIdx ? ex : {
       ...ex, trainerNotes: ex.trainerNotes.map(n => n.id === noteId ? { ...n, isDeleted: !n.isDeleted } : n),
     }));
+  };
+
+  const editExerciseNote = async (exIdx: number, noteId: string, text: string) => {
+    handleEditBeforeStart();
+    setExercises(prev => prev.map((ex, i) => i !== exIdx ? ex : {
+      ...ex, trainerNotes: ex.trainerNotes.map(n => n.id === noteId ? { ...n, text } : n),
+    }));
+    // Persisted rows update in place; unpersisted ones carry the new text via the save-time safety net.
+    await supabase.from('notes').update({ content: text }).eq('id', noteId);
   };
 
   const addClientNote = async (exIdx: number, text: string) => {
@@ -3088,13 +3128,10 @@ export default function TrainerWorkoutSessionScreen() {
         </View>
       </TouchableOpacity>
     ) : (
+      /* Running: timer ONLY — finishing lives in the bottom "Finish session" footer (tap = collapse to stopwatch) */
       <GlassPill>
         <TouchableOpacity onPress={() => setTimerCollapsed(true)} hitSlop={8} activeOpacity={0.7}>
           <Text style={styles.combinedPillTimerText}>{formatTimer(elapsed)}</Text>
-        </TouchableOpacity>
-        <View style={styles.combinedPillSep} />
-        <TouchableOpacity onPress={handleFinish} hitSlop={8} activeOpacity={0.7}>
-          <Text style={styles.combinedPillFinishText}>FINISH</Text>
         </TouchableOpacity>
       </GlassPill>
     )
@@ -3139,11 +3176,16 @@ export default function TrainerWorkoutSessionScreen() {
               <TouchableOpacity style={styles.editDoneBtn} onPress={exitEditMode} activeOpacity={0.8}>
                 <Text style={styles.editDoneBtnText}>Done</Text>
               </TouchableOpacity>
+            ) : isRunning && !pastSession ? (
+              /* Running: timer ONLY — finishing lives in the bottom "Finish session" footer */
+              <View style={styles.combinedPill}>
+                <Text style={styles.combinedPillTimerText}>{formatTimer(elapsed)}</Text>
+              </View>
             ) : (
-              <TouchableOpacity style={styles.combinedPill} onPress={isRunning && !pastSession ? handleFinish : handleStartPress} activeOpacity={0.85}>
+              <TouchableOpacity style={styles.combinedPill} onPress={handleStartPress} activeOpacity={0.85}>
                 <Text style={styles.combinedPillTimerText}>{formatTimer(elapsed)}</Text>
                 <View style={styles.combinedPillSep} />
-                <Text style={styles.combinedPillFinishText}>{isRunning && !pastSession ? 'FINISH' : 'START'}</Text>
+                <Text style={styles.combinedPillFinishText}>START</Text>
               </TouchableOpacity>
             )}
           </View>
@@ -3163,7 +3205,11 @@ export default function TrainerWorkoutSessionScreen() {
       {/* ── Fixed banner header (option 2): shows the ACTIVE exercise's photo + name + count */}
       {showFixedHeader && (
         <View style={[styles.fixedBanner, { height: bannerH }]}>
-          <View style={StyleSheet.absoluteFill}>
+          <Pressable
+            style={StyleSheet.absoluteFill}
+            onLongPress={bannerPhoto ? () => setBannerPeek(bannerPhoto) : undefined}
+            delayLongPress={300}
+          >
             {bannerPhoto ? (
               <HeaderPhoto uri={bannerPhoto} focusY={activeHeaderEx?.headerFocusY ?? 0.5} boxW={SCREEN_W} boxH={bannerH} />
             ) : categoryHasCover(workout?.category) ? (
@@ -3172,7 +3218,7 @@ export default function TrainerWorkoutSessionScreen() {
               <LinearGradient colors={['#2d6b5a', '#244e43', '#1a3832']} start={{ x: 1, y: 0 }} end={{ x: 0, y: 1 }} style={StyleSheet.absoluteFill} />
             )}
             <LinearGradient colors={['rgba(0,0,0,0.28)', 'transparent', 'rgba(0,0,0,0.55)']} locations={[0, 0.42, 1]} style={StyleSheet.absoluteFill} pointerEvents="none" />
-          </View>
+          </Pressable>
 
           {/* top row: back (left) · workout title + session·date (center) · ⋯ (right) */}
           <View style={{ flexDirection: 'row', alignItems: 'center', paddingTop: insets.top, paddingHorizontal: 12, height: insets.top + 52 }}>
@@ -3285,7 +3331,7 @@ export default function TrainerWorkoutSessionScreen() {
                 }}
                 ListHeaderComponent={
                   showFixedHeader ? (
-                    <View style={{ height: bannerH }} />
+                    <View style={{ height: bannerH + 10 }} />
                   ) : (
                   <View style={{ height: HEADER_MAX }}>
                     {workout?.cover_image_url ? (
@@ -3390,6 +3436,8 @@ export default function TrainerWorkoutSessionScreen() {
                           onAddDropset={() => addDropset(exIdx)}
                           onOpenInfo={() => setInfoModalExIdx(exIdx)}
                           onOpenSetNote={setLocalId => setSetNoteModal({ exIdx, setLocalId })}
+                          onAddExerciseNote={text => addExerciseNote(exIdx, text)}
+                          onEditExerciseNote={(noteId, text) => editExerciseNote(exIdx, noteId, text)}
                           onStartRest={startRest}
                           onVideoPress={() => navigateToExerciseDetail(ex.workoutExerciseId, exIdx)}
                           onExerciseNamePress={() => navigateToExerciseDetail(ex.workoutExerciseId, exIdx)}
@@ -3474,6 +3522,16 @@ export default function TrainerWorkoutSessionScreen() {
               ref={flatListRef}
               data={listData}
               extraData={listExtraData}
+              ListFooterComponent={isRunning ? (
+                <TouchableOpacity style={styles.finishFooterBtn} onPress={handleFinish} activeOpacity={0.85}>
+                  <View style={styles.finishFooterTitleRow}>
+                    <Text style={styles.finishFooterTitle}>Finish session</Text>
+                    <View style={styles.finishFooterSep} />
+                    <Text style={styles.finishFooterTimer}>{formatTimer(elapsed)}</Text>
+                  </View>
+                  <Text style={styles.finishFooterSub}>{exercises.filter(e => e.isDone).length} / {exercises.length} exercises done</Text>
+                </TouchableOpacity>
+              ) : null}
               keyExtractor={(item: DisplayItem) =>
                 item.kind === 'exercise' ? item.exercise.workoutExerciseId : item.groupId
               }
@@ -3490,7 +3548,7 @@ export default function TrainerWorkoutSessionScreen() {
               scrollEventThrottle={16}
               ListHeaderComponent={
                 showFixedHeader ? (
-                  <View style={{ height: bannerH }} />
+                  <View style={{ height: bannerH + 10 }} />
                 ) : (
                 <View style={{ height: HEADER_MAX }}>
                   {workout?.cover_image_url ? (
@@ -3588,6 +3646,8 @@ export default function TrainerWorkoutSessionScreen() {
                                 onAddDropset={() => addDropset(exIdx)}
                                 onOpenInfo={() => setInfoModalExIdx(exIdx)}
                                 onOpenSetNote={setLocalId => setSetNoteModal({ exIdx, setLocalId })}
+                                onAddExerciseNote={text => addExerciseNote(exIdx, text)}
+                                onEditExerciseNote={(noteId, text) => editExerciseNote(exIdx, noteId, text)}
                                 onStartRest={startRest}
                                 onVideoPress={() => navigateToExerciseDetail(member.workoutExerciseId, exIdx)}
                                 onExerciseNamePress={() => navigateToExerciseDetail(member.workoutExerciseId, exIdx)}
@@ -3656,6 +3716,8 @@ export default function TrainerWorkoutSessionScreen() {
                         onAddDropset={() => addDropset(exIdx)}
                         onOpenInfo={() => setInfoModalExIdx(exIdx)}
                         onOpenSetNote={setLocalId => setSetNoteModal({ exIdx, setLocalId })}
+                        onAddExerciseNote={text => addExerciseNote(exIdx, text)}
+                        onEditExerciseNote={(noteId, text) => editExerciseNote(exIdx, noteId, text)}
                         onStartRest={startRest}
                         onVideoPress={() => navigateToExerciseDetail(ex.workoutExerciseId, exIdx)}
                         onExerciseNamePress={() => navigateToExerciseDetail(ex.workoutExerciseId, exIdx)}
@@ -3759,18 +3821,30 @@ export default function TrainerWorkoutSessionScreen() {
 
       {/* ── Running-rest pill — the panel was dismissed but the clock kept going ── */}
       {restRunning && !restVisible && !isEditMode && kbHeight === 0 && (
-        <View style={[styles.restPillWrap, { bottom: insets.bottom + 16, zIndex: 90 }]} pointerEvents="box-none">
-          <TouchableOpacity style={styles.restPill} onPress={() => setRestVisible(true)} activeOpacity={0.85}>
-            <SymbolView name="timer" size={14} tintColor={restOvertimeSecs > 0 ? '#e53935' : ACCENT} />
-            <Text style={[styles.restPillText, restOvertimeSecs > 0 && styles.restPillTextOver]}>
+        <Animated.View
+          style={[styles.restPillWrap, { bottom: insets.bottom + 16, zIndex: 90, transform: restPillDrag.getTranslateTransform() }]}
+          {...restPillPanResponder.panHandlers}
+        >
+          <TouchableOpacity style={[styles.restPill, restOvertimeSecs > 0 && styles.restPillOver]} onPress={() => setRestVisible(true)} activeOpacity={0.85}>
+            <SymbolView name="timer" size={16} tintColor="#fff" style={{ width: 18, height: 18 }} />
+            <Text style={styles.restPillText}>
               {restOvertimeSecs > 0 ? `+${formatRestTimer(restOvertimeSecs)}` : formatRestTimer(restRemaining)}
             </Text>
             <View style={styles.restPillSep} />
             <TouchableOpacity onPress={stopRest} hitSlop={12} activeOpacity={0.6}>
-              <SymbolView name="xmark" size={12} tintColor="#999" />
+              <SymbolView name="xmark" size={13} tintColor="rgba(255,255,255,0.85)" />
             </TouchableOpacity>
           </TouchableOpacity>
-        </View>
+        </Animated.View>
+      )}
+
+      {/* ── Banner photo full-screen peek (long-press on the header photo) ── */}
+      {bannerPeek && (
+        <Modal visible transparent animationType="fade" onRequestClose={() => setBannerPeek(null)} statusBarTranslucent>
+          <Pressable style={styles.bannerPeekRoot} onPress={() => setBannerPeek(null)}>
+            <Image source={{ uri: bannerPeek }} style={StyleSheet.absoluteFill} resizeMode="contain" />
+          </Pressable>
+        </Modal>
       )}
 
       {/* ── Keyboard "Done" — pinned just above the keyboard (numeric keypads have no return key) ── */}
@@ -3799,6 +3873,7 @@ export default function TrainerWorkoutSessionScreen() {
           workoutId={workoutId!}
           profileId={profile?.id ?? ''}
           onAddTrainerNote={text => addExerciseNote(infoModalExIdx, text)}
+          onEditTrainerNote={(noteId, text) => editExerciseNote(infoModalExIdx, noteId, text)}
           onDeleteTrainerNote={noteId => deleteExerciseNote(infoModalExIdx, noteId)}
           onAddClientNote={text => addClientNote(infoModalExIdx, text)}
           onDeleteClientNote={noteId => deleteClientNote(infoModalExIdx, noteId)}
@@ -3835,6 +3910,7 @@ export default function TrainerWorkoutSessionScreen() {
             trainerNotes={set?.trainerNotes ?? []}
             clientNotes={set?.clientNotes ?? []}
             onAddNote={(role, text) => addSetNote(setNoteModal.exIdx, setNoteModal.setLocalId, role, text)}
+            onEditNote={(role, noteId, text) => editSetNote(setNoteModal.exIdx, setNoteModal.setLocalId, role, noteId, text)}
             onDeleteNote={(role, noteId) => deleteSetNote(setNoteModal.exIdx, setNoteModal.setLocalId, role, noteId)}
             onSeeHistory={ex && set ? () => {
               setSetNoteModal(null);
@@ -4456,6 +4532,8 @@ function ExerciseCard({
   onAddDropset,
   onOpenInfo,
   onOpenSetNote,
+  onAddExerciseNote,
+  onEditExerciseNote,
   onStartRest,
   onVideoPress,
   onCameraPress,
@@ -4515,6 +4593,8 @@ function ExerciseCard({
   onAddDropset: () => void;
   onOpenInfo: () => void;
   onOpenSetNote: (setLocalId: string) => void;
+  onAddExerciseNote: (text: string) => void;
+  onEditExerciseNote: (noteId: string, text: string) => void;
   onStartRest: (secs?: number) => void;
   onVideoPress: () => void;
   onCameraPress: () => void;
@@ -4719,10 +4799,11 @@ function ExerciseCard({
               onLongPress={!isExpanded ? () => { onLongPressCollapsed?.(); } : undefined}
               delayLongPress={300}
             >
-              {/* Circle */}
+              {/* Circle — collapsed shift: the main row excludes the chevron row below,
+                  so nudge the circle down to sit on the card's optical center */}
               {isEditMode && isTrainer ? (
                 <TouchableOpacity onPress={onSelect} hitSlop={10}
-                  style={[styles.numCircle, styles.numCircleEditEmpty, isSelected && styles.editSelCircle]}>
+                  style={[styles.numCircle, styles.numCircleEditEmpty, isSelected && styles.editSelCircle, !isExpanded && styles.numCircleCollapsedShift]}>
                   {isSelected && <Text style={styles.editSelCheck}>✓</Text>}
                 </TouchableOpacity>
               ) : (
@@ -4730,7 +4811,7 @@ function ExerciseCard({
                   <TouchableOpacity
                     onPress={exercise.isDone ? onUnmarkDone : onMarkDone}
                     hitSlop={10}
-                    style={[styles.numCircle, exercise.isDone && styles.numCircleDone]}
+                    style={[styles.numCircle, exercise.isDone && styles.numCircleDone, !isExpanded && styles.numCircleCollapsedShift]}
                   >
                     {exercise.isDone
                       ? <Text style={styles.numCircleCheck}>✓</Text>
@@ -4757,8 +4838,31 @@ function ExerciseCard({
                     <Text style={styles.ogLabel}>og. {exercise.originalExerciseName}</Text>
                   )}
                   {!isExpanded && (() => {
-                    const summary = buildSetsSummary(exercise.sets);
-                    return summary ? <Text style={styles.collapsedSetsSummary} numberOfLines={1}>{summary}</Text> : null;
+                    const chips = buildSetChips(exercise.sets);
+                    return (
+                      <>
+                        {chips.length > 0 && (
+                          <View style={styles.setChipsRow}>
+                            {chips.slice(0, 3).map(c => (
+                              <View key={c.key} style={styles.setChip}>
+                                <Text style={styles.setChipTop} numberOfLines={1}>{c.top}</Text>
+                                <Text style={styles.setChipBottom} numberOfLines={1}>{c.bottom}</Text>
+                                {c.hasNote && <View style={styles.setChipNoteDot} />}
+                              </View>
+                            ))}
+                            {chips.length > 3 && <Text style={styles.setChipsMore}>…</Text>}
+                          </View>
+                        )}
+                        {/* Always rendered — "No note" placeholder keeps every card the same height */}
+                        <View style={styles.collapsedNoteRow}>
+                          {/* marginTop centers the 12px icon in the text's 16px line */}
+                          <SymbolView name="note.text" size={11} tintColor="#b5b5b0" style={{ width: 12, height: 12, marginTop: 2 }} />
+                          {latestNote
+                            ? <Text style={styles.collapsedNoteText} numberOfLines={1}>{latestNote.text}</Text>
+                            : <Text style={styles.collapsedNoteEmpty} numberOfLines={1}>No note</Text>}
+                        </View>
+                      </>
+                    );
                   })()}
                 </View>
               </View>
@@ -4988,28 +5092,14 @@ function ExerciseCard({
               </View>
             )}
 
-            {/* Last note — side action opens the full notes sliding panel */}
-            {(() => {
-              const lastNote = latestExerciseNote(exercise);
-              return (
-                <View style={styles.noteFooter}>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.noteFooterLabel}>NOTE{lastNote?.date ? `  ·  ${lastNote.date}` : ''}</Text>
-                    {lastNote
-                      ? <Text style={styles.noteFooterText} numberOfLines={3}>{lastNote.text}</Text>
-                      : <Text style={styles.noteFooterEmpty}>No notes yet</Text>}
-                  </View>
-                  <TouchableOpacity
-                    style={styles.noteFooterAction}
-                    onPress={() => { setInfoSeen(true); onOpenInfo(); }}
-                    activeOpacity={0.7}
-                  >
-                    <Text style={styles.noteFooterActionText}>{lastNote ? 'See all' : 'Add note'}</Text>
-                    <SymbolView name="chevron.right" size={11} tintColor={ACCENT} />
-                  </TouchableOpacity>
-                </View>
-              );
-            })()}
+            {/* Notes — latest note + inline add/edit input; "See more" unfolds recent
+                history in place, then "See all" opens the full info panel */}
+            <CardNoteFooter
+              exercise={exercise}
+              onAddNote={onAddExerciseNote}
+              onEditNote={onEditExerciseNote}
+              onOpenInfo={() => { setInfoSeen(true); onOpenInfo(); }}
+            />
           </View>
         )}
       </Animated.View>
@@ -5121,22 +5211,8 @@ function InlineSetRow({
   onPeekStart: () => void;
   onPeekEnd: () => void;
 }) {
-  const hasSetNotes = set.trainerNotes.length + set.clientNotes.length > 0;
-  const noteBounceAnim = useRef(new Animated.Value(1)).current;
-  const noteBounceHasFiredRef = useRef(false);
+  const hasSetNotes = set.trainerNotes.some(n => !n.isDeleted) || set.clientNotes.some(n => !n.isDeleted);
   const peekTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  useEffect(() => {
-    if (!hasSetNotes || noteBounceHasFiredRef.current) return;
-    noteBounceHasFiredRef.current = true;
-    const timer = setTimeout(() => {
-      Animated.sequence([
-        Animated.spring(noteBounceAnim, { toValue: 1.4, useNativeDriver: true, damping: 6, stiffness: 300 }),
-        Animated.spring(noteBounceAnim, { toValue: 1, useNativeDriver: true, damping: 8, stiffness: 200 }),
-      ]).start();
-    }, 500);
-    return () => clearTimeout(timer);
-  }, [hasSetNotes]);
 
   const handleSetNumPressIn = () => {
     if (set.isDropset) return;
@@ -5188,9 +5264,10 @@ function InlineSetRow({
         {set.isDropset
           ? <Text style={styles.dropsetArrow}>↓</Text>
           : (
-            <Animated.View style={{ transform: [{ scale: noteBounceAnim }] }}>
-              <Text style={[styles.setNum, hasSetNotes && styles.setNumActive, isPeeking && styles.setNumPeeking]}>{set.setNumber}</Text>
-            </Animated.View>
+            <View>
+              <Text style={[styles.setNum, isPeeking && styles.setNumPeeking]}>{set.setNumber}</Text>
+              {hasSetNotes && <View style={styles.setNumNoteDot} />}
+            </View>
           )
         }
       </TouchableOpacity>
@@ -5374,6 +5451,7 @@ function ExerciseInfoModal({
   workoutId: infoWorkoutId,
   profileId,
   onAddTrainerNote,
+  onEditTrainerNote,
   onDeleteTrainerNote,
   onAddClientNote,
   onDeleteClientNote,
@@ -5384,6 +5462,7 @@ function ExerciseInfoModal({
   workoutId: string;
   profileId: string;
   onAddTrainerNote: (text: string) => void;
+  onEditTrainerNote: (id: string, text: string) => void;
   onDeleteTrainerNote: (id: string) => void;
   onAddClientNote: (text: string) => void;
   onDeleteClientNote: (id: string) => void;
@@ -5391,6 +5470,7 @@ function ExerciseInfoModal({
 }) {
   const { profile: modalProfile } = useAuth();
   const [newNote, setNewNote] = useState('');
+  const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
   const [progressOpen, setProgressOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const newAnim = useRef(new Animated.Value(0)).current;
@@ -5445,12 +5525,24 @@ function ExerciseInfoModal({
             {sortedTrainer.map((n, idx) => {
               const isNewest = idx === 0;
               const entry = (
-                <View key={n.id} style={[styles.noteEntry, isNewest && styles.noteEntryNew, n.isDeleted && styles.noteEntryDeleted]}>
+                <View key={n.id} style={[styles.noteEntry, isNewest && styles.noteEntryNew, n.isDeleted && styles.noteEntryDeleted, editingNoteId === n.id && styles.noteEntryEditing]}>
                   <View style={styles.noteEntryBody}>
                     {isNewest && !n.isDeleted && <Text style={styles.newBadge}>NEW</Text>}
                     <Text style={[styles.noteDateLabel, n.isDeleted && styles.noteDeletedText]}>{n.date}</Text>
                     <Text style={[styles.noteBodyText, n.isDeleted && styles.noteDeletedText]}>{n.text}</Text>
                   </View>
+                  {modalProfile?.role !== 'client' && !n.isDeleted && (
+                    <TouchableOpacity
+                      onPress={() => {
+                        if (editingNoteId === n.id) { setEditingNoteId(null); setNewNote(''); }
+                        else { setEditingNoteId(n.id); setNewNote(n.text); }
+                      }}
+                      hitSlop={10}
+                      style={styles.noteDeleteBtn}
+                    >
+                      <SymbolView name="pencil" size={12} tintColor={editingNoteId === n.id ? ACCENT : '#ccc'} />
+                    </TouchableOpacity>
+                  )}
                   {modalProfile?.role !== 'client' && (
                     <TouchableOpacity onPress={() => onDeleteTrainerNote(n.id)} hitSlop={10} style={styles.noteDeleteBtn}>
                       <SymbolView name="xmark" size={11} tintColor={n.isDeleted ? ACCENT : '#ccc'} />
@@ -5468,15 +5560,22 @@ function ExerciseInfoModal({
                   style={styles.noteAddInput}
                   value={newNote}
                   onChangeText={setNewNote}
-                  placeholder={en.exerciseDetail.addNotePlaceholder}
+                  placeholder={editingNoteId ? 'Edit note...' : en.exerciseDetail.addNotePlaceholder}
                   placeholderTextColor="#bbb"
                   multiline
                 />
                 <TouchableOpacity
-                  onPress={() => { if (newNote.trim()) { onAddTrainerNote(newNote.trim()); setNewNote(''); } }}
+                  onPress={() => {
+                    const text = newNote.trim();
+                    if (!text) return;
+                    if (editingNoteId) onEditTrainerNote(editingNoteId, text);
+                    else onAddTrainerNote(text);
+                    setEditingNoteId(null);
+                    setNewNote('');
+                  }}
                   style={[styles.noteAddBtn, !newNote.trim() && styles.noteAddBtnDisabled]}
                 >
-                  <Text style={styles.noteAddBtnText}>{en.exerciseDetail.addNoteButton}</Text>
+                  <Text style={styles.noteAddBtnText}>{editingNoteId ? 'Save' : en.exerciseDetail.addNoteButton}</Text>
                 </TouchableOpacity>
               </View>
             )}
@@ -5566,34 +5665,161 @@ function ExerciseInfoModal({
   );
 }
 
+// ─── CardNoteFooter ──────────────────────────────────────────────────────────────
+// Notes block at the bottom of an expanded exercise card. Shows the latest note and
+// an inline input to type a new note directly (pencil on a trainer note = edit it).
+// "See more" unfolds up to 5 previous notes in place; once unfolded the link becomes
+// "See all" → the full ExerciseInfoModal.
+
+function CardNoteFooter({ exercise, onAddNote, onEditNote, onOpenInfo }: {
+  exercise: SessionExercise;
+  onAddNote: (text: string) => void;
+  onEditNote: (noteId: string, text: string) => void;
+  onOpenInfo: () => void;
+}) {
+  const [draft, setDraft] = useState('');
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [expanded, setExpanded] = useState(false);
+
+  const headline = latestExerciseNote(exercise);
+  // Full history (both roles), newest first. Undated notes (added this session, no
+  // createdAt yet) sort to the front; the reverse() keeps same-day order newest-first.
+  const history = [
+    ...[...exercise.trainerNotes].reverse().filter(n => !n.isDeleted).map(n => ({ ...n, role: 'trainer' as const })),
+    ...[...exercise.clientNote].reverse().filter(n => !n.isDeleted).map(n => ({ ...n, role: 'client' as const })),
+  ].sort((a, b) => (b.createdAt ?? '9999').localeCompare(a.createdAt ?? '9999'));
+  const previousAll = headline ? history.filter(n => n.id !== headline.id) : [];
+  const previous = previousAll.slice(0, 5);
+
+  const submit = () => {
+    const text = draft.trim();
+    if (!text) return;
+    if (editingId) onEditNote(editingId, text);
+    else onAddNote(text);
+    setDraft('');
+    setEditingId(null);
+    Keyboard.dismiss();
+  };
+  const cancelEdit = () => { setEditingId(null); setDraft(''); };
+
+  const renderNote = (n: NoteEntry & { role: 'trainer' | 'client' }) => (
+    <View key={n.id} style={[styles.fNoteRow, editingId === n.id && styles.fNoteRowEditing]}>
+      <View style={{ flex: 1 }}>
+        <Text style={[styles.noteDateLabel, n.role === 'client' && styles.clientNoteDateLabel]}>
+          {n.role === 'client' ? `CLIENT${n.date ? `  ·  ${n.date}` : ''}` : n.date}
+        </Text>
+        <Text style={styles.noteFooterText}>{n.text}</Text>
+      </View>
+      {n.role === 'trainer' && (
+        <TouchableOpacity
+          onPress={() => (editingId === n.id ? cancelEdit() : (setEditingId(n.id), setDraft(n.text)))}
+          hitSlop={10}
+          style={styles.fNoteEditBtn}
+        >
+          <SymbolView name="pencil" size={13} tintColor={editingId === n.id ? ACCENT : '#c5c5c0'} style={{ width: 14, height: 14 }} />
+        </TouchableOpacity>
+      )}
+    </View>
+  );
+
+  return (
+    <View style={styles.noteFooterV2}>
+      <View style={styles.noteFooterHeadRow}>
+        <Text style={styles.noteFooterLabel}>NOTES</Text>
+        {previous.length > 0 && (
+          <TouchableOpacity
+            style={styles.noteFooterAction}
+            onPress={() => setExpanded(e => !e)}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.noteFooterActionText}>{expanded ? 'See less' : 'See more'}</Text>
+            <SymbolView name={expanded ? 'chevron.up' : 'chevron.down'} size={11} tintColor={ACCENT} />
+          </TouchableOpacity>
+        )}
+      </View>
+      {headline && renderNote({ ...headline, role: exercise.trainerNotes.some(n => n.id === headline.id) ? 'trainer' : 'client' })}
+      {expanded && previous.map(renderNote)}
+      {expanded && previousAll.length > 5 && (
+        <TouchableOpacity style={[styles.noteFooterAction, { alignSelf: 'flex-start', paddingLeft: 0, paddingVertical: 4 }]} onPress={onOpenInfo} activeOpacity={0.7}>
+          <Text style={styles.noteFooterActionText}>See all</Text>
+          <SymbolView name="chevron.right" size={11} tintColor={ACCENT} />
+        </TouchableOpacity>
+      )}
+      <View style={styles.noteInputRow}>
+        <TextInput
+          style={styles.noteInlineInput}
+          value={draft}
+          onChangeText={setDraft}
+          placeholder={editingId ? 'Edit note…' : 'Add a note…'}
+          placeholderTextColor="#bbb"
+          multiline
+        />
+        {(draft.trim().length > 0 || editingId != null) && (
+          <TouchableOpacity onPress={submit} style={[styles.noteSendBtn, !draft.trim() && styles.noteAddBtnDisabled]} activeOpacity={0.8}>
+            <SymbolView name={editingId ? 'checkmark' : 'arrow.up'} size={13} tintColor="#fff" style={{ width: 14, height: 14 }} />
+          </TouchableOpacity>
+        )}
+      </View>
+      {editingId != null && (
+        <TouchableOpacity onPress={cancelEdit} hitSlop={8} style={{ alignSelf: 'flex-start', marginTop: 4 }}>
+          <Text style={styles.fNoteCancelEdit}>Cancel edit</Text>
+        </TouchableOpacity>
+      )}
+    </View>
+  );
+}
+
 // ─── SetNoteModal ────────────────────────────────────────────────────────────────
 
-function SetNoteModal({ trainerNotes, clientNotes, onAddNote, onDeleteNote, onSeeHistory, onClose }: {
+function SetNoteModal({ trainerNotes, clientNotes, onAddNote, onEditNote, onDeleteNote, onSeeHistory, onClose }: {
   trainerNotes: NoteEntry[];
   clientNotes: NoteEntry[];
   onAddNote: (role: 'trainer' | 'client', text: string) => void;
+  onEditNote: (role: 'trainer' | 'client', id: string, text: string) => void;
   onDeleteNote: (role: 'trainer' | 'client', id: string) => void;
   onSeeHistory?: () => void;
   onClose: () => void;
 }) {
   const { profile: setNoteProfile } = useAuth();
+  const { translateY: sheetY, panHandlers: sheetPan, dismiss: dismissSheet } = useSheetDismissGesture(onClose);
   const [newNote, setNewNote] = useState('');
+  const [editing, setEditing] = useState<{ role: 'trainer' | 'client'; id: string } | null>(null);
   const sortedTrainer = [...trainerNotes].reverse();
   const sortedClient = [...clientNotes].reverse();
+  const ownRole: 'trainer' | 'client' = setNoteProfile?.role === 'client' ? 'client' : 'trainer';
+  const startEdit = (role: 'trainer' | 'client', n: NoteEntry) => {
+    if (editing?.id === n.id) { setEditing(null); setNewNote(''); return; }
+    setEditing({ role, id: n.id });
+    setNewNote(n.text);
+  };
+  const submitNote = () => {
+    const text = newNote.trim();
+    if (!text) return;
+    if (editing) onEditNote(editing.role, editing.id, text);
+    else onAddNote(ownRole, text);
+    setEditing(null);
+    setNewNote('');
+  };
   return (
-    <Modal visible transparent animationType="fade" onRequestClose={onClose} statusBarTranslucent>
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.centeredRoot}>
-        <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
-        <View style={styles.centeredModal}>
+    <Modal visible transparent animationType="none" onRequestClose={dismissSheet} statusBarTranslucent>
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1, justifyContent: 'flex-end' }}>
+        <Pressable style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.45)' }]} onPress={dismissSheet} />
+        <Animated.View style={[styles.infoBottomSheet, { transform: [{ translateY: sheetY }] }]}>
+          <View style={styles.infoSheetHandleHitArea} {...sheetPan}><View style={styles.infoSheetHandle} /></View>
           <Text style={styles.centeredModalTitle}>Set Notes</Text>
-          <ScrollView bounces={false} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+          <ScrollView bounces={false} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} style={{ maxHeight: SCREEN_H * 0.55 }}>
             <Text style={[styles.infoLabel, { color: ACCENT }]}>TRAINER NOTE</Text>
             {sortedTrainer.map(n => (
-              <View key={n.id} style={[styles.noteEntry, n.isDeleted && styles.noteEntryDeleted]}>
+              <View key={n.id} style={[styles.noteEntry, n.isDeleted && styles.noteEntryDeleted, editing?.id === n.id && styles.noteEntryEditing]}>
                 <View style={styles.noteEntryBody}>
                   <Text style={[styles.noteDateLabel, n.isDeleted && styles.noteDeletedText]}>{n.date}</Text>
                   <Text style={[styles.noteBodyText, n.isDeleted && styles.noteDeletedText]}>{n.text}</Text>
                 </View>
+                {ownRole === 'trainer' && !n.isDeleted && (
+                  <TouchableOpacity onPress={() => startEdit('trainer', n)} hitSlop={10} style={styles.noteDeleteBtn}>
+                    <SymbolView name="pencil" size={12} tintColor={editing?.id === n.id ? ACCENT : '#ccc'} />
+                  </TouchableOpacity>
+                )}
                 <TouchableOpacity onPress={() => onDeleteNote('trainer', n.id)} hitSlop={10} style={styles.noteDeleteBtn}>
                   <SymbolView name="xmark" size={11} tintColor={n.isDeleted ? ACCENT : '#ccc'} />
                 </TouchableOpacity>
@@ -5605,27 +5831,32 @@ function SetNoteModal({ trainerNotes, clientNotes, onAddNote, onDeleteNote, onSe
                   style={styles.noteAddInput}
                   value={newNote}
                   onChangeText={setNewNote}
-                  placeholder="Add note..."
+                  placeholder={editing ? 'Edit note...' : 'Add note...'}
                   placeholderTextColor="#bbb"
                   multiline
                   autoFocus={trainerNotes.length === 0 && clientNotes.length === 0}
                 />
                 <TouchableOpacity
-                  onPress={() => { if (newNote.trim()) { onAddNote('trainer', newNote.trim()); setNewNote(''); } }}
+                  onPress={submitNote}
                   style={[styles.noteAddBtn, !newNote.trim() && styles.noteAddBtnDisabled]}
                 >
-                  <Text style={styles.noteAddBtnText}>Add</Text>
+                  <Text style={styles.noteAddBtnText}>{editing ? 'Save' : 'Add'}</Text>
                 </TouchableOpacity>
               </View>
             )}
             <View style={styles.infoSep} />
             <Text style={[styles.infoLabel, { color: MUTED }]}>CLIENT NOTE</Text>
             {sortedClient.map(n => (
-              <View key={n.id} style={[styles.noteEntry, styles.clientNoteEntry, n.isDeleted && styles.noteEntryDeleted]}>
+              <View key={n.id} style={[styles.noteEntry, styles.clientNoteEntry, n.isDeleted && styles.noteEntryDeleted, editing?.id === n.id && styles.noteEntryEditing]}>
                 <View style={styles.noteEntryBody}>
                   <Text style={[styles.noteDateLabel, styles.clientNoteDateLabel, n.isDeleted && styles.noteDeletedText]}>{n.date}</Text>
                   <Text style={[styles.noteBodyText, styles.clientNoteBodyText, n.isDeleted && styles.noteDeletedText]}>{n.text}</Text>
                 </View>
+                {ownRole === 'client' && !n.isDeleted && (
+                  <TouchableOpacity onPress={() => startEdit('client', n)} hitSlop={10} style={styles.noteDeleteBtn}>
+                    <SymbolView name="pencil" size={12} tintColor={editing?.id === n.id ? ACCENT : '#ccc'} />
+                  </TouchableOpacity>
+                )}
                 <TouchableOpacity onPress={() => onDeleteNote('client', n.id)} hitSlop={10} style={styles.noteDeleteBtn}>
                   <SymbolView name="xmark" size={11} tintColor={n.isDeleted ? ACCENT : '#ccc'} />
                 </TouchableOpacity>
@@ -5637,16 +5868,16 @@ function SetNoteModal({ trainerNotes, clientNotes, onAddNote, onDeleteNote, onSe
                   style={styles.noteAddInput}
                   value={newNote}
                   onChangeText={setNewNote}
-                  placeholder="Add note..."
+                  placeholder={editing ? 'Edit note...' : 'Add note...'}
                   placeholderTextColor="#bbb"
                   multiline
                   autoFocus={trainerNotes.length === 0 && clientNotes.length === 0}
                 />
                 <TouchableOpacity
-                  onPress={() => { if (newNote.trim()) { onAddNote('client', newNote.trim()); setNewNote(''); } }}
+                  onPress={submitNote}
                   style={[styles.noteAddBtn, !newNote.trim() && styles.noteAddBtnDisabled]}
                 >
-                  <Text style={styles.noteAddBtnText}>Add</Text>
+                  <Text style={styles.noteAddBtnText}>{editing ? 'Save' : 'Add'}</Text>
                 </TouchableOpacity>
               </View>
             )}
@@ -5657,10 +5888,10 @@ function SetNoteModal({ trainerNotes, clientNotes, onAddNote, onDeleteNote, onSe
               <Text style={styles.seeHistoryBtnText}>{en.doMode.seeHistory}</Text>
             </TouchableOpacity>
           )}
-          <TouchableOpacity style={styles.centeredModalDoneBtn} onPress={onClose} activeOpacity={0.85}>
+          <TouchableOpacity style={styles.centeredModalDoneBtn} onPress={dismissSheet} activeOpacity={0.85}>
             <Text style={styles.centeredModalDoneBtnText}>Done</Text>
           </TouchableOpacity>
-        </View>
+        </Animated.View>
       </KeyboardAvoidingView>
     </Modal>
   );
@@ -6535,7 +6766,16 @@ const styles = StyleSheet.create({
   headerSessionLabel: { fontSize: 13, fontWeight: '500', color: 'rgba(255,255,255,0.65)' },
   headerActionBtnFloat: { position: 'absolute', bottom: -17, right: 20 },
   headerFloatRow: { position: 'absolute', top: 0, left: 0, right: 0, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 10, paddingBottom: 6, gap: 6 },
-  floatIconBtn: { width: 36, height: 36, borderRadius: 100, backgroundColor: 'rgba(0,0,0,0.22)', alignItems: 'center', justifyContent: 'center' },
+  // 0.45 (was 0.22) — the faint circle disappeared over bright banner photos, leaving ‹ and ⋯ near-invisible
+  floatIconBtn: { width: 36, height: 36, borderRadius: 100, backgroundColor: 'rgba(0,0,0,0.45)', alignItems: 'center', justifyContent: 'center' },
+  // List-footer CTA while a session is running — same confirm flow as the header FINISH pill.
+  // Outline (Type 3 secondary), not filled — Vitek: the filled pill was "too heavy" here.
+  finishFooterBtn: { marginHorizontal: 14, marginTop: 8, marginBottom: 4, backgroundColor: '#fff', borderWidth: 1.5, borderColor: ACCENT, borderRadius: 100, paddingVertical: 12, alignItems: 'center' },
+  finishFooterTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  finishFooterTitle: { color: ACCENT, fontSize: 16, fontWeight: '700' },
+  finishFooterSep: { width: 1, height: 14, backgroundColor: 'rgba(36,172,136,0.35)' },
+  finishFooterTimer: { color: ACCENT, fontSize: 15, fontWeight: '600', fontVariant: ['tabular-nums'] },
+  finishFooterSub: { color: '#7fbfae', fontSize: 12, fontWeight: '600', marginTop: 1, fontVariant: ['tabular-nums'] },
   miniBarCollapsed: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8 },
   miniBarName: { flex: 1, fontSize: 13, fontWeight: '500', color: '#fff', textAlign: 'center' },
   miniBarTimer: { fontSize: 12, color: 'rgba(255,255,255,0.7)', fontVariant: ['tabular-nums'] },
@@ -6640,7 +6880,9 @@ const styles = StyleSheet.create({
   numCircleText: { fontSize: 10, fontWeight: '600', color: '#aaa' },
   numCircleCheck: { color: '#fff', fontSize: 11, fontWeight: '700' },
 
-  exerciseName: { fontSize: 16, fontWeight: '600', color: TEXT, flexShrink: 1 },
+  // 17/700 (was 16/600) — the bold set chips below stole the hierarchy from the name.
+  // Tight tracking (-0.4) so system SF reads as a designed headline, not default UI text.
+  exerciseName: { fontSize: 17, fontWeight: '700', color: TEXT, flexShrink: 1, letterSpacing: -0.4 },
   cardChevronRow: { alignItems: 'center', paddingTop: 6 },
   infoBtn: { width: 15, height: 15, borderRadius: 7.5, borderWidth: 1.5, borderColor: '#ccc', backgroundColor: 'transparent', alignItems: 'center', justifyContent: 'center' },
   infoBtnText: { fontSize: 9, fontWeight: '700', color: '#ccc', lineHeight: 11 },
@@ -6650,12 +6892,28 @@ const styles = StyleSheet.create({
 
   addedLabel: { fontSize: 11, color: '#aaa', marginBottom: 1 },
   ogLabel: { fontSize: 11, color: '#aaa', fontStyle: 'italic', marginBottom: 1 },
-  collapsedSetsSummary: { fontSize: 12.5, color: '#7a7a7a', marginTop: 3, fontVariant: ['tabular-nums'] },
+  setChipsRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 10 },
+  setChip: { minWidth: 46, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8, backgroundColor: '#f5f5f3', alignItems: 'center' },
+  setChipTop: { fontSize: 12.5, fontWeight: '700', color: TEXT, fontVariant: ['tabular-nums'] },
+  setChipBottom: { fontSize: 10.5, color: '#8a8a8a', fontVariant: ['tabular-nums'], marginTop: 1 },
+  setChipNoteDot: { position: 'absolute', top: 3, right: 3, width: 5, height: 5, borderRadius: 2.5, backgroundColor: ACCENT },
+  setChipsMore: { fontSize: 13, fontWeight: '700', color: '#b5b5b0', marginLeft: 2 },
+  collapsedNoteRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 5, marginTop: 6, paddingRight: 8 },
+  collapsedNoteText: { flex: 1, fontSize: 12, color: '#8a8a8a', lineHeight: 16 },
+  collapsedNoteEmpty: { flex: 1, fontSize: 12, color: '#c2c2bd', lineHeight: 16, fontStyle: 'italic' },
+  numCircleCollapsedShift: { transform: [{ translateY: 8 }] },
   nameNoteDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: ACCENT, flexShrink: 0 },
-  noteFooter: { flexDirection: 'row', alignItems: 'center', gap: 8, marginHorizontal: 12, marginTop: 4, paddingTop: 10, paddingBottom: 6, borderTopWidth: 1, borderTopColor: '#e8e8e4' },
+  noteFooterV2: { marginHorizontal: 12, marginTop: 4, paddingTop: 10, paddingBottom: 10, borderTopWidth: 1, borderTopColor: '#e8e8e4' },
+  noteFooterHeadRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 },
   noteFooterLabel: { fontSize: 10, fontWeight: '700', color: '#aaa', letterSpacing: 0.5, marginBottom: 3 },
+  fNoteRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 8, paddingVertical: 4 },
+  fNoteRowEditing: { backgroundColor: '#f7faf9', borderRadius: 8, marginHorizontal: -6, paddingHorizontal: 6 },
+  fNoteEditBtn: { paddingTop: 2 },
+  fNoteCancelEdit: { fontSize: 12, fontWeight: '600', color: '#aaa' },
+  noteInputRow: { flexDirection: 'row', alignItems: 'flex-end', gap: 8, marginTop: 6 },
+  noteInlineInput: { flex: 1, backgroundColor: '#f5f5f3', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8, fontSize: 13.5, color: TEXT, minHeight: 36, maxHeight: 96, textAlignVertical: 'top' },
+  noteSendBtn: { width: 32, height: 32, borderRadius: 16, backgroundColor: ACCENT, alignItems: 'center', justifyContent: 'center', marginBottom: 2 },
   noteFooterText: { fontSize: 13, color: TEXT, lineHeight: 18 },
-  noteFooterEmpty: { fontSize: 13, color: '#bbb', fontStyle: 'italic' },
   noteFooterAction: { flexDirection: 'row', alignItems: 'center', gap: 2, paddingLeft: 6 },
   noteFooterActionText: { fontSize: 12, fontWeight: '600', color: ACCENT },
   metaRow: { flexDirection: 'row', alignItems: 'center', gap: 5, flexWrap: 'wrap' },
@@ -6707,7 +6965,7 @@ const styles = StyleSheet.create({
   inlineSetRemoved: { opacity: 0.3 },
   setNumCol: { width: 30, alignItems: 'center', justifyContent: 'center' },
   setNum: { fontSize: 15, fontWeight: '700', color: '#999' },
-  setNumActive: { color: '#244e43' },
+  setNumNoteDot: { position: 'absolute', top: 0, right: -8, width: 5, height: 5, borderRadius: 2.5, backgroundColor: ACCENT },
   setNumPeeking: { color: '#b87d00' },
   dropsetArrow: { fontSize: 15, color: ACCENT, fontWeight: '700' },
   kgInput: { flex: 1.2, textAlign: 'center', fontSize: 16, fontWeight: '700', color: TEXT, backgroundColor: '#f0f0ee', borderRadius: 8, paddingVertical: 8, paddingHorizontal: 4 },
@@ -6779,6 +7037,7 @@ const styles = StyleSheet.create({
   noteEntryDeleted: { opacity: 0.4 },
   noteDeletedText: { textDecorationLine: 'line-through' },
   noteEntryNew: { backgroundColor: '#edf9f4', borderLeftWidth: 3, borderLeftColor: ACCENT },
+  noteEntryEditing: { borderWidth: 1, borderColor: ACCENT },
   newBadge: { fontSize: 9, fontWeight: '800', color: ACCENT, letterSpacing: 0.5, marginBottom: 2 },
   clientNoteEntry: { backgroundColor: '#f0f8f5', borderWidth: 1, borderColor: '#d0eee6' },
   noteEntryBody: { flex: 1, gap: 2 },
@@ -6802,10 +7061,12 @@ const styles = StyleSheet.create({
   restSheet: { backgroundColor: '#fff', borderTopLeftRadius: 20, borderTopRightRadius: 20, paddingHorizontal: 24, paddingTop: 6, paddingBottom: 34, alignItems: 'center', gap: 12 },
   restHideText: { fontSize: 13, fontWeight: '600', color: MUTED },
   restPillWrap: { position: 'absolute', right: 16, alignItems: 'flex-end' },
-  restPill: { flexDirection: 'row', alignItems: 'center', gap: 9, backgroundColor: '#fff', borderRadius: 100, paddingLeft: 13, paddingRight: 11, paddingVertical: 9, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.18, shadowRadius: 8, elevation: 5 },
-  restPillText: { fontSize: 14, fontWeight: '700', color: ACCENT, fontVariant: ['tabular-nums'] },
-  restPillTextOver: { color: '#e53935' },
-  restPillSep: { width: 1, height: 14, backgroundColor: '#e0e0dc' },
+  bannerPeekRoot: { flex: 1, backgroundColor: 'rgba(0,0,0,0.94)', justifyContent: 'center' },
+  // Green filled + bigger (was white w/ green text) — needs to stand out; drag it anywhere. Overtime flips the pill red.
+  restPill: { flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: ACCENT, borderRadius: 100, paddingLeft: 16, paddingRight: 14, paddingVertical: 12, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.22, shadowRadius: 8, elevation: 5 },
+  restPillOver: { backgroundColor: '#e53935' },
+  restPillText: { fontSize: 17, fontWeight: '700', color: '#fff', fontVariant: ['tabular-nums'] },
+  restPillSep: { width: 1, height: 16, backgroundColor: 'rgba(255,255,255,0.35)' },
   restLabel: { fontSize: 12, fontWeight: '700', color: MUTED, letterSpacing: 0.8 },
   restRingWrap: { width: 220, height: 220, position: 'relative', alignItems: 'center', justifyContent: 'center' },
   restRingCenter: { position: 'absolute', alignItems: 'center', justifyContent: 'center' },
