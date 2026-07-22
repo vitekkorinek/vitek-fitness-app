@@ -98,6 +98,7 @@ import * as ImagePicker from 'expo-image-picker';
 
 import { supabase } from '@/lib/supabase';
 import { CATEGORY_COLORS, WorkoutCategory } from '@/lib/workoutCategories';
+import { loadSessionDraft, saveSessionDraft, clearSessionDraft, mergeDraftIntoExercises } from '@/lib/sessionDraft';
 import {
   setBridgedExercises, flushPendingUpdates, addPendingSetDoneUpdate,
   getSoftPromptDismissed, setSoftPromptDismissed,
@@ -790,10 +791,16 @@ export default function TrainerWorkoutSessionScreen() {
       return;
     }
 
-    const [{ data: wData }, { data: weData }, { data: clientData }] = await Promise.all([
+    const [{ data: wData }, { data: weData }, { data: clientData }, { data: liveSess }, draft] = await Promise.all([
       supabase.from('workouts').select('id, name, description, goal, client_id, routine_id, created_by, equipment_list, muscle_groups, order_index, notes, cover_image_url, category, stretch_type, created_at').eq('id', workoutId).single(),
       supabase.from('workout_exercises').select('*, exercises(id, name, muscle_groups, secondary_muscle_groups, video_url, extra_video_urls, extra_photo_urls, thumbnail_url, header_focus_y, equipment, description)').eq('workout_id', workoutId).eq('is_active', true).order('order_index'),
       supabase.from('users').select('name').eq('id', clientId).single(),
+      // An in_progress row means this session was left running (back-swipe, "Leave —
+      // keep it running", or the app being reclaimed by iOS). Adopt it instead of
+      // starting a second one, so FINISH completes the row that's already there.
+      supabase.from('sessions').select('id, created_at').eq('client_id', clientId).eq('workout_id', workoutId)
+        .eq('status', 'in_progress').order('created_at', { ascending: false }).limit(1).maybeSingle(),
+      loadSessionDraft(clientId, workoutId),
     ]);
 
     if (!wData || !weData) { setLoading(false); return; }
@@ -803,6 +810,36 @@ export default function TrainerWorkoutSessionScreen() {
     const STRETCHING_CATS = ['Upper body stretching', 'Lower body stretching', 'Full body stretching'];
     isStretchSessionRef.current = categoryVal != null && STRETCHING_CATS.includes(categoryVal);
     setClientName((clientData as any)?.name?.split(' ')[0] ?? '');
+
+    // ── Resume a session that was left running ────────────────────────────
+    // `resumeSessionId` (the header resume pill) is handled by its own effect;
+    // otherwise adopt the open in_progress row so the timer keeps its original
+    // start time and FINISH completes THAT row instead of inserting a duplicate.
+    // Only today's row counts — a forgotten in_progress row from a previous day
+    // must not silently resume with a multi-day elapsed timer.
+    const liveIsToday = (liveSess as any)?.created_at
+      ? new Date((liveSess as any).created_at).toDateString() === new Date().toDateString()
+      : false;
+    const liveSessionId = !isViewOnly && liveIsToday ? (liveSess as any).id as string : null;
+    if (liveSessionId && !resumeSessionId) {
+      activeSessionIdRef.current = liveSessionId;
+      setActiveSessionId(liveSessionId);
+      setBridgeActiveSessionId(liveSessionId);
+      // Always re-point the store at THIS session — the running timer may belong to
+      // a different workout that was left open.
+      const resumedStart = draft?.startedAt ?? new Date((liveSess as any).created_at).getTime();
+      resumeSession(workoutId, resumedStart);
+    }
+    // The draft only belongs to a session that is still open — never replay an old
+    // one over a fresh start.
+    const activeDraft = draft
+      && (liveSessionId != null || resumeSessionId != null)
+      && (draft.activeSessionId == null || draft.activeSessionId === (resumeSessionId ?? liveSessionId))
+      ? draft : null;
+    if (activeDraft) {
+      barbellWeightsRef.current = new Map(activeDraft.barbellWeights ?? []);
+      machineBrandsRef.current = new Map(activeDraft.machineBrands ?? []);
+    }
 
     const weIds = (weData as any[]).map(we => we.id);
 
@@ -1098,7 +1135,7 @@ export default function TrainerWorkoutSessionScreen() {
       persistedSetNoteIdsRef.current.add(n.id);
     });
 
-    setExercises((weData as any[]).map((we, exIdx) => {
+    const builtExercises: SessionExercise[] = (weData as any[]).map((we, exIdx) => {
       const targetSets = setsMap.get(we.id) ?? [];
       const exId = we.exercises?.id;
       const exEquipment = (we.exercises?.equipment ?? '').toLowerCase();
@@ -1157,7 +1194,9 @@ export default function TrainerWorkoutSessionScreen() {
             })
           : [makeEmptySet(1)],
       };
-    }));
+    });
+    // Replay whatever was already logged in this session over the fresh DB rows.
+    setExercises(activeDraft ? mergeDraftIntoExercises(builtExercises, activeDraft.exercises) : builtExercises);
 
     // Load photos from most recent in_progress or completed session
     console.log('[load] querying sessions: workout_id=', workoutId, 'client_id=', clientId);
@@ -1312,6 +1351,30 @@ export default function TrainerWorkoutSessionScreen() {
     setBridgeActiveSessionId(resumeSessionId);
     resumeSession(isFreeSession ? 'free' : workoutId!, origStartedAt);
   }, [loading, resumeSessionId, resumeStartedAt]);
+
+  // ── Draft persistence ───────────────────────────────────────────────────
+  // Weights/reps/done-marks only reach the DB at FINISH, so mirror them to disk
+  // on every change while the session runs. Leaving Do Mode (or iOS reclaiming
+  // the app) then no longer throws the logged data away — load() replays it.
+  useEffect(() => {
+    if (loading || isViewOnly || pastSession || isFreeSession) return;
+    if (!clientId || !workoutId) return;
+    if (!activeSessionId && !startedAt) return; // nothing started yet — nothing to keep
+    const t = setTimeout(() => {
+      void saveSessionDraft({
+        version: 1,
+        clientId,
+        workoutId,
+        activeSessionId: activeSessionIdRef.current,
+        startedAt: startedAt ?? null,
+        savedAt: Date.now(),
+        exercises,
+        barbellWeights: Array.from(barbellWeightsRef.current.entries()),
+        machineBrands: Array.from(machineBrandsRef.current.entries()),
+      });
+    }, 500);
+    return () => clearTimeout(t);
+  }, [exercises, activeSessionId, startedAt, loading, isViewOnly, pastSession, clientId, workoutId, isFreeSession]);
 
   exercisesRef.current = exercises;
   exercisePhotosRef.current = exercisePhotos;
@@ -1588,6 +1651,15 @@ export default function TrainerWorkoutSessionScreen() {
     setRestVisible(true);
   };
 
+  // Cancel the countdown outright. Closing the panel no longer does this — only
+  // "Stop" (in the panel) or the ✕ on the running-rest pill.
+  const stopRest = () => {
+    if (restRef.current) { clearInterval(restRef.current); restRef.current = null; }
+    setRestRunning(false);
+    setRestOvertimeSecs(0);
+    setRestVisible(false);
+  };
+
   const beginCountdown = () => {
     const secs = parseInt(restInputText, 10);
     if (isNaN(secs) || secs <= 0) return;
@@ -1682,7 +1754,9 @@ export default function TrainerWorkoutSessionScreen() {
     const isExpanding = !expandedIds.has(weId);
     if (isExpanding) {
       setActiveHeaderId(weId); // fixed header follows the exercise you open
-      scrollCardToTop(weId);   // reveal the full card content
+      // 140ms, not the default 80 — the other cards collapse first, so the list
+      // has to settle at its new height before we scroll to the card.
+      scrollCardToTop(weId, 140); // reveal the full card content
       const exIdx = exercises.findIndex(e => e.workoutExerciseId === weId);
       // Feature 2: track interaction order for slot_order_history
       const ex = exIdx >= 0 ? exercises[exIdx] : null;
@@ -1692,8 +1766,22 @@ export default function TrainerWorkoutSessionScreen() {
       }
     }
     setExpandedIds(prev => {
-      const next = new Set(prev);
-      if (next.has(weId)) next.delete(weId); else next.add(weId);
+      if (prev.has(weId)) {
+        const next = new Set(prev);
+        next.delete(weId);
+        return next;
+      }
+      // Accordion: opening a card closes every other one, so the fixed header
+      // always tracks the single card you're working in. Exception — supersets:
+      // the members of one group stay open together (you alternate between them).
+      const groupId = exercisesRef.current.find(e => e.workoutExerciseId === weId)?.supersetGroupId ?? null;
+      const next = new Set<string>();
+      if (groupId) {
+        exercisesRef.current
+          .filter(e => e.supersetGroupId === groupId && prev.has(e.workoutExerciseId))
+          .forEach(e => next.add(e.workoutExerciseId));
+      }
+      next.add(weId);
       return next;
     });
   };
@@ -1895,6 +1983,7 @@ export default function TrainerWorkoutSessionScreen() {
         const nextEx = groupMembers[nextInGroupIdx];
         const nextExGlobalIdx = allExercises.findIndex(e => e.workoutExerciseId === nextEx.workoutExerciseId);
 
+        setActiveHeaderId(nextEx.workoutExerciseId); // header follows the live superset too
         setExpandedIds(prev => {
           const next = new Set(prev);
           next.delete(ex.workoutExerciseId);
@@ -2538,19 +2627,21 @@ export default function TrainerWorkoutSessionScreen() {
 
     try {
       // 1. Create or finalise session record
-      let sessionId: string;
-      if (activeSessionId) {
-        const { error: updateErr } = await supabase
+      // Finalise the running row if we have one; if that update fails (or matched
+      // nothing — e.g. the row was cleaned up elsewhere) fall through to an insert
+      // rather than giving up. Losing a finished session is never acceptable.
+      let sessionId: string | null = null;
+      const runningId = activeSessionIdRef.current ?? activeSessionId;
+      if (runningId) {
+        const { data: updated, error: updateErr } = await supabase
           .from('sessions')
           .update({ status: 'completed', duration_seconds: duration, date: today })
-          .eq('id', activeSessionId);
-        if (updateErr) {
-          console.log('[saveSession] sessions update error:', updateErr);
-          Alert.alert('Error', 'Could not save session.');
-          return;
-        }
-        sessionId = activeSessionId;
-      } else {
+          .eq('id', runningId)
+          .select('id');
+        if (updateErr) console.log('[saveSession] sessions update error:', updateErr);
+        if ((updated as any[])?.length) sessionId = runningId;
+      }
+      if (!sessionId) {
         const { data: session, error } = await supabase
           .from('sessions')
           .insert({ workout_id: isFreeSession ? null : workoutId, client_id: clientId, date: today, status: 'completed', duration_seconds: duration, ...(isFreeSession ? { name: freeSessionNameRef.current } : {}) })
@@ -2558,10 +2649,9 @@ export default function TrainerWorkoutSessionScreen() {
           .single();
         if (error || !session) {
           console.log('[saveSession] sessions insert error:', error);
-          Alert.alert('Error', 'Could not save session.');
-          return;
+          return; // the finally block keeps the session alive and offers a retry
         }
-        sessionId = (session as any).id;
+        sessionId = (session as any).id as string;
       }
       completedSessionId = sessionId;
 
@@ -2791,28 +2881,38 @@ export default function TrainerWorkoutSessionScreen() {
     } catch (err) {
       console.log('[saveSession] unexpected error:', err);
     } finally {
-      finishSession();
       if (!completedSessionId) {
-        router.back();
-      } else if (isStretchSessionRef.current) {
-        router.replace({
-          pathname: '/(trainer)/client/[id]/workout/stretch-complete' as any,
-          params: { id: clientId, clientName },
+        // Nothing was written. Keep the session running and everything typed into
+        // it — dropping out of Do Mode here is what used to throw the data away.
+        setConfirmModal({
+          title: "Couldn't save the session",
+          message: 'Everything you logged is still here. Check your connection and try Finish again.',
+          actions: [{ text: 'Try again', primary: true, onPress: async () => { await saveSessionRef.current(); } }],
+          cancelText: 'Back to session',
         });
       } else {
-        router.replace({
-          pathname: '/(trainer)/client/[id]/workout/session-complete' as any,
-          params: {
-            id: clientId,
-            sessionId: completedSessionId,
-            workoutId: isFreeSession ? 'free' : workoutId,
-            clientName,
-            sessionNumber: String(sessionCount + 1),
-            durationSeconds: String(duration ?? 0),
-            exercisesDone: String(doneCount),
-            exercisesTotal: String(total),
-          },
-        });
+        finishSession();
+        void clearSessionDraft(clientId, isFreeSession ? 'free' : workoutId!);
+        if (isStretchSessionRef.current) {
+          router.replace({
+            pathname: '/(trainer)/client/[id]/workout/stretch-complete' as any,
+            params: { id: clientId, clientName },
+          });
+        } else {
+          router.replace({
+            pathname: '/(trainer)/client/[id]/workout/session-complete' as any,
+            params: {
+              id: clientId,
+              sessionId: completedSessionId,
+              workoutId: isFreeSession ? 'free' : workoutId,
+              clientName,
+              sessionNumber: String(sessionCount + 1),
+              durationSeconds: String(duration ?? 0),
+              exercisesDone: String(doneCount),
+              exercisesTotal: String(total),
+            },
+          });
+        }
       }
     }
   };
@@ -2838,7 +2938,7 @@ export default function TrainerWorkoutSessionScreen() {
                 workoutId: isFreeSession ? null : workoutId,
                 workoutName: isFreeSession ? freeSessionName : (workout?.name ?? 'Session'),
                 startedAt,
-                activeSessionId,
+                activeSessionId: activeSessionIdRef.current ?? activeSessionId,
               });
               finishSession();
               router.back();
@@ -2848,9 +2948,10 @@ export default function TrainerWorkoutSessionScreen() {
             text: 'Discard session',
             danger: true,
             onPress: async () => {
-              if (activeSessionId) {
-                await supabase.from('sessions').delete().eq('id', activeSessionId);
+              if (activeSessionIdRef.current ?? activeSessionId) {
+                await supabase.from('sessions').delete().eq('id', (activeSessionIdRef.current ?? activeSessionId)!);
               }
+              void clearSessionDraft(clientId, isFreeSession ? 'free' : workoutId!);
               clearSuspendedSession();
               finishSession();
               router.back();
@@ -3656,6 +3757,22 @@ export default function TrainerWorkoutSessionScreen() {
         </Animated.View>
       )}
 
+      {/* ── Running-rest pill — the panel was dismissed but the clock kept going ── */}
+      {restRunning && !restVisible && !isEditMode && kbHeight === 0 && (
+        <View style={[styles.restPillWrap, { bottom: insets.bottom + 16, zIndex: 90 }]} pointerEvents="box-none">
+          <TouchableOpacity style={styles.restPill} onPress={() => setRestVisible(true)} activeOpacity={0.85}>
+            <SymbolView name="timer" size={14} tintColor={restOvertimeSecs > 0 ? '#e53935' : ACCENT} />
+            <Text style={[styles.restPillText, restOvertimeSecs > 0 && styles.restPillTextOver]}>
+              {restOvertimeSecs > 0 ? `+${formatRestTimer(restOvertimeSecs)}` : formatRestTimer(restRemaining)}
+            </Text>
+            <View style={styles.restPillSep} />
+            <TouchableOpacity onPress={stopRest} hitSlop={12} activeOpacity={0.6}>
+              <SymbolView name="xmark" size={12} tintColor="#999" />
+            </TouchableOpacity>
+          </TouchableOpacity>
+        </View>
+      )}
+
       {/* ── Keyboard "Done" — pinned just above the keyboard (numeric keypads have no return key) ── */}
       {kbHeight > 0 && (
         <View style={{ position: 'absolute', right: 8, bottom: kbHeight + 4, zIndex: 100 }} pointerEvents="box-none">
@@ -3769,143 +3886,22 @@ export default function TrainerWorkoutSessionScreen() {
         />
       )}
 
-      {/* ── Rest modal ────────────────────────────────────────────────── */}
-      <Modal visible={restVisible} transparent animationType="fade" onRequestClose={() => { if (restRef.current) clearInterval(restRef.current); setRestRunning(false); setRestOvertimeSecs(0); setRestVisible(false); }}>
-        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.centeredRoot}>
-          <Pressable style={StyleSheet.absoluteFill} onPress={() => { if (restRef.current) clearInterval(restRef.current); setRestRunning(false); setRestOvertimeSecs(0); setRestVisible(false); }} />
-          <View style={styles.restModal}>
-            <Text style={styles.restLabel}>REST</Text>
-
-            {restRunning ? (
-              /* ── Countdown state ─────────────────────────────────── */
-              <>
-                {(() => {
-                  const isOver = restOvertimeSecs > 0;
-                  const totalSecs = restTotalSecs || 60;
-                  const ringSize = 220;
-                  const strokeWidth = 11;
-                  const radius = (ringSize - strokeWidth) / 2;
-                  const circumference = 2 * Math.PI * radius;
-                  const progress = isOver ? 0 : restRemaining / totalSecs;
-                  const dashOffset = circumference * (1 - progress);
-                  return (
-                    <View style={[styles.restRingWrap, { width: ringSize, height: ringSize }]}>
-                      <Svg width={ringSize} height={ringSize}>
-                        {/* Track */}
-                        <Circle
-                          cx={ringSize / 2} cy={ringSize / 2} r={radius}
-                          stroke="#e8e8e4" strokeWidth={strokeWidth} fill="none"
-                        />
-                        {/* Progress arc */}
-                        <Circle
-                          cx={ringSize / 2} cy={ringSize / 2} r={radius}
-                          stroke={isOver ? '#e53935' : ACCENT}
-                          strokeWidth={strokeWidth} fill="none"
-                          strokeDasharray={circumference}
-                          strokeDashoffset={dashOffset}
-                          strokeLinecap="round"
-                          rotation="-90"
-                          origin={`${ringSize / 2}, ${ringSize / 2}`}
-                        />
-                      </Svg>
-                      <View style={styles.restRingCenter}>
-                        <Text style={[styles.restTimer, isOver && styles.restTimerDone]}>
-                          {isOver
-                            ? `+${formatRestTimer(restOvertimeSecs)}`
-                            : formatRestTimer(restRemaining)}
-                        </Text>
-                      </View>
-                    </View>
-                  );
-                })()}
-                <TouchableOpacity style={styles.restSkipBtn} onPress={() => { if (restRef.current) clearInterval(restRef.current); restRef.current = null; setRestRunning(false); setRestOvertimeSecs(0); setRestVisible(false); }} activeOpacity={0.7}>
-                  <Text style={styles.restSkipText}>Stop</Text>
-                </TouchableOpacity>
-                {/* Apply to all exercises toggle */}
-                <TouchableOpacity style={styles.restApplyRow} onPress={() => setRestApplyAll(v => !v)} activeOpacity={0.7}>
-                  <Text style={styles.restApplyText}>Use for all exercises in this workout</Text>
-                  <View style={[styles.restApplyToggle, restApplyAll && styles.restApplyToggleOn]}>
-                    <LinearGradient
-                      colors={['#ffffff', '#d8d8d8']}
-                      start={{ x: 0, y: 0 }}
-                      end={{ x: 0, y: 1 }}
-                      style={[styles.restApplyThumb, restApplyAll && styles.restApplyThumbOn]}
-                    />
-                  </View>
-                </TouchableOpacity>
-              </>
-            ) : (
-              /* ── Edit state ──────────────────────────────────────── */
-              <>
-                {(() => {
-                  const ringSize = 220;
-                  const strokeWidth = 11;
-                  const radius = (ringSize - strokeWidth) / 2;
-                  const circumference = 2 * Math.PI * radius;
-                  return (
-                    <View style={[styles.restRingWrap, { width: ringSize, height: ringSize }]}>
-                      <Svg width={ringSize} height={ringSize}>
-                        <Circle
-                          cx={ringSize / 2} cy={ringSize / 2} r={radius}
-                          stroke="#e8e8e4" strokeWidth={strokeWidth} fill="none"
-                        />
-                        <Circle
-                          cx={ringSize / 2} cy={ringSize / 2} r={radius}
-                          stroke={ACCENT} strokeWidth={strokeWidth} fill="none"
-                          strokeDasharray={circumference}
-                          strokeDashoffset={0}
-                          strokeLinecap="round"
-                          rotation="-90"
-                          origin={`${ringSize / 2}, ${ringSize / 2}`}
-                        />
-                      </Svg>
-                      <View style={styles.restRingCenter}>
-                        <TextInput
-                          style={styles.restTimerInput}
-                          value={restInputText}
-                          onChangeText={setRestInputText}
-                          keyboardType="number-pad"
-                          selectTextOnFocus
-                        />
-                        <Text style={styles.restRingSecsLabel}>seconds</Text>
-                      </View>
-                    </View>
-                  );
-                })()}
-                <View style={styles.restButtons}>
-                  <TouchableOpacity style={styles.restAdjBtn} onPress={() => {
-                    const v = parseInt(restInputText, 10);
-                    if (!isNaN(v) && v > 15) setRestInputText(String(v - 15));
-                  }} activeOpacity={0.7}>
-                    <Text style={styles.restAdjText}>-15s</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity style={styles.restAdjBtn} onPress={() => {
-                    const v = parseInt(restInputText, 10);
-                    setRestInputText(String((!isNaN(v) ? v : 0) + 15));
-                  }} activeOpacity={0.7}>
-                    <Text style={styles.restAdjText}>+15s</Text>
-                  </TouchableOpacity>
-                </View>
-                <TouchableOpacity style={styles.restStartBtn} onPress={beginCountdown} activeOpacity={0.85}>
-                  <Text style={styles.restStartText}>Start</Text>
-                </TouchableOpacity>
-                {/* Apply to all exercises toggle */}
-                <TouchableOpacity style={styles.restApplyRow} onPress={() => setRestApplyAll(v => !v)} activeOpacity={0.7}>
-                  <Text style={styles.restApplyText}>Use for all exercises in this workout</Text>
-                  <View style={[styles.restApplyToggle, restApplyAll && styles.restApplyToggleOn]}>
-                    <LinearGradient
-                      colors={['#ffffff', '#d8d8d8']}
-                      start={{ x: 0, y: 0 }}
-                      end={{ x: 0, y: 1 }}
-                      style={[styles.restApplyThumb, restApplyAll && styles.restApplyThumbOn]}
-                    />
-                  </View>
-                </TouchableOpacity>
-              </>
-            )}
-          </View>
-        </KeyboardAvoidingView>
-      </Modal>
+      {/* ── Rest timer panel (slides up; dismissing keeps it counting) ─── */}
+      {restVisible && (
+        <RestTimerSheet
+          running={restRunning}
+          remaining={restRemaining}
+          totalSecs={restTotalSecs}
+          overtimeSecs={restOvertimeSecs}
+          inputText={restInputText}
+          applyAll={restApplyAll}
+          onChangeInput={setRestInputText}
+          onToggleApplyAll={() => setRestApplyAll(v => !v)}
+          onStart={beginCountdown}
+          onStop={stopRest}
+          onClose={() => setRestVisible(false)}
+        />
+      )}
 
       {/* ── Trainer info sheets ───────────────────────────────────────── */}
       {muscleSheetOpen && (
@@ -4408,7 +4404,7 @@ function SupersetGroupCard({
   );
 }
 
-function DashedBtnWrapper({ style, onPress, activeOpacity, children }: { style?: any; onPress?: () => void; activeOpacity?: number; children: React.ReactNode }) {
+function DashedBtnWrapper({ style, onPress, activeOpacity, disabled, children }: { style?: any; onPress?: () => void; activeOpacity?: number; disabled?: boolean; children: React.ReactNode }) {
   const [sz, setSz] = useState({ w: 0, h: 0 });
   const sw = 1.5, bottomSw = 2.2, r = 10, ins = sw / 2, dashCycle = 14;
   const svgPaths = sz.w > 0 ? (() => {
@@ -4424,9 +4420,14 @@ function DashedBtnWrapper({ style, onPress, activeOpacity, children }: { style?:
   })() : null;
   return (
     <TouchableOpacity
-      style={[style, { borderWidth: 0 }]}
+      // Until onLayout lands (or if it never re-fires after a 0-width first pass)
+      // svgPaths is null and the button would render with NO border, reading as
+      // smaller than its solid-bordered neighbours. Fall back to a native dashed
+      // border until the SVG can take over.
+      style={[style, svgPaths ? { borderWidth: 0 } : { borderStyle: 'dashed' }]}
       onPress={onPress}
       activeOpacity={activeOpacity}
+      disabled={disabled}
       onLayout={e => setSz({ w: e.nativeEvent.layout.width, h: e.nativeEvent.layout.height })}
     >
       {svgPaths && (
@@ -4773,24 +4774,6 @@ function ExerciseCard({
         {isExpanded && (
           <View style={{ paddingTop: 4 }}>
 
-            {/* ── Action row: Play video · Info ──────── */}
-            <View style={styles.actionBtnRow}>
-              <TouchableOpacity
-                style={styles.actionBtn}
-                onPress={onVideoPress}
-                activeOpacity={0.7}
-              >
-                <SymbolView name="play.fill" size={12} tintColor={ACCENT} />
-                <Text style={styles.actionBtnText}>Play video</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={[styles.actionBtn, { flex: 1 }]} onPress={() => { setInfoSeen(true); onOpenInfo(); }} activeOpacity={0.7}>
-                <SymbolView name="info.circle" size={12} tintColor={ACCENT} />
-                <Text style={styles.actionBtnText}>Info</Text>
-                {showInfoDot && <View style={styles.infoDotBadge} />}
-              </TouchableOpacity>
-            </View>
-            <View style={{ height: 1, backgroundColor: '#e8e8e4', marginHorizontal: 12, marginBottom: 10 }} />
-
             {/* Bar selector — barbell and z-bar exercises */}
             {isBarType && (
               <View style={styles.barSelectorRow}>
@@ -4950,6 +4933,9 @@ function ExerciseCard({
 
             {addSetMenuOpen ? (
               <View style={styles.addSetMenu}>
+                <TouchableOpacity style={styles.addSetMenuClose} onPress={() => setAddSetMenuOpen(false)} hitSlop={10} activeOpacity={0.6}>
+                  <SymbolView name="xmark" size={12} tintColor="#aaa" />
+                </TouchableOpacity>
                 <TouchableOpacity style={styles.addSetMenuBtn} onPress={() => { onAddRegularSet(); setAddSetMenuOpen(false); }} activeOpacity={0.7}>
                   <SymbolView name="plus.circle" size={16} tintColor={ACCENT} />
                   <Text style={styles.addSetMenuText}>Add Set</Text>
@@ -4961,14 +4947,22 @@ function ExerciseCard({
                 </TouchableOpacity>
               </View>
             ) : (
-              <View style={styles.addSetBtnRow}>
-                <DashedBtnWrapper style={[styles.addSetBtn, { flex: 1 }]} onPress={() => setAddSetMenuOpen(true)} activeOpacity={0.7}>
-                  <SymbolView name="plus" size={13} tintColor={ACCENT} />
-                  <Text style={styles.addSetBtnText}>Add Set / Dropset</Text>
+              /* Same toolbar as the client side. Solid = look at something (video,
+                 info) · dashed = adds something (photo, set), the two on the
+                 right. All four the same size. */
+              <View style={styles.iconToolbar}>
+                <TouchableOpacity style={styles.iconBtn} onPress={onVideoPress} activeOpacity={0.7}>
+                  <SymbolView name="play.fill" size={17} tintColor={ACCENT} style={{ width: 20, height: 20 }} />
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.iconBtn} onPress={() => { setInfoSeen(true); onOpenInfo(); }} activeOpacity={0.7}>
+                  <SymbolView name="info.circle" size={17} tintColor={ACCENT} style={{ width: 20, height: 20 }} />
+                  {showInfoDot && <View style={styles.infoDotBadge} />}
+                </TouchableOpacity>
+                <DashedBtnWrapper style={styles.iconBtn} onPress={onCameraPress} activeOpacity={0.7}>
+                  <SymbolView name="camera" size={17} tintColor={ACCENT} style={{ width: 20, height: 20 }} />
                 </DashedBtnWrapper>
-                <DashedBtnWrapper style={[styles.addSetBtn, { flex: 1 }]} onPress={onCameraPress} activeOpacity={0.7}>
-                  <SymbolView name="camera" size={13} tintColor={ACCENT} />
-                  <Text style={styles.addSetBtnText}>{en.doMode.addPhoto}</Text>
+                <DashedBtnWrapper style={styles.iconBtn} onPress={() => setAddSetMenuOpen(true)} activeOpacity={0.7}>
+                  <SymbolView name="plus" size={17} tintColor={ACCENT} style={{ width: 20, height: 20 }} />
                 </DashedBtnWrapper>
               </View>
             )}
@@ -5243,6 +5237,136 @@ function InlineSetRow({
 }
 
 // ─── ExerciseInfoModal ───────────────────────────────────────────────────────────
+
+
+// ─── RestTimerSheet ──────────────────────────────────────────────────────────
+// Slide-up rest timer. Dismissing the panel (swipe, tap outside, "Hide") leaves
+// the countdown RUNNING — the interval lives in the screen, not in here — and a
+// small pill takes over at the bottom of Do Mode. Only "Stop" cancels it.
+function RestTimerSheet({
+  running, remaining, totalSecs, overtimeSecs, inputText, applyAll,
+  onChangeInput, onToggleApplyAll, onStart, onStop, onClose,
+}: {
+  running: boolean;
+  remaining: number;
+  totalSecs: number;
+  overtimeSecs: number;
+  inputText: string;
+  applyAll: boolean;
+  onChangeInput: (v: string) => void;
+  onToggleApplyAll: () => void;
+  onStart: () => void;
+  onStop: () => void;
+  onClose: () => void;
+}) {
+  const { translateY: sheetY, panHandlers: sheetPan, dismiss: dismissSheet } = useSheetDismissGesture(onClose);
+  const RING = 200, SW = 11;
+  const radius = (RING - SW) / 2;
+  const circumference = 2 * Math.PI * radius;
+  const isOver = overtimeSecs > 0;
+  const progress = running ? (isOver ? 0 : remaining / (totalSecs || 60)) : 1;
+
+  const applyToggle = (
+    <TouchableOpacity style={styles.restApplyRow} onPress={onToggleApplyAll} activeOpacity={0.7}>
+      <Text style={styles.restApplyText}>Use for all exercises in this workout</Text>
+      <View style={[styles.restApplyToggle, applyAll && styles.restApplyToggleOn]}>
+        <LinearGradient
+          colors={['#ffffff', '#d8d8d8']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 0, y: 1 }}
+          style={[styles.restApplyThumb, applyAll && styles.restApplyThumbOn]}
+        />
+      </View>
+    </TouchableOpacity>
+  );
+
+  return (
+    <Modal visible transparent animationType="none" onRequestClose={dismissSheet} statusBarTranslucent>
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1, justifyContent: 'flex-end' }}>
+        <Pressable style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.45)' }]} onPress={dismissSheet} />
+        <Animated.View style={[styles.restSheet, { transform: [{ translateY: sheetY }] }]}>
+          {/* `restSheet` centres its children, which would shrink the hit area to the
+              36px handle pill — stretch it so the whole top strip is draggable. */}
+          <View {...sheetPan} style={[styles.infoSheetHandleHitArea, { alignSelf: 'stretch', paddingVertical: 14, marginBottom: 0 }]}>
+            <View style={styles.infoSheetHandle} />
+          </View>
+          <View {...sheetPan} style={{ alignSelf: 'stretch', alignItems: 'center', paddingBottom: 6 }}>
+            <Text style={styles.restLabel}>REST</Text>
+          </View>
+
+          {/* While counting there's nothing interactive in the ring, so make it a
+              drag target too — it's the obvious thing to grab to swipe away. */}
+          <View {...(running ? sheetPan : {})} style={[styles.restRingWrap, { width: RING, height: RING }]}>
+            <Svg width={RING} height={RING}>
+              <Circle cx={RING / 2} cy={RING / 2} r={radius} stroke="#e8e8e4" strokeWidth={SW} fill="none" />
+              <Circle
+                cx={RING / 2} cy={RING / 2} r={radius}
+                stroke={isOver ? '#e53935' : ACCENT}
+                strokeWidth={SW} fill="none"
+                strokeDasharray={circumference}
+                strokeDashoffset={circumference * (1 - progress)}
+                strokeLinecap="round"
+                rotation="-90"
+                origin={`${RING / 2}, ${RING / 2}`}
+              />
+            </Svg>
+            <View style={styles.restRingCenter}>
+              {running ? (
+                <Text style={[styles.restTimer, isOver && styles.restTimerDone]}>
+                  {isOver ? `+${formatRestTimer(overtimeSecs)}` : formatRestTimer(remaining)}
+                </Text>
+              ) : (
+                <>
+                  <TextInput
+                    style={styles.restTimerInput}
+                    value={inputText}
+                    onChangeText={onChangeInput}
+                    keyboardType="number-pad"
+                    selectTextOnFocus
+                  />
+                  <Text style={styles.restRingSecsLabel}>seconds</Text>
+                </>
+              )}
+            </View>
+          </View>
+
+          {running ? (
+            <>
+              <TouchableOpacity style={styles.restSkipBtn} onPress={onStop} activeOpacity={0.7}>
+                <Text style={styles.restSkipText}>Stop</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={dismissSheet} hitSlop={8} activeOpacity={0.7}>
+                <Text style={styles.restHideText}>Hide — keeps counting</Text>
+              </TouchableOpacity>
+              {applyToggle}
+            </>
+          ) : (
+            <>
+              <View style={styles.restButtons}>
+                <TouchableOpacity style={styles.restAdjBtn} onPress={() => {
+                  const v = parseInt(inputText, 10);
+                  if (!isNaN(v) && v > 15) onChangeInput(String(v - 15));
+                }} activeOpacity={0.7}>
+                  <Text style={styles.restAdjText}>-15s</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.restAdjBtn} onPress={() => {
+                  const v = parseInt(inputText, 10);
+                  onChangeInput(String((!isNaN(v) ? v : 0) + 15));
+                }} activeOpacity={0.7}>
+                  <Text style={styles.restAdjText}>+15s</Text>
+                </TouchableOpacity>
+              </View>
+              <TouchableOpacity style={styles.restStartBtn} onPress={onStart} activeOpacity={0.85}>
+                <Text style={styles.restStartText}>Start</Text>
+              </TouchableOpacity>
+              {applyToggle}
+            </>
+          )}
+        </Animated.View>
+      </KeyboardAvoidingView>
+    </Modal>
+  );
+}
 
 function ExerciseInfoModal({
   exercise,
@@ -6607,10 +6731,13 @@ const styles = StyleSheet.create({
 
   addedSetsDivider: { height: 1, marginHorizontal: 12, marginVertical: 4, borderStyle: 'dashed', borderTopWidth: 1, borderColor: '#ccc' },
 
-  addSetBtnRow: { flexDirection: 'row', gap: 8, marginHorizontal: 12, marginVertical: 8 },
-  addSetBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 12, borderRadius: 10 },
-  addSetBtnText: { fontSize: 13, fontWeight: '700', color: ACCENT },
+  iconToolbar: { flexDirection: 'row', gap: 8, marginHorizontal: 12, marginVertical: 6 },
+  // minWidth:0 — a flex item's min-width defaults to its content size, and an
+  // unsized SymbolView measures itself natively (and re-measures on remount), which
+  // made the four buttons drift to different widths. Pin it so flex:1 always wins.
+  iconBtn: { flex: 1, minWidth: 0, height: 38, borderRadius: 10, borderWidth: 1.5, borderColor: ACCENT, alignItems: 'center', justifyContent: 'center', backgroundColor: 'transparent' },
   addSetMenu: { marginHorizontal: 12, marginVertical: 8, borderRadius: 10, borderWidth: 1, borderColor: BORDER, overflow: 'hidden' },
+  addSetMenuClose: { position: 'absolute', top: 6, right: 8, zIndex: 2, width: 22, height: 22, alignItems: 'center', justifyContent: 'center' },
   addSetMenuBtn: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 14, paddingVertical: 12 },
   addSetMenuText: { fontSize: 14, fontWeight: '600', color: TEXT },
   addSetMenuDiv: { height: 1, backgroundColor: BORDER },
@@ -6672,7 +6799,13 @@ const styles = StyleSheet.create({
   setNoteList: { maxHeight: 200, marginBottom: 8 },
   setNoteEntry: { flexDirection: 'row', alignItems: 'flex-start', backgroundColor: '#f9f9f7', borderRadius: 10, padding: 10, marginBottom: 6, gap: 8 },
 
-  restModal: { backgroundColor: CARD, borderRadius: 20, padding: 24, alignItems: 'center', gap: 12 },
+  restSheet: { backgroundColor: '#fff', borderTopLeftRadius: 20, borderTopRightRadius: 20, paddingHorizontal: 24, paddingTop: 6, paddingBottom: 34, alignItems: 'center', gap: 12 },
+  restHideText: { fontSize: 13, fontWeight: '600', color: MUTED },
+  restPillWrap: { position: 'absolute', right: 16, alignItems: 'flex-end' },
+  restPill: { flexDirection: 'row', alignItems: 'center', gap: 9, backgroundColor: '#fff', borderRadius: 100, paddingLeft: 13, paddingRight: 11, paddingVertical: 9, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.18, shadowRadius: 8, elevation: 5 },
+  restPillText: { fontSize: 14, fontWeight: '700', color: ACCENT, fontVariant: ['tabular-nums'] },
+  restPillTextOver: { color: '#e53935' },
+  restPillSep: { width: 1, height: 14, backgroundColor: '#e0e0dc' },
   restLabel: { fontSize: 12, fontWeight: '700', color: MUTED, letterSpacing: 0.8 },
   restRingWrap: { width: 220, height: 220, position: 'relative', alignItems: 'center', justifyContent: 'center' },
   restRingCenter: { position: 'absolute', alignItems: 'center', justifyContent: 'center' },
@@ -6792,10 +6925,7 @@ const styles = StyleSheet.create({
   statKg: { fontSize: 13, fontWeight: '700', color: TEXT },
   statDate: { fontSize: 11, color: '#bbb' },
 
-  actionBtnRow: { flexDirection: 'row', gap: 8, marginBottom: 6, marginTop: 6, marginHorizontal: 12 },
-  actionBtn: { flex: 1, paddingVertical: 9, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 6, borderRadius: 10, borderWidth: 1.5, borderColor: ACCENT, backgroundColor: 'transparent' },
   actionBtnDisabled: { borderColor: '#e0e0dc' },
-  actionBtnText: { color: ACCENT, fontSize: 13, fontWeight: '500' },
   actionBtnTextDisabled: { color: '#bbb' },
 });
 
