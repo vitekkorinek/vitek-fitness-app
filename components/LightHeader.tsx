@@ -4,6 +4,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
 import MaskedView from '@react-native-masked-view/masked-view';
+import { fd } from '@/lib/appType';
 
 /**
  * Light, airy screen header (redesign July 2026).
@@ -71,7 +72,6 @@ export function LightHeader({
   const insets = useSafeAreaInsets();
   const rowBottom = insets.top + HEADER_ROW_HEIGHT;
   const totalH = rowBottom + FADE_ZONE;
-
   if (solid) {
     return (
       <View style={[lh.wrap, { height: rowBottom, backgroundColor: BG }]} pointerEvents="box-none">
@@ -79,7 +79,7 @@ export function LightHeader({
             higher (the solid header otherwise reads as sitting too low). */}
         <View style={[lh.row, { marginTop: insets.top, height: HEADER_ROW_HEIGHT - 10 }]}>
           <View style={lh.side}>{left}</View>
-          <Text style={lh.title} numberOfLines={1}>{title}</Text>
+          <Text style={[lh.title, fd(700)]} numberOfLines={1}>{title}</Text>
           {overlay}
           <View style={[lh.side, lh.right]}>{right}</View>
         </View>
@@ -149,7 +149,7 @@ export function LightHeader({
       )}
       <View style={[lh.row, { marginTop: insets.top }]}>
         <View style={lh.side}>{left}</View>
-        <Text style={lh.title} numberOfLines={1}>{title}</Text>
+        <Text style={[lh.title, fd(700)]} numberOfLines={1}>{title}</Text>
         {overlay}
         <View style={[lh.side, lh.right]}>{right}</View>
       </View>

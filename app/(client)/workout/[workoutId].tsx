@@ -122,6 +122,7 @@ import en from '@/i18n/en';
 import MuscleThumb from '@/components/MuscleThumb';
 import CategoryCover, { categoryHasCover } from '@/components/CategoryCover';
 import { HeaderPhoto } from '@/components/HeaderPhoto';
+import { fd } from '@/lib/appType';
 
 // PROTOTYPE (July 2026): a real photo pulled from the Push workout's exercises,
 // used as the Do Mode header hero to test "vertical photo in the header". Hardcoded
@@ -6980,7 +6981,7 @@ const styles = StyleSheet.create({
   previewNoteRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 6, marginTop: 12, maxWidth: '92%' },
   previewNoteText: { flex: 1, fontSize: 13, color: 'rgba(255,255,255,0.85)', lineHeight: 18 },
   combinedPillSep: { width: 1, height: 14, backgroundColor: 'rgba(36,172,136,0.35)' },
-  combinedPillTimerText: { color: '#24ac88', fontWeight: '700', fontSize: 13, fontVariant: ['tabular-nums'], letterSpacing: 0.4 },
+  combinedPillTimerText: { color: '#24ac88', fontSize: 13, fontVariant: ['tabular-nums'], letterSpacing: 0.4, ...fd(800) },
   combinedPillFinishText: { color: '#24ac88', fontWeight: '700', fontSize: 13, letterSpacing: 0.4 },
   dotsSessionInfo: { fontSize: 13, color: '#999', textAlign: 'center', marginTop: 2, marginBottom: 8 },
   floatCenterOverlay: { justifyContent: 'center', alignItems: 'center' },
@@ -7244,12 +7245,12 @@ const styles = StyleSheet.create({
   // Green filled + bigger (was white w/ green text) — needs to stand out; drag it anywhere. Overtime flips the pill red.
   restPill: { flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: ACCENT, borderRadius: 100, paddingLeft: 16, paddingRight: 14, paddingVertical: 12, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.22, shadowRadius: 8, elevation: 5 },
   restPillOver: { backgroundColor: '#e53935' },
-  restPillText: { fontSize: 17, fontWeight: '700', color: '#fff', fontVariant: ['tabular-nums'] },
+  restPillText: { fontSize: 17, color: '#fff', fontVariant: ['tabular-nums'], ...fd(800) },
   restPillSep: { width: 1, height: 16, backgroundColor: 'rgba(255,255,255,0.35)' },
   restLabel: { fontSize: 12, fontWeight: '700', color: MUTED, letterSpacing: 0.8 },
   restRingWrap: { width: 220, height: 220, position: 'relative', alignItems: 'center', justifyContent: 'center' },
   restRingCenter: { position: 'absolute', alignItems: 'center', justifyContent: 'center' },
-  restTimer: { fontSize: 46, fontWeight: '300', color: TEXT, fontVariant: ['tabular-nums'], lineHeight: 50 },
+  restTimer: { fontSize: 46, color: TEXT, fontVariant: ['tabular-nums'], lineHeight: 50, ...fd(500) },
   restTimerDone: { color: '#e53935' },
   restRingSecsLabel: { fontSize: 12, fontWeight: '500', color: MUTED, letterSpacing: 0.5, marginTop: 2 },
   restTimerInput: { fontSize: 46, fontWeight: '300', color: TEXT, fontVariant: ['tabular-nums'], textAlign: 'center', minWidth: 100, lineHeight: 50 },

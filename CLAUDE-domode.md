@@ -81,7 +81,7 @@ Fixed `position:'absolute'` view at `top:0, height:HEADER_MIN`. Three slots:
 
 **Combined pill** (`combinedPill` style): always visible, not scroll-dependent. Tapping triggers FINISH/START.
 - White background (`#fff`), `borderRadius:20, paddingHorizontal:14, paddingVertical:7`, shadow (`shadowOpacity:0.22, shadowRadius:8`)
-- Left: timer text (`combinedPillTimerText`: `color:ACCENT, fontWeight:700, fontSize:13, fontVariant:['tabular-nums']`)
+- Left: timer text (`combinedPillTimerText`: `color:ACCENT, fontSize:13, fontVariant:['tabular-nums'], ...fd(800)` — Manrope ExtraBold since July 23: Manrope digits at nominal 700 read "too weak" vs SF on device, so all timer digits got one weight step up: this pill + `restPillText` → `...fd(800)`, big `restTimer` clock 46px → `...fd(500)` (was SF Light '300'). Manrope has `tnum`, so `tabular-nums` still prevents width jiggle. Both Do Mode files mirrored.)
 - Center: thin separator (`combinedPillSep`: `width:1, height:14, backgroundColor:'rgba(36,172,136,0.35)'`)
 - Right: "FINISH" / "START" text (`combinedPillFinishText`: `color:ACCENT, fontWeight:700, fontSize:13`)
 

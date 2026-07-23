@@ -1,5 +1,9 @@
 import { DefaultTheme, ThemeProvider } from '@react-navigation/native';
 import { useFonts } from 'expo-font';
+import {
+  Manrope_400Regular, Manrope_500Medium, Manrope_600SemiBold,
+  Manrope_700Bold, Manrope_800ExtraBold,
+} from '@expo-google-fonts/manrope';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { useEffect } from 'react';
@@ -22,6 +26,11 @@ SplashScreen.preventAutoHideAsync().catch(() => {});
 export default function RootLayout() {
   const [loaded, error] = useFonts({
     SpaceMono: require('../assets/fonts/SpaceMono-Regular.ttf'),
+    // App face — Manrope (locked July 2026, see lib/appType.ts). Applied app-wide by the
+    // Text/TextInput wrapper installed from /index.ts (installAppFont). Runtime-loaded;
+    // embed via the expo-font config plugin at the next native rebuild.
+    Manrope_400Regular, Manrope_500Medium, Manrope_600SemiBold,
+    Manrope_700Bold, Manrope_800ExtraBold,
   });
 
   useEffect(() => {

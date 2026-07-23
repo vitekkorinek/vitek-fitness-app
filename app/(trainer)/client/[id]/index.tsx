@@ -35,8 +35,9 @@ import { relativeTime } from '@/lib/utils';
 import { mondayOf, addDaysStr } from '@/lib/weeklyGoal';
 import { CATEGORY_COLORS } from '@/lib/workoutCategories';
 import type { WorkoutCategory } from '@/lib/workoutCategories';
-import WorkoutPaperCover, { ExerciseNamesProvider } from '@/components/WorkoutPaperCover';
+import WorkoutPaperCover, { ExerciseNamesProvider, DARK_CARD_FOOTER } from '@/components/WorkoutPaperCover';
 import { fetchExerciseNames } from '@/lib/exerciseNames';
+import { ft, fd } from '@/lib/appType';
 import t from '@/i18n/en';
 import type {
   SessionPackage,
@@ -812,7 +813,7 @@ function PlanWorkoutFlow({ clientId, initialDate, onClose, onDone }: {
                           )}
                         </WorkoutPaperCover>
                         <View style={planStyles.pickerCardFooter}>
-                          <Text style={planStyles.pickerCardName} numberOfLines={1}>{w.name}</Text>
+                          <Text style={[planStyles.pickerCardName, fd(700)]} numberOfLines={1}>{w.name}</Text>
                         </View>
                       </TouchableOpacity>
                     );
@@ -1492,16 +1493,16 @@ function TrainingTab({
                     {/* Name + ONE sub line, matching the full card's footer. */}
                     <View style={sectionStyles.wBody}>
                       <View style={{ flex: 1 }}>
-                        <Text style={sectionStyles.wName} numberOfLines={1}>{c.name}</Text>
-                        <Text style={sectionStyles.wStatus} numberOfLines={1}>
-                          <Text style={{ color: c.lastDoneDate ? ACCENT : '#bbb' }}>
+                        <Text style={[sectionStyles.wName, fd(700)]} numberOfLines={1}>{c.name}</Text>
+                        <Text style={[sectionStyles.wStatus, ft(600)]} numberOfLines={1}>
+                          <Text style={{ color: c.lastDoneDate ? ACCENT : 'rgba(255,255,255,0.5)' }}>
                             {c.lastDoneDate ? `Done ${fmtShortDate(c.lastDoneDate)}` : 'Never done'}
                           </Text>
-                          {!!c.routineName && <Text style={sectionStyles.wSub}> · {c.routineName}</Text>}
+                          {!!c.routineName && <Text style={[sectionStyles.wSub, ft(400)]}> · {c.routineName}</Text>}
                         </Text>
                       </View>
                       <TouchableOpacity style={sectionStyles.wFooterMenuBtn} hitSlop={8} activeOpacity={0.6} onPress={() => setActiveMenu({ id: c.id, name: c.name, category: c.category })}>
-                        <SymbolView name="ellipsis" size={16} tintColor="#999" />
+                        <SymbolView name="ellipsis" size={16} tintColor="rgba(255,255,255,0.65)" />
                       </TouchableOpacity>
                     </View>
                   </View>
@@ -1573,15 +1574,15 @@ function TrainingTab({
                 <WorkoutPaperCover category={lastSessionCategory} workoutId={lastSessionWorkoutId} />
                 <View style={coverCardStyles.bottom}>
                   <View style={coverCardStyles.bottomLeft}>
-                    <Text style={coverCardStyles.itemName} numberOfLines={1}>{lastSessionWorkoutName}</Text>
-                    <Text style={coverCardStyles.itemSub} numberOfLines={1}>
+                    <Text style={[coverCardStyles.itemName, fd(700)]} numberOfLines={1}>{lastSessionWorkoutName}</Text>
+                    <Text style={[coverCardStyles.itemSub, ft(400)]} numberOfLines={1}>
                       {recentActivitySub}{lastSessionDate ? ` · ${new Date(lastSessionDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}` : ''}
                     </Text>
                   </View>
                   <View style={coverCardStyles.bottomRight}>
                     {isTrainer && mostRecentWorkout && (
                       <TouchableOpacity onPress={() => setActiveMenu(mostRecentWorkout)} hitSlop={8} activeOpacity={0.5}>
-                        <SymbolView name="ellipsis" size={13} tintColor="rgba(255,255,255,0.9)" />
+                        <SymbolView name="ellipsis" size={13} tintColor="rgba(255,255,255,0.65)" />
                       </TouchableOpacity>
                     )}
                   </View>
@@ -2112,12 +2113,12 @@ function WeekStripCard({
               <WorkoutPaperCover category={session.category} workoutId={session.workoutId} size="strip" />
               <View style={wsStyles.sessionHighlights}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                  <Text style={wsStyles.sessFooterName} numberOfLines={1}>{session.workoutName ?? 'Session'}</Text>
+                  <Text style={[wsStyles.sessFooterName, fd(700)]} numberOfLines={1}>{session.workoutName ?? 'Session'}</Text>
                   <View style={wsStyles.notYetBadge}>
-                    <Text style={wsStyles.notYetText}>Not yet done</Text>
+                    <Text style={[wsStyles.notYetText, ft(600)]}>Not yet done</Text>
                   </View>
                   <TouchableOpacity onPress={() => onScheduledMenu(session)} hitSlop={8} activeOpacity={0.5}>
-                    <SymbolView name="ellipsis" size={15} tintColor={MUTED} />
+                    <SymbolView name="ellipsis" size={15} tintColor="rgba(255,255,255,0.65)" />
                   </TouchableOpacity>
                 </View>
               </View>
@@ -2147,17 +2148,17 @@ function WeekStripCard({
                   "Duration"/"Exercises" labels are redundant next to their own icons. */}
               <View style={wsStyles.sessionHighlights}>
                 <View style={wsStyles.hlStatsRow}>
-                  <Text style={wsStyles.sessFooterName} numberOfLines={1}>{detail.workoutName ?? 'Session'}</Text>
+                  <Text style={[wsStyles.sessFooterName, fd(700)]} numberOfLines={1}>{detail.workoutName ?? 'Session'}</Text>
                   <View style={wsStyles.hlStatChip}>
                     <SymbolView name="timer" size={13} tintColor={ACCENT} />
-                    <Text style={wsStyles.hlStatValue}>{detail.durationSeconds != null ? `${Math.round(detail.durationSeconds / 60)} min` : '—'}</Text>
+                    <Text style={[wsStyles.hlStatValue, ft(700)]}>{detail.durationSeconds != null ? `${Math.round(detail.durationSeconds / 60)} min` : '—'}</Text>
                   </View>
                   <View style={wsStyles.hlStatChip}>
                     <SymbolView name="checkmark.circle.fill" size={13} tintColor={ACCENT} />
-                    <Text style={wsStyles.hlStatValue}>{detail.exercisesDoneCount} / {detail.exercisesTotal}</Text>
+                    <Text style={[wsStyles.hlStatValue, ft(700)]}>{detail.exercisesDoneCount} / {detail.exercisesTotal}</Text>
                   </View>
                   <TouchableOpacity onPress={() => onScheduledMenu(session)} hitSlop={8} activeOpacity={0.5}>
-                    <SymbolView name="ellipsis" size={15} tintColor={MUTED} />
+                    <SymbolView name="ellipsis" size={15} tintColor="rgba(255,255,255,0.65)" />
                   </TouchableOpacity>
                 </View>
               </View>
@@ -2651,13 +2652,13 @@ const sectionStyles = StyleSheet.create({
   headerLabel:    { fontSize: 12, fontWeight: '700', color: '#1a1a1a', textTransform: 'uppercase', letterSpacing: 0.5, marginLeft: 7 },
   hScroll:        { paddingHorizontal: 16, gap: 10 },
 
-  wCardOuter:     { width: 212, height: 127, borderRadius: 14, backgroundColor: '#fff', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 8, elevation: 3 },
-  wCard:          { flex: 1, borderRadius: 14, overflow: 'hidden', backgroundColor: '#fff' },
-  wName:          { fontSize: 15, fontWeight: '700', color: '#1a1a1a' },
+  wCardOuter:     { width: 212, height: 127, borderRadius: 14, backgroundColor: DARK_CARD_FOOTER, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.22, shadowRadius: 10, elevation: 6 },
+  wCard:          { flex: 1, borderRadius: 14, overflow: 'hidden', backgroundColor: DARK_CARD_FOOTER },
+  wName:          { fontSize: 15, fontWeight: '700', color: '#fff' },
   wMenuBtn:       { position: 'absolute', top: 7, right: 7, width: 26, height: 26, borderRadius: 13, backgroundColor: 'rgba(0,0,0,0.5)', alignItems: 'center', justifyContent: 'center' },
   wBody:          { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 12, paddingVertical: 6 },
   wFooterMenuBtn: { padding: 4 },
-  wSub:           { fontSize: 11, fontWeight: '400', color: '#999' },
+  wSub:           { fontSize: 11, fontWeight: '400', color: 'rgba(255,255,255,0.6)' },
   wStatus:        { fontSize: 11, fontWeight: '600' },
 
   seeAllCard:     { width: 80, height: 127, borderRadius: 14, backgroundColor: 'rgba(36,172,136,0.08)', borderWidth: 1.5, borderStyle: 'dashed', borderColor: 'rgba(36,172,136,0.3)', alignItems: 'center', justifyContent: 'center', gap: 6 },
@@ -2669,7 +2670,10 @@ const sectionStyles = StyleSheet.create({
 
 const rcStyles = StyleSheet.create({
   shadow: { borderRadius: 16, marginBottom: 0, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 8, elevation: 3 },
-  card: { backgroundColor: '#fff', borderRadius: 16, overflow: 'hidden', padding: 14, paddingHorizontal: 14 },
+  // Dark-green outline (July 2026): the routine card's identity next to the dark cover
+  // cards — deliberate brand border, exempt from the app-wide borderless rule.
+  // '#244e43' inline: the file's HEADER const is declared below this block (TDZ).
+  card: { backgroundColor: '#fff', borderRadius: 16, overflow: 'hidden', padding: 14, paddingHorizontal: 14, borderWidth: 1.5, borderColor: '#244e43' },
   topRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 12 },
   textBlock: { flex: 1, gap: 4 },
   routineName: { fontSize: 15, fontWeight: '600', color: '#1a1a1a' },
@@ -4193,13 +4197,13 @@ function WorkoutRow({
       <WorkoutPaperCover category={workout.category} workoutId={workout.id} />
       <View style={coverCardStyles.bottom}>
         <View style={coverCardStyles.bottomLeft}>
-          <Text style={coverCardStyles.itemName} numberOfLines={1}>{workout.name}</Text>
-          <Text style={coverCardStyles.itemSub} numberOfLines={1}>{lastDoneText}</Text>
+          <Text style={[coverCardStyles.itemName, fd(700)]} numberOfLines={1}>{workout.name}</Text>
+          <Text style={[coverCardStyles.itemSub, ft(400)]} numberOfLines={1}>{lastDoneText}</Text>
         </View>
         <View style={coverCardStyles.bottomRight}>
           {isTrainer && (
             <TouchableOpacity onPress={onMenuPress} hitSlop={8} activeOpacity={0.5}>
-              <SymbolView name="ellipsis" size={13} tintColor="rgba(255,255,255,0.9)" />
+              <SymbolView name="ellipsis" size={13} tintColor="rgba(255,255,255,0.65)" />
             </TouchableOpacity>
           )}
         </View>
@@ -4683,8 +4687,8 @@ const GRADIENT_DEFAULT: [string, string] = ['#2a2a2a', '#444444'];
 
 const coverCardStyles = StyleSheet.create({
   card: {
-    height: 70, borderRadius: 14, overflow: 'hidden', marginBottom: 0,
-    shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.08, shadowRadius: 6, elevation: 3,
+    height: 70, borderRadius: 14, overflow: 'hidden', marginBottom: 0, backgroundColor: DARK_CARD_FOOTER,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.22, shadowRadius: 10, elevation: 6,
   },
   bottom: {
     position: 'absolute', bottom: 0, left: 0, right: 0,
@@ -4792,9 +4796,9 @@ const planStyles = StyleSheet.create({
   weeksNum:       { fontSize: 22, fontWeight: '700', color: TEXT, minWidth: 36, textAlign: 'center' },
   saveBtn:            { backgroundColor: ACCENT, borderRadius: 100, paddingVertical: 14, alignSelf: 'stretch', alignItems: 'center', marginTop: 16 },
   saveBtnText:        { fontSize: 15, fontWeight: '700', color: '#fff' },
-  pickerCard:          { height: 70, borderRadius: 12, overflow: 'hidden' },
-  pickerCardFooter:    { paddingHorizontal: 12, paddingVertical: 6, backgroundColor: '#fff' },
-  pickerCardName:      { fontSize: 15, fontWeight: '700', color: '#1a1a1a' },
+  pickerCard:          { height: 70, borderRadius: 12, overflow: 'hidden', backgroundColor: DARK_CARD_FOOTER, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.22, shadowRadius: 10, elevation: 6 },
+  pickerCardFooter:    { paddingHorizontal: 12, paddingVertical: 6, backgroundColor: 'transparent' },
+  pickerCardName:      { fontSize: 15, fontWeight: '700', color: '#fff' },
   pickerCardCheck:     { position: 'absolute', top: 7, right: 7, width: 20, height: 20, borderRadius: 10, backgroundColor: '#24ac88', alignItems: 'center', justifyContent: 'center' },
   pickerCardCheckText: { fontSize: 11, color: '#fff', fontWeight: '700', lineHeight: 15 },
 });
@@ -4871,17 +4875,17 @@ const wsStyles = StyleSheet.create({
 
   addCircle:   { width: 40, height: 40, borderRadius: 20, alignSelf: 'center', marginTop: 12, backgroundColor: ACCENT, alignItems: 'center', justifyContent: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.12, shadowRadius: 6, elevation: 3 },
 
-  sessCardOuter: { borderRadius: 16, marginTop: 12, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 8, elevation: 3 },
-  sessCardInner: { borderRadius: 16, overflow: 'hidden', backgroundColor: CARD },
+  sessCardOuter: { borderRadius: 16, marginTop: 12, backgroundColor: DARK_CARD_FOOTER, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.22, shadowRadius: 10, elevation: 6 },
+  sessCardInner: { borderRadius: 16, overflow: 'hidden', backgroundColor: DARK_CARD_FOOTER },
   checkBadge:  { position: 'absolute', top: 8, right: 8, width: 18, height: 18, borderRadius: 9, backgroundColor: ACCENT, alignItems: 'center', justifyContent: 'center' },
   checkMark:   { fontSize: 10, color: '#fff', fontWeight: '700', lineHeight: 14 },
 
-  sessionHighlights: { paddingHorizontal: 10, paddingVertical: 10, backgroundColor: CARD },
+  sessionHighlights: { paddingHorizontal: 10, paddingVertical: 10, backgroundColor: 'transparent' },
   hlSectionLabel:    { fontSize: 9, fontWeight: '700', color: MUTED, letterSpacing: 0.6, textTransform: 'uppercase', marginBottom: 8, textAlign: 'center' },
   hlStatsRow:    { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  sessFooterName: { flex: 1, fontSize: 15, fontWeight: '700', color: '#1a1a1a' },
+  sessFooterName: { flex: 1, fontSize: 15, fontWeight: '700', color: '#fff' },
   hlStatChip:    { flex: 1, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 4 },
-  hlStatValue:   { fontSize: 13, fontWeight: '700', color: TEXT },
+  hlStatValue:   { fontSize: 13, fontWeight: '700', color: '#fff' },
   hlNoteChip:    { flexDirection: 'row', alignItems: 'flex-start', gap: 6, backgroundColor: '#f5f5f3', borderRadius: 8, paddingVertical: 7, paddingHorizontal: 8, marginTop: 8 },
   hlNoteText:    { fontSize: 11, color: '#555', flex: 1, lineHeight: 16 },
   hlSectionDivider: { height: 1, backgroundColor: '#eeeeec', marginVertical: 8 },
@@ -4897,8 +4901,8 @@ const wsStyles = StyleSheet.create({
   hlDeltaSame:     { color: '#f5a623' },
   hlDivider:       { height: 0.5, backgroundColor: '#f0f0ee' },
   // Scheduled session
-  notYetBadge: { backgroundColor: '#f5f5f3', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 5 },
-  notYetText:  { fontSize: 12, fontWeight: '600', color: MUTED },
+  notYetBadge: { backgroundColor: 'rgba(255,255,255,0.16)', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 5 },
+  notYetText:  { fontSize: 12, fontWeight: '600', color: 'rgba(255,255,255,0.85)' },
 });
 
 // ─── Move-training calendar modal styles ─────────────────────────────────────

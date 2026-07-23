@@ -19,8 +19,9 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/context/AuthContext';
 import { CATEGORY_OPTIONS, CATEGORY_COLORS } from '@/lib/workoutCategories';
 import type { WorkoutCategory } from '@/lib/workoutCategories';
-import WorkoutPaperCover from '@/components/WorkoutPaperCover';
+import WorkoutPaperCover, { DARK_CARD_FOOTER } from '@/components/WorkoutPaperCover';
 import { fetchExerciseNames, fetchTemplateExerciseNames } from '@/lib/exerciseNames';
+import { ft, fd } from '@/lib/appType';
 
 const HEADER = '#244e43';
 const ACCENT = '#24ac88';
@@ -390,8 +391,8 @@ export default function AddWorkoutToDayScreen() {
                           )}
                         </WorkoutPaperCover>
                         <View style={styles.footer}>
-                          <Text style={styles.cardName} numberOfLines={1}>{w.name}</Text>
-                          <Text style={styles.footerSub} numberOfLines={1}>{subtitle}</Text>
+                          <Text style={[styles.cardName, fd(700)]} numberOfLines={1}>{w.name}</Text>
+                          <Text style={[styles.footerSub, ft(400)]} numberOfLines={1}>{subtitle}</Text>
                         </View>
                       </View>
                     </TouchableOpacity>
@@ -425,8 +426,8 @@ export default function AddWorkoutToDayScreen() {
                           </View>
                         </WorkoutPaperCover>
                         <View style={styles.footer}>
-                          <Text style={styles.cardName} numberOfLines={1}>{t.name}</Text>
-                          <Text style={styles.footerSub} numberOfLines={1}>
+                          <Text style={[styles.cardName, fd(700)]} numberOfLines={1}>{t.name}</Text>
+                          <Text style={[styles.footerSub, ft(400)]} numberOfLines={1}>
                             {t.exerciseCount} {t.exerciseCount === 1 ? 'exercise' : 'exercises'}
                           </Text>
                         </View>
@@ -505,14 +506,16 @@ const styles = StyleSheet.create({
   emptyWrap: { alignItems: 'center', paddingVertical: 40 },
   emptyText: { fontSize: 14, color: MUTED },
 
+  // Brand-dark card: frame + footer painted the cover gradient's last stop so
+  // cover and footer read as one object. Dark-card shadow spec.
   card: {
-    borderRadius: 14, backgroundColor: '#fff',
-    shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.08, shadowRadius: 6, elevation: 3,
+    borderRadius: 14, backgroundColor: DARK_CARD_FOOTER,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.22, shadowRadius: 10, elevation: 6,
   },
-  cardInner: { borderRadius: 14, overflow: 'hidden', backgroundColor: '#fff' },
-  footer: { paddingHorizontal: 12, paddingVertical: 6, backgroundColor: '#fff' },
-  footerSub: { fontSize: 11, color: '#999' },
-  cardName: { fontSize: 15, fontWeight: '700', color: '#1a1a1a' },
+  cardInner: { borderRadius: 14, overflow: 'hidden', backgroundColor: DARK_CARD_FOOTER },
+  footer: { paddingHorizontal: 12, paddingVertical: 6, backgroundColor: 'transparent' },
+  footerSub: { fontSize: 11, color: 'rgba(255,255,255,0.6)' },
+  cardName: { fontSize: 15, fontWeight: '700', color: '#fff' },
   cardSub: { fontSize: 10, color: 'rgba(255,255,255,0.65)', marginTop: 2 },
   templateBadge: {
     position: 'absolute', top: 8, left: 8,

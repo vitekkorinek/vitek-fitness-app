@@ -26,8 +26,9 @@ import { useAuth } from '@/context/AuthContext';
 import { CATEGORY_COLORS, CATEGORY_OPTIONS, STRETCHING_CATEGORIES } from '@/lib/workoutCategories';
 import { resolveWeeklyGoal } from '@/lib/weeklyGoal';
 import type { WorkoutCategory } from '@/lib/workoutCategories';
-import WorkoutPaperCover from '@/components/WorkoutPaperCover';
+import WorkoutPaperCover, { DARK_CARD_FOOTER } from '@/components/WorkoutPaperCover';
 import { fetchExerciseNames } from '@/lib/exerciseNames';
+import { ft, fd } from '@/lib/appType';
 
 type WorkoutRow = {
   id: string;
@@ -212,14 +213,14 @@ export default function AllWorkoutsScreen() {
               onPress={() => { setTab('workouts'); setSelectedCategory(null); setCategoryExpanded(false); }}
               activeOpacity={0.7}
             >
-              <Text style={[awStyles.tabText, tab === 'workouts' && awStyles.tabTextActive]}>Workouts</Text>
+              <Text style={[awStyles.tabText, tab === 'workouts' && awStyles.tabTextActive, ft(600)]}>Workouts</Text>
             </TouchableOpacity>
             <TouchableOpacity
               style={[awStyles.tabItem, tab === 'stretching' && awStyles.tabItemActive]}
               onPress={() => { setTab('stretching'); setSelectedCategory(null); setCategoryExpanded(false); }}
               activeOpacity={0.7}
             >
-              <Text style={[awStyles.tabText, tab === 'stretching' && awStyles.tabTextActive]}>Stretching</Text>
+              <Text style={[awStyles.tabText, tab === 'stretching' && awStyles.tabTextActive, ft(600)]}>Stretching</Text>
             </TouchableOpacity>
           </View>
 
@@ -330,7 +331,7 @@ export default function AllWorkoutsScreen() {
                   <WorkoutItem key={w.id} workout={w} thisWeekCount={w.thisWeekCount} onPress={makeOnPress(w)} onQuickLook={() => openQuickLook(w)} />
                 ))}
                 {doneList.length > 0 && restList.length > 0 && (
-                  <Text style={wpStyles.sectionLabel}>NOT DONE THIS WEEK</Text>
+                  <Text style={[wpStyles.sectionLabel, ft(700)]}>NOT DONE THIS WEEK</Text>
                 )}
                 {restList.map(w => (
                   <WorkoutItem key={w.id} workout={w} onPress={makeOnPress(w)} onQuickLook={() => openQuickLook(w)} />
@@ -398,10 +399,10 @@ function WeekProgressBar({ goal, completed }: { goal: number; completed: number 
   return (
     <View style={wpStyles.container}>
       <View style={wpStyles.labelRow}>
-        <Text style={wpStyles.labelLeft}>THIS WEEK</Text>
+        <Text style={[wpStyles.labelLeft, ft(700)]}>THIS WEEK</Text>
         <View style={{ flexDirection: 'row', alignItems: 'baseline' }}>
-          <Text style={[wpStyles.count, exceeded && { color: '#f5a623' }]}>{completed}</Text>
-          <Text style={wpStyles.countSuffix}> / {goal}</Text>
+          <Text style={[wpStyles.count, exceeded && { color: '#f5a623' }, fd(700)]}>{completed}</Text>
+          <Text style={[wpStyles.countSuffix, ft(400)]}> / {goal}</Text>
         </View>
       </View>
     </View>
@@ -428,37 +429,37 @@ function WorkoutItem({ workout, onPress, thisWeekCount, onQuickLook }: { workout
   ].join(' · ');
 
   return (
-    <TouchableOpacity style={[coverCardStyles.cardWrap, isDone && coverCardStyles.cardDone]} onPress={onPress} activeOpacity={0.92}>
-      <View style={coverCardStyles.cardInner}>
+    <TouchableOpacity style={[coverCardStyles.cardWrap, coverCardStyles.cardWrapDark, isDone && coverCardStyles.cardDone]} onPress={onPress} activeOpacity={0.92}>
+      <View style={[coverCardStyles.cardInner, coverCardStyles.cardInnerDark]}>
         <WorkoutPaperCover
           category={isDone ? null : workout.category}
           exerciseNames={workout.exerciseNames}
           style={isDone ? { opacity: 0.55 } : undefined}
         >
           {isDone && (
-            <View style={coverCardStyles.doneBadge}>
-              <Text style={coverCardStyles.doneBadgeText}>Done</Text>
+            <View style={[coverCardStyles.doneBadge, coverCardStyles.doneBadgeDark]}>
+              <Text style={[coverCardStyles.doneBadgeText, coverCardStyles.doneBadgeTextDark]}>Done</Text>
             </View>
           )}
         </WorkoutPaperCover>
         {/* White footer: name (demoted from the cover — the exercises are the content now,
             but the name is still the workout's handle for search, Do Mode's header and
             session history) + last-done + ⋯ */}
-        <View style={coverCardStyles.footer}>
+        <View style={[coverCardStyles.footer, coverCardStyles.footerDark]}>
           <View style={coverCardStyles.footerLeft}>
             <View style={coverCardStyles.nameRow}>
-              <Text style={coverCardStyles.itemName} numberOfLines={1}>{workout.name}</Text>
+              <Text style={[coverCardStyles.itemName, coverCardStyles.textOnDark, fd(700)]} numberOfLines={1}>{workout.name}</Text>
               {!!thisWeekCount && thisWeekCount > 0 && !isDone && (
                 <View style={[coverCardStyles.checkBadge, thisWeekCount > 1 && { width: undefined, paddingHorizontal: 7 }]}>
                   <Text style={coverCardStyles.checkMark}>✓{thisWeekCount > 1 ? ` ×${thisWeekCount}` : ''}</Text>
                 </View>
               )}
             </View>
-            <Text style={coverCardStyles.footerSub} numberOfLines={1}>{subtitle}</Text>
+            <Text style={[coverCardStyles.footerSub, coverCardStyles.subOnDark, ft(400)]} numberOfLines={1}>{subtitle}</Text>
           </View>
           {onQuickLook && (
             <TouchableOpacity style={coverCardStyles.footerMenuBtn} onPress={onQuickLook} hitSlop={10} activeOpacity={0.6}>
-              <SymbolView name="ellipsis" size={16} tintColor="#999" />
+              <SymbolView name="ellipsis" size={16} tintColor={'rgba(255,255,255,0.65)'} />
             </TouchableOpacity>
           )}
         </View>
@@ -472,9 +473,20 @@ function WorkoutItem({ workout, onPress, thisWeekCount, onQuickLook }: { workout
 const coverCardStyles = StyleSheet.create({
   cardWrap: {
     borderRadius: 14, backgroundColor: '#fff',
-    shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.07, shadowRadius: 6, elevation: 2,
+    // Depth-pass lift shadow — matches the Training-tab cards (see gcStyles.sessCardOuter).
+    shadowColor: '#000', shadowOffset: { width: 0, height: 5 }, shadowOpacity: 0.08, shadowRadius: 12, elevation: 4,
   },
   cardInner: { borderRadius: 14, overflow: 'hidden', backgroundColor: '#fff' },
+  // Design-trial 'dark' overrides: whole card in the home-tile register (frame + footer
+  // painted the cover gradient's last stop → one seamless dark object). Dark-card shadow
+  // spec — dark grounds absorb the white-card shadow.
+  cardWrapDark:  { backgroundColor: DARK_CARD_FOOTER, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.22, shadowRadius: 10, elevation: 6 },
+  cardInnerDark: { backgroundColor: DARK_CARD_FOOTER },
+  footerDark:    { backgroundColor: 'transparent' },
+  textOnDark:    { color: '#fff' },
+  subOnDark:     { color: 'rgba(255,255,255,0.6)' },
+  doneBadgeDark:     { backgroundColor: 'rgba(255,255,255,0.16)' },
+  doneBadgeTextDark: { color: 'rgba(255,255,255,0.85)' },
   cardDone: { opacity: 0.75 },
   nameRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   itemName: { fontSize: 15, fontWeight: '700', color: '#1a1a1a', flexShrink: 1 },

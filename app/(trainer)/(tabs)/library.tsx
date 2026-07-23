@@ -43,7 +43,8 @@ import {
 import { relativeTime } from '@/lib/utils';
 import { CATEGORY_COLORS, CATEGORY_OPTIONS, STRETCHING_CATEGORIES } from '@/lib/workoutCategories';
 import type { WorkoutCategory } from '@/lib/workoutCategories';
-import WorkoutPaperCover from '@/components/WorkoutPaperCover';
+import WorkoutPaperCover, { DARK_CARD_FOOTER } from '@/components/WorkoutPaperCover';
+import { ft, fd } from '@/lib/appType';
 import { fetchExerciseNames, fetchTemplateExerciseNames } from '@/lib/exerciseNames';
 import t from '@/i18n/en';
 import type { Exercise } from '@/types/database';
@@ -2176,11 +2177,11 @@ function WorkoutLibraryRow({
         {/* Name demoted from the cover to the footer — the exercises are the content now. */}
         <View style={coverCardStyles.footer}>
           <View style={coverCardStyles.footerLeft}>
-            <Text style={coverCardStyles.itemName} numberOfLines={1}>{workout.name}</Text>
-            <Text style={coverCardStyles.footerSub} numberOfLines={1}>{subtitle}</Text>
+            <Text style={[coverCardStyles.itemName, fd(700)]} numberOfLines={1}>{workout.name}</Text>
+            <Text style={[coverCardStyles.footerSub, ft(400)]} numberOfLines={1}>{subtitle}</Text>
           </View>
           <TouchableOpacity style={coverCardStyles.footerMenuBtn} onPress={onMenuPress} hitSlop={8} activeOpacity={0.5}>
-            <SymbolView name="ellipsis" size={16} tintColor="#999" />
+            <SymbolView name="ellipsis" size={16} tintColor="rgba(255,255,255,0.65)" />
           </TouchableOpacity>
         </View>
       </View>
@@ -2244,11 +2245,11 @@ function TemplateLibraryRow({
         </WorkoutPaperCover>
         <View style={coverCardStyles.footer}>
           <View style={coverCardStyles.footerLeft}>
-            <Text style={coverCardStyles.itemName} numberOfLines={1}>{template.name}</Text>
-            <Text style={coverCardStyles.footerSub} numberOfLines={1}>{subtitle}</Text>
+            <Text style={[coverCardStyles.itemName, fd(700)]} numberOfLines={1}>{template.name}</Text>
+            <Text style={[coverCardStyles.footerSub, ft(400)]} numberOfLines={1}>{subtitle}</Text>
           </View>
           <TouchableOpacity style={coverCardStyles.footerMenuBtn} onPress={onMenuPress} hitSlop={8} activeOpacity={0.5}>
-            <SymbolView name="ellipsis" size={16} tintColor="#999" />
+            <SymbolView name="ellipsis" size={16} tintColor="rgba(255,255,255,0.65)" />
           </TouchableOpacity>
         </View>
       </View>
@@ -2608,17 +2609,20 @@ const CATEGORY_GRADIENTS: Record<string, [string, string]> = {
 const GRADIENT_DEFAULT: [string, string] = ['#2a2a2a', '#444444'];
 
 const coverCardStyles = StyleSheet.create({
+  // Brand-dark card: frame + footer painted the cover gradient's last stop
+  // (DARK_CARD_FOOTER) so cover and footer read as one seamless dark object.
+  // Dark-card shadow spec — dark grounds absorb the white-card shadow.
   card: {
-    borderRadius: 14, backgroundColor: '#fff',
-    shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.08, shadowRadius: 6, elevation: 3,
+    borderRadius: 14, backgroundColor: DARK_CARD_FOOTER,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.22, shadowRadius: 10, elevation: 6,
   },
-  cardInner: { borderRadius: 14, overflow: 'hidden', backgroundColor: '#fff' },
-  footer: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 6, gap: 8, backgroundColor: '#fff' },
+  cardInner: { borderRadius: 14, overflow: 'hidden', backgroundColor: DARK_CARD_FOOTER },
+  footer: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 6, gap: 8, backgroundColor: DARK_CARD_FOOTER },
   footerLeft: { flex: 1 },
-  footerSub: { fontSize: 11, color: '#999' },
+  footerSub: { fontSize: 11, color: 'rgba(255,255,255,0.6)' },
   footerMenuBtn: { padding: 4 },
   menuBtn: { position: 'absolute', top: 9, right: 10 },
-  itemName: { fontSize: 15, fontWeight: '700', color: '#1a1a1a' },
+  itemName: { fontSize: 15, fontWeight: '700', color: '#fff' },
   clientPill: {
     position: 'absolute', top: 9, left: 10,
     flexDirection: 'row', alignItems: 'center', gap: 3,

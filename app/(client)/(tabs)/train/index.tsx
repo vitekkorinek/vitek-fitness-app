@@ -25,8 +25,9 @@ import { SessionDetailsSheet } from '@/components/SessionDetailsSheet';
 import { RoutineDetailsSheet } from '@/components/RoutineDetailsSheet';
 import type { RoutineWorkoutPick } from '@/components/RoutineDetailsSheet';
 import CategoryCover, { categoryHasCover, WORKOUT_COVER_PHOTOS_ENABLED } from '@/components/CategoryCover';
-import WorkoutPaperCover from '@/components/WorkoutPaperCover';
+import WorkoutPaperCover, { DARK_CARD_FOOTER } from '@/components/WorkoutPaperCover';
 import { fetchExerciseNames } from '@/lib/exerciseNames';
+import { ft, fd } from '@/lib/appType';
 
 const BG     = '#faf9f7';
 const CARD   = '#ffffff';
@@ -36,6 +37,19 @@ const ACCENT = '#24ac88';
 const HEADER = '#244e43';
 const TEXT   = '#1a1a1a';
 const MUTED  = '#999';
+
+// Dark card-frame styles (LOCKED July 2026 — the brand-dark cards won the device trial),
+// appended after the base frame styles. The frame + footer go DARK_CARD_FOOTER — the last
+// stop of the cover gradient — so the whole card reads as ONE home-tile-register object.
+// Shadow follows the app's dark-card spec (dark grounds absorb the white-card shadow).
+const darkCardStyles = StyleSheet.create({
+  outer:      { backgroundColor: DARK_CARD_FOOTER, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.22, shadowRadius: 10, elevation: 6 },
+  inner:      { backgroundColor: DARK_CARD_FOOTER },
+  footerBg:   { backgroundColor: 'transparent' },
+  textOnDark: { color: '#fff' },
+  subOnDark:  { color: 'rgba(255,255,255,0.55)' },
+});
+const DARK_MUTED_ICON = 'rgba(255,255,255,0.65)';
 
 const MONTH_NAMES = [
   'January','February','March','April','May','June',
@@ -152,6 +166,16 @@ function gaugeWeekLabel(weekOffset: number, weekDates: string[]): string {
 
 const WEEK_DAY_ABBR = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
+// Month context for the week-strip header — "JULY", or "JUL – AUG" when the week spans
+// two months. Without it the bare day numbers lose their month once the strip is swiped.
+function stripMonthLabel(weekDates: string[]): string {
+  if (weekDates.length < 7) return '';
+  const first = new Date(weekDates[0] + 'T12:00:00');
+  const last  = new Date(weekDates[6] + 'T12:00:00');
+  if (first.getMonth() === last.getMonth()) return MONTH_NAMES[first.getMonth()].toUpperCase();
+  return `${MONTH_ABBR[first.getMonth()]} – ${MONTH_ABBR[last.getMonth()]}`.toUpperCase();
+}
+
 function getDayAbbr(dateStr: string): string {
   const [y, m, d] = dateStr.split('-').map(Number);
   return WEEK_DAY_ABBR[new Date(y, m - 1, d).getDay()];
@@ -213,7 +237,6 @@ export default function TrainTabScreen() {
   const { width: sw } = useWindowDimensions();
   const headerH = useHeaderHeight();
   const tabBarH = useTabBarHeight();
-
   const [training, setTraining]                 = useState<ClientTrainingData | null>(null);
   const [workoutCards, setWorkoutCards]         = useState<WorkoutCard[]>([]);
   const [quickLookRoutine, setQuickLookRoutine] = useState<{ id: string; name: string } | null>(null);
@@ -814,38 +837,37 @@ export default function TrainTabScreen() {
           {/* ── WORKOUTS section ───────────────────────────────────── */}
           <View style={sectionStyles.headerRow}>
             <View style={sectionStyles.headerLeft}>
-              <Text style={sectionStyles.headerEmoji}>🏋️</Text>
-              <Text style={sectionStyles.headerLabel}>Workouts</Text>
+              <Text style={[sectionStyles.headerLabel, { marginLeft: 0 }, ft(700)]}>Workouts</Text>
             </View>
             <TouchableOpacity onPress={() => router.push('/(client)/(tabs)/train/all-workouts' as any)} hitSlop={8} activeOpacity={0.7}>
               <SymbolView name="chevron.right" size={15} tintColor="#999" weight="semibold" />
             </TouchableOpacity>
           </View>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={sectionStyles.hScroll}>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={sectionStyles.hScrollBleed} contentContainerStyle={sectionStyles.hScroll}>
             {workoutCards.map(c => (
               <TouchableOpacity
                 key={c.id}
-                style={sectionStyles.wCardOuter}
+                style={[sectionStyles.wCardOuter, darkCardStyles.outer]}
                 activeOpacity={0.85}
                 onPress={() => router.push(`/(client)/workout/session-intro?workoutId=${c.id}` as any)}
               >
-                <View style={sectionStyles.wCard}>
+                <View style={[sectionStyles.wCard, darkCardStyles.inner]}>
                   <WorkoutPaperCover category={c.category} exerciseNames={c.exerciseNames} size="mini" />
                   <View style={sectionStyles.wBody}>
                     {/* Name + ONE sub line, same shape as the full card's footer — the
                         routine used to be its own row, which made cards with a routine a
                         line taller than those without. */}
                     <View style={{ flex: 1 }}>
-                      <Text style={sectionStyles.wName} numberOfLines={1}>{c.name}</Text>
-                      <Text style={sectionStyles.wStatus} numberOfLines={1}>
-                        <Text style={{ color: c.lastDoneDate ? ACCENT : '#bbb' }}>
+                      <Text style={[sectionStyles.wName, darkCardStyles.textOnDark, fd(700)]} numberOfLines={1}>{c.name}</Text>
+                      <Text style={[sectionStyles.wStatus, ft(600)]} numberOfLines={1}>
+                        <Text style={{ color: c.lastDoneDate ? ACCENT : 'rgba(255,255,255,0.5)' }}>
                           {c.lastDoneDate ? `Done ${formatShortDate(c.lastDoneDate)}` : 'Never done'}
                         </Text>
-                        {!!c.routineName && <Text style={sectionStyles.wSub}> · {c.routineName}</Text>}
+                        {!!c.routineName && <Text style={[sectionStyles.wSub, darkCardStyles.subOnDark, ft(400)]}> · {c.routineName}</Text>}
                       </Text>
                     </View>
                     <TouchableOpacity style={sectionStyles.wFooterMenuBtn} hitSlop={8} activeOpacity={0.6} onPress={() => openWorkoutDetails(c)}>
-                      <SymbolView name="ellipsis" size={16} tintColor="#999" />
+                      <SymbolView name="ellipsis" size={16} tintColor={DARK_MUTED_ICON} />
                     </TouchableOpacity>
                   </View>
                 </View>
@@ -853,15 +875,14 @@ export default function TrainTabScreen() {
             ))}
             <TouchableOpacity style={sectionStyles.seeAllCard} onPress={() => router.push('/(client)/(tabs)/train/all-workouts' as any)} activeOpacity={0.85}>
               <Text style={sectionStyles.seeAllArrow}>→</Text>
-              <Text style={sectionStyles.seeAllCardText}>See all {workoutCards.length}</Text>
+              <Text style={[sectionStyles.seeAllCardText, ft(600)]}>See all {workoutCards.length}</Text>
             </TouchableOpacity>
           </ScrollView>
 
           {/* ── ROUTINES section ───────────────────────────────────── */}
           <View style={sectionStyles.headerRow}>
             <View style={sectionStyles.headerLeft}>
-              <RoutineIcon size={18} />
-              <Text style={sectionStyles.headerLabel}>Routines</Text>
+              <Text style={[sectionStyles.headerLabel, { marginLeft: 0 }, ft(700)]}>Routines</Text>
             </View>
             <TouchableOpacity onPress={() => router.push('/(client)/(tabs)/train/all-routines' as any)} hitSlop={8} activeOpacity={0.7}>
               <SymbolView name="chevron.right" size={15} tintColor="#999" weight="semibold" />
@@ -876,7 +897,7 @@ export default function TrainTabScreen() {
               />
             </View>
           ) : (
-            <Text style={sectionStyles.noRoutine}>No active routine</Text>
+            <Text style={[sectionStyles.noRoutine, ft(400)]}>No active routine</Text>
           )}
           <View style={{ height: 24 }} />
 
@@ -1401,11 +1422,8 @@ function WeeklyGaugeCard({
 }: WeeklyGaugeCardProps) {
   const exceeded = weeklyCompleted > weeklyGoal;
   const [sessionsListOpen, setSessionsListOpen] = useState(false);
-  const [singlePip, setSinglePip] = useState<WeekSession | null>(null);
-  // Pips represent completed workouts only — planned/scheduled sessions never count.
+  // Completed sessions only — planned/scheduled never count toward the gauge.
   const completedSessions = weekSessions.filter(s => s.status === 'completed');
-  // Sessions ordered oldest→newest so each pip maps to the workout that produced it.
-  const sortedSessions = [...completedSessions].sort((a, b) => a.date.localeCompare(b.date));
   const PAD = 8;
   const R = Math.round((sw - 80) / 2.2);
   const D = R * 2;
@@ -1419,8 +1437,8 @@ function WeeklyGaugeCard({
     <View style={gcStyles.container}>
       {/* Arc */}
       <View style={{ alignItems: 'center' }}>
-        {/* Container extended by 48px so absolute-positioned stats have room below the arc */}
-        <View style={{ position: 'relative', width: svgW, height: svgH + 48 }}>
+        {/* Container extended by 48px so absolute-positioned stats have room below the arc. */}
+        <Pressable style={{ position: 'relative', width: svgW, height: svgH + 48 }}>
           <Svg width={svgW} height={svgH}>
             {exceeded && (
               <Defs>
@@ -1430,78 +1448,69 @@ function WeeklyGaugeCard({
                 </SvgLinearGradient>
               </Defs>
             )}
-            <SvgPath d={path} fill="none" stroke="rgba(36,172,136,0.15)" strokeWidth={11} strokeLinecap="round" />
-            <SvgPath d={path} fill="none" stroke={exceeded ? 'url(#arcGrad)' : '#24ac88'} strokeWidth={11}
+            {/* Track = mid green at low alpha — a quiet "groove" the accent fills. The
+                ACCENT-at-15% track read as mint fog; pure header-green-at-12% read GREY
+                on device. This keeps the green identity without going pastel. */}
+            <SvgPath d={path} fill="none" stroke="rgba(58,125,107,0.16)" strokeWidth={12} strokeLinecap="round" />
+            <SvgPath d={path} fill="none" stroke={exceeded ? 'url(#arcGrad)' : '#24ac88'} strokeWidth={12}
               strokeLinecap="round" strokeDasharray={`${fillLen} ${arcLen}`} />
           </Svg>
           <View style={[gcStyles.arcCenter, { top: Math.round(R * 0.42 + PAD) }]}>
-            <Text style={gcStyles.arcLabel}>{gaugeWeekLabel(weekOffset, weekDates).toUpperCase()} GOAL</Text>
-            <Text style={gcStyles.arcNum}>{weeklyGoal}</Text>
-            <Text style={gcStyles.arcUnit}>workouts</Text>
+            <Text style={[gcStyles.arcLabel, ft(600)]}>{gaugeWeekLabel(weekOffset, weekDates).toUpperCase()} GOAL</Text>
+            <Text style={[gcStyles.arcNum, fd(700)]}>{weeklyGoal}</Text>
+            <Text style={[gcStyles.arcUnit, ft(400)]}>workouts</Text>
           </View>
-          {/* DONE — 60px block centered on the left arc endpoint (x = PAD) */}
-          <View style={{ position: 'absolute', top: svgH + 4, left: PAD - 30, width: 60, alignItems: 'center' }}>
-            <Text style={gcStyles.statNum}>{weeklyCompleted}</Text>
-            <Text style={[gcStyles.statLabel, { color: '#24ac88' }]}>DONE</Text>
-          </View>
+          {/* DONE — 60px block centered on the left arc endpoint (x = PAD). Tappable: it
+              opens the week's "Trainings done" list (this moved here from the removed
+              message line — tap the done-count to see which workouts produced it). */}
+          <TouchableOpacity
+            style={{ position: 'absolute', top: svgH + 4, left: PAD - 30, width: 60, alignItems: 'center' }}
+            onPress={() => setSessionsListOpen(true)}
+            activeOpacity={0.7}
+            hitSlop={6}
+          >
+            <Text style={[gcStyles.statNum, fd(600)]}>{weeklyCompleted}</Text>
+            <Text style={[gcStyles.statLabel, { color: '#24ac88' }, ft(600)]}>DONE</Text>
+          </TouchableOpacity>
           {/* BONUS / LEFT — 60px block centered on the right arc endpoint (x = D + PAD) */}
           <View style={{ position: 'absolute', top: svgH + 4, left: D + PAD - 30, width: 60, alignItems: 'center' }}>
             {exceeded ? (
               <>
-                <Text style={[gcStyles.statNum, { color: '#f5a623' }]}>+{weeklyCompleted - weeklyGoal}</Text>
-                <Text style={[gcStyles.statLabel, { color: '#f5a623' }]}>BONUS</Text>
+                <Text style={[gcStyles.statNum, { color: '#f5a623' }, fd(600)]}>+{weeklyCompleted - weeklyGoal}</Text>
+                <Text style={[gcStyles.statLabel, { color: '#f5a623' }, ft(600)]}>BONUS</Text>
               </>
             ) : (
               <>
-                <Text style={gcStyles.statNum}>{weeklyGoal - weeklyCompleted}</Text>
-                <Text style={[gcStyles.statLabel, { color: '#1a1a1a' }]}>LEFT</Text>
+                <Text style={[gcStyles.statNum, fd(600)]}>{weeklyGoal - weeklyCompleted}</Text>
+                <Text style={[gcStyles.statLabel, { color: '#1a1a1a' }, ft(600)]}>LEFT</Text>
               </>
             )}
           </View>
-        </View>
+        </Pressable>
       </View>
 
-      {/* One pip per completed workout only — no empty placeholders (at 0 done, nothing shows,
-          just the message). Bonus pips (beyond goal) turn amber. Pips are centered above the
-          message. Each pip maps to the session that produced it (oldest→newest) and is tappable.
-          (Reverted from the single big-pip design — see gcStyles.bigPip, kept for easy re-switch.) */}
-      {weeklyCompleted > 0 && (
-        <View style={gcStyles.pipsRow}>
-          {Array.from({ length: weeklyCompleted }).map((_, i) => {
-            const isBonus = i >= weeklyGoal;
-            const sess    = sortedSessions[i] ?? null;
-            return (
-              <TouchableOpacity
-                key={i}
-                activeOpacity={sess ? 0.7 : 1}
-                disabled={!sess}
-                onPress={sess ? () => setSinglePip(sess) : undefined}
-                style={[gcStyles.pip, isBonus ? gcStyles.pipBonus : gcStyles.pipDone]}
-                hitSlop={4}
-              >
-                <Text style={{ fontSize: 12 }}>🏋️</Text>
-              </TouchableOpacity>
-            );
-          })}
-        </View>
-      )}
-      <TouchableOpacity activeOpacity={0.8} onPress={() => setSessionsListOpen(true)} hitSlop={6}>
-        <Text style={[gcStyles.msg, { marginTop: weeklyCompleted > 0 ? 8 : 0 }]}>{pipMessage(weeklyCompleted, weeklyGoal, weekOffset, weekDates)}</Text>
-      </TouchableOpacity>
+      {/* Pips AND the motivational message removed (July 2026 clean pass) — the arc fill +
+          DONE/LEFT carry the count; tapping DONE opens the week's session list. */}
 
-      <View style={gcStyles.divider} />
-
-      {/* Days section */}
+      {/* Days section — no divider (whitespace separates); the strip gets the same
+          label-left / glyph-right header pattern as WORKOUTS/ROUTINES: the month label
+          anchors the calendar button so it doesn't float, and the day pills below stay
+          symmetric because nothing shares their row. */}
       <View style={gcStyles.daysSectionWrap} {...weekPanHandlers}>
-        <View style={gcStyles.calBtn}>
-          {weekOffset !== 0 && (
-            <TouchableOpacity onPress={onGoToToday} hitSlop={8} activeOpacity={0.7} style={gcStyles.todayBtn}>
-              <Text style={gcStyles.todayBtnText}>{parseInt(todayStr.split('-')[2])}</Text>
+        <View style={gcStyles.stripHeadRow}>
+          {/* Affordance split (Vitek's call, matches the Food Log header icons): the month
+              label is an inert gray caption; the DARK calendar glyph is the tappable one. */}
+          <Text style={[gcStyles.stripMonth, ft(700)]}>{stripMonthLabel(weekDates)}</Text>
+          <View style={gcStyles.stripHeadRight}>
+            {weekOffset !== 0 && (
+              <TouchableOpacity onPress={onGoToToday} hitSlop={8} activeOpacity={0.7} style={gcStyles.todayBtn}>
+                <Text style={[gcStyles.todayBtnText, ft(700)]}>{parseInt(todayStr.split('-')[2])}</Text>
+              </TouchableOpacity>
+            )}
+            <TouchableOpacity onPress={onOpenCalendar} hitSlop={8} activeOpacity={0.7}>
+              <SymbolView name="calendar" size={18} tintColor={HEADER} />
             </TouchableOpacity>
-          )}
-          <TouchableOpacity onPress={onOpenCalendar} hitSlop={8} activeOpacity={0.7}>
-            <SymbolView name="calendar" size={18} tintColor={HEADER} />
-          </TouchableOpacity>
+          </View>
         </View>
       <View style={gcStyles.daysRow}>
             <View style={{ flex: 1, flexDirection: 'row' }}>
@@ -1531,11 +1540,13 @@ function WeeklyGaugeCard({
                         gcStyles.dayLabel,
                         isSelected ? { color: '#fff' } : {},
                         isToday && !isSelected ? { color: '#24ac88' } : {},
+                        ft(600),
                       ]}>{DAY_LABELS[i]}</Text>
                       <Text style={[
                         gcStyles.dayNum,
                         isSelected ? { color: '#fff' } : {},
                         isToday && !isSelected ? { color: '#24ac88' } : {},
+                        fd(600),
                       ]}>{dayNum}</Text>
                     </View>
                     <View style={[gcStyles.dot, dayCompleted ? gcStyles.dotActive : dayPlanned ? gcStyles.dotPlanned : null]} />
@@ -1551,8 +1562,8 @@ function WeeklyGaugeCard({
           {daySessions.map((session) => (
             session.status === 'scheduled' ? (
               /* Planned (scheduled) session — not performed. The client logs it for real on the day. */
-              <View key={session.id} style={gcStyles.sessCardOuter}>
-                <View style={gcStyles.sessCard}>
+              <View key={session.id} style={[gcStyles.sessCardOuter, darkCardStyles.outer]}>
+                <View style={[gcStyles.sessCard, darkCardStyles.inner]}>
                   {/* Planned/future days are view-only — tapping the cover opens the pre-session
                       screen with just "View session" (they can't start a future day). */}
                   <TouchableOpacity
@@ -1565,12 +1576,12 @@ function WeeklyGaugeCard({
                       size="strip"
                     />
                   </TouchableOpacity>
-                  <View style={gcStyles.hlWrap}>
+                  <View style={[gcStyles.hlWrap, darkCardStyles.footerBg]}>
                     <View style={gcStyles.hlRow}>
-                      <Text style={gcStyles.sessFooterName} numberOfLines={1}>{session.workoutName ?? 'Session'}</Text>
-                      <View style={gcStyles.plannedBadge}><Text style={gcStyles.plannedBadgeText}>PLANNED</Text></View>
+                      <Text style={[gcStyles.sessFooterName, darkCardStyles.textOnDark, fd(700)]} numberOfLines={1}>{session.workoutName ?? 'Session'}</Text>
+                      <View style={gcStyles.plannedBadge}><Text style={[gcStyles.plannedBadgeText, ft(700)]}>PLANNED</Text></View>
                       <TouchableOpacity onPress={() => onShowSessionMenu(session)} hitSlop={8} activeOpacity={0.5}>
-                        <SymbolView name="ellipsis" size={15} tintColor={MUTED} />
+                        <SymbolView name="ellipsis" size={15} tintColor={DARK_MUTED_ICON} />
                       </TouchableOpacity>
                     </View>
                   </View>
@@ -1580,8 +1591,8 @@ function WeeklyGaugeCard({
               (() => {
                 const sessionDetail = sessionDetails[session.id] ?? null;
                 return (
-              <View key={session.id} style={gcStyles.sessCardOuter}>
-              <View style={gcStyles.sessCard}>
+              <View key={session.id} style={[gcStyles.sessCardOuter, darkCardStyles.outer]}>
+              <View style={[gcStyles.sessCard, darkCardStyles.inner]}>
                 <TouchableOpacity
                   activeOpacity={0.88}
                   onPress={() => session.workout_id && onOpenSession(session.workout_id, { date: selectedDate })}
@@ -1595,19 +1606,19 @@ function WeeklyGaugeCard({
                   </View>
                   {/* One row: name, then the two stats as bare icon+value — the "Duration"
                       and "Exercises" labels were redundant next to their own icons. */}
-                  <View style={gcStyles.hlWrap}>
+                  <View style={[gcStyles.hlWrap, darkCardStyles.footerBg]}>
                     <View style={gcStyles.hlRow}>
-                      <Text style={gcStyles.sessFooterName} numberOfLines={1}>{session.workoutName ?? 'Session'}</Text>
+                      <Text style={[gcStyles.sessFooterName, darkCardStyles.textOnDark, fd(700)]} numberOfLines={1}>{session.workoutName ?? 'Session'}</Text>
                       <View style={gcStyles.hlChip}>
                         <SymbolView name="timer" size={13} tintColor={ACCENT} />
-                        <Text style={gcStyles.hlVal}>{formatDuration(session.duration_seconds)}</Text>
+                        <Text style={[gcStyles.hlVal, darkCardStyles.textOnDark, ft(700)]}>{formatDuration(session.duration_seconds)}</Text>
                       </View>
                       <View style={gcStyles.hlChip}>
                         <SymbolView name="checkmark.circle.fill" size={13} tintColor={ACCENT} />
-                        <Text style={gcStyles.hlVal}>{sessionDetail ? `${sessionDetail.exercisesDone} / ${sessionDetail.exercisesTotal}` : '—'}</Text>
+                        <Text style={[gcStyles.hlVal, darkCardStyles.textOnDark, ft(700)]}>{sessionDetail ? `${sessionDetail.exercisesDone} / ${sessionDetail.exercisesTotal}` : '—'}</Text>
                       </View>
                       <TouchableOpacity onPress={() => onShowSessionMenu(session)} hitSlop={8} activeOpacity={0.5}>
-                        <SymbolView name="ellipsis" size={15} tintColor={MUTED} />
+                        <SymbolView name="ellipsis" size={15} tintColor={DARK_MUTED_ICON} />
                       </TouchableOpacity>
                     </View>
                   </View>
@@ -1652,51 +1663,30 @@ function WeeklyGaugeCard({
         </BottomSheet>
       )}
 
-      {/* Single-pip overlay — shows just the one workout that produced the tapped pip */}
-      {!!singlePip && (
-        <BottomSheet onClose={() => setSinglePip(null)}>
-          {close => (
-          <View style={sessListStyles.sheetBody}>
-            <Text style={sessListStyles.label}>WORKOUT DONE</Text>
-            <View style={sessListStyles.singleCover}>
-              {WORKOUT_COVER_PHOTOS_ENABLED && singlePip?.coverImageUrl
-                ? <Image source={{ uri: singlePip.coverImageUrl }} style={StyleSheet.absoluteFill} resizeMode="cover" />
-                : categoryHasCover(singlePip?.category)
-                ? <CategoryCover category={singlePip?.category} variant="soft" />
-                : <LinearGradient colors={['#2a5448', '#1a3832']} style={StyleSheet.absoluteFill} />
-              }
-              <LinearGradient colors={['transparent', 'rgba(0,0,0,0.5)']} style={StyleSheet.absoluteFill} pointerEvents="none" />
-              <View style={sessListStyles.singleBadge}><Text style={sessListStyles.singleCheck}>✓</Text></View>
-            </View>
-            <Text style={sessListStyles.singleName} numberOfLines={2}>{singlePip?.workoutName ?? 'Free session'}</Text>
-            {singlePip && (
-              <Text style={sessListStyles.singleDate}>
-                {new Date(singlePip.date + 'T12:00:00').toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })}
-              </Text>
-            )}
-            <TouchableOpacity style={sessListStyles.doneBtn} onPress={() => close()} activeOpacity={0.85}>
-              <Text style={sessListStyles.doneText}>Done</Text>
-            </TouchableOpacity>
-          </View>
-          )}
-        </BottomSheet>
-      )}
-
     </View>
   );
 }
 
 const gcStyles = StyleSheet.create({
   container:        { marginTop: 18, paddingBottom: 4, paddingTop: 4 },
-  daysSectionWrap:  { marginHorizontal: 12, marginTop: 10 },
-  calBtn:           { alignSelf: 'flex-end', flexDirection: 'row', alignItems: 'center', gap: 8, paddingBottom: 6, paddingHorizontal: 4 },
+  // 16px gutter — matches the WORKOUTS/ROUTINES sections below so the whole tab sits on
+  // one left edge (was 12, which left the strip + day card 4px prouder than the rail).
+  daysSectionWrap:  { marginHorizontal: 16, marginTop: 20 },
+  // Strip header: month label left, jump-to-today + calendar right — same pattern as the
+  // section headers below, so the calendar glyph is anchored instead of floating.
+  stripHeadRow:     { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 4, paddingBottom: 8 },
+  stripHeadRight:   { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  stripMonth:       { fontSize: 11, fontWeight: '700', color: '#999', letterSpacing: 0.6, textTransform: 'uppercase' },
   todayBtn:         { width: 18, height: 18, borderRadius: 9, backgroundColor: ACCENT, alignItems: 'center', justifyContent: 'center' },
   todayBtnText:     { fontSize: 9, fontWeight: '700', color: '#fff', lineHeight: 18 },
   headerLabel:      { fontSize: 15, fontWeight: '700', color: '#244e43' },
   arcCenter:      { position: 'absolute', left: 0, right: 0, alignItems: 'center' },
-  arcLabel:       { fontSize: 10, fontWeight: '600', color: '#3a7d6b', letterSpacing: 0.4 },
-  arcNum:         { fontSize: 34, fontWeight: '500', color: '#1a1a1a', lineHeight: 40 },
-  arcUnit:        { fontSize: 11, color: '#3a7d6b' },
+  // Labels went neutral gray (the dusty-green family was a third text voice); green now
+  // lives only in the message + DONE/accent moments. The goal number is the tab's one
+  // deliberately BOLD element — boldness from type scale, not color.
+  arcLabel:       { fontSize: 10, fontWeight: '600', color: '#999', letterSpacing: 0.4 },
+  arcNum:         { fontSize: 38, fontWeight: '700', color: '#1a1a1a', lineHeight: 44 },
+  arcUnit:        { fontSize: 11, color: '#999' },
   statsRow:       { flexDirection: 'row', justifyContent: 'space-between', marginTop: 4 },
   statNum:        { fontSize: 24, fontWeight: '500', color: '#1a1a1a', lineHeight: 28 },
   statLabel:      { fontSize: 8, color: '#7aaa8a', letterSpacing: 0.3 },
@@ -1706,11 +1696,10 @@ const gcStyles = StyleSheet.create({
   pipEmpty:       { backgroundColor: 'rgba(0,0,0,0.07)' },
   pipBonus:       { backgroundColor: 'rgba(245,166,35,0.2)' },
   bigPip:         { width: 52, height: 52, borderRadius: 26, overflow: 'hidden', borderWidth: 2, alignItems: 'center', justifyContent: 'center', alignSelf: 'center', marginTop: 8 },
-  msg:            { fontSize: 11, fontWeight: '500', color: '#3a7d6b', textAlign: 'center' },
-  divider:        { height: 0.5, backgroundColor: 'rgba(36,78,67,0.28)', marginTop: 12, marginHorizontal: 12 },
+  msg:            { fontSize: 11, fontWeight: '500', color: '#3a7d6b', textAlign: 'center', marginTop: 10 },
   daysRow:        { flexDirection: 'row', alignItems: 'center' },
   daysArrow:      { fontSize: 20, color: 'rgba(36,78,67,0.35)', paddingHorizontal: 4, lineHeight: 36 },
-  dayLabel:       { fontSize: 9, color: 'rgba(36,78,67,0.5)', textTransform: 'uppercase', fontWeight: '600' },
+  dayLabel:       { fontSize: 9, color: '#999', textTransform: 'uppercase', fontWeight: '600' },
   dayCircle:      { width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center' },
   dayCircleToday: { backgroundColor: 'rgba(36,172,136,0.20)' },
   dayCircleSel:   { backgroundColor: '#24ac88' },
@@ -1721,7 +1710,12 @@ const gcStyles = StyleSheet.create({
   dot:            { width: 5, height: 5, borderRadius: 2.5 },
   dotActive:      { backgroundColor: '#24ac88' },
   dotPlanned:     { borderWidth: 1.5, borderColor: '#24ac88', backgroundColor: 'transparent' },
-  sessCardOuter:  { marginHorizontal: 12, marginTop: 8, borderRadius: 12, backgroundColor: '#fff', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 8, elevation: 3 },
+  // Depth pass (July 2026): Training-tab cards run a LIFT shadow instead of the app-wide
+  // definition shadow (y2/0.06/r8) — on the near-white bg the standard spec reads as
+  // flat. Device round 1 said y6/0.10/r16 greyed the whole screen and pooled darker in
+  // the gaps between minis, so it was trimmed to y5/0.08/r12. In 'dark' card mode
+  // darkCardStyles.outer overrides this entirely (dark cards separate by value).
+  sessCardOuter:  { marginHorizontal: 16, marginTop: 16, borderRadius: 12, backgroundColor: '#fff', shadowColor: '#000', shadowOffset: { width: 0, height: 5 }, shadowOpacity: 0.08, shadowRadius: 12, elevation: 4 },
   sessCard:       { borderRadius: 12, overflow: 'hidden', backgroundColor: '#fff' },
   checkBadge:     { position: 'absolute', top: 8, right: 8, width: 18, height: 18, borderRadius: 9, backgroundColor: '#24ac88', alignItems: 'center', justifyContent: 'center' },
   checkMark:      { fontSize: 10, color: '#fff', fontWeight: '700', lineHeight: 14 },
@@ -1773,9 +1767,13 @@ const sectionStyles = StyleSheet.create({
   headerEmoji:    { fontSize: 18 },
   headerLabel:    { fontSize: 12, fontWeight: '700', color: '#1a1a1a', textTransform: 'uppercase', letterSpacing: 0.5, marginLeft: 7 },
   seeAll:         { fontSize: 12, color: '#24ac88', fontWeight: '500' },
-  hScroll:        { paddingHorizontal: 16, gap: 10 },
+  // The scroller clips to its bounds, so the lift shadow needs vertical canvas inside
+  // them: pad the content container and pull the same amount back off the outside.
+  // Net layout is unchanged; the shadow just stops being sliced at the card edge.
+  hScroll:        { paddingHorizontal: 16, paddingVertical: 24, gap: 12 },
+  hScrollBleed:   { marginVertical: -24 },
 
-  wCardOuter:     { width: 212, height: 127, borderRadius: 14, backgroundColor: '#fff', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 8, elevation: 3 },
+  wCardOuter:     { width: 212, height: 127, borderRadius: 14, backgroundColor: '#fff', shadowColor: '#000', shadowOffset: { width: 0, height: 5 }, shadowOpacity: 0.08, shadowRadius: 12, elevation: 4 },
   wCard:          { flex: 1, borderRadius: 14, overflow: 'hidden', backgroundColor: '#fff' },
   wCover:         { height: 90 },
   wName:          { fontSize: 15, fontWeight: '700', color: '#1a1a1a' },
@@ -1855,8 +1853,8 @@ function RoutineCard({ routine, onPress, onQuickLook }: { routine: RoutineRow; o
             visible={routine.isActive && total > 0}
           />
           <View style={rcStyles.textBlock}>
-            <Text style={rcStyles.routineName} numberOfLines={1}>{routine.name}</Text>
-            <Text style={rcStyles.routineSubtitle}>
+            <Text style={[rcStyles.routineName, fd(600)]} numberOfLines={1}>{routine.name}</Text>
+            <Text style={[rcStyles.routineSubtitle, ft(400)]}>
               {routine.isActive && total > 0
                 ? `${total} workout${total !== 1 ? 's' : ''} · ${completedPct}% complete`
                 : routine.isActive ? 'No workouts' : period}
@@ -1864,10 +1862,10 @@ function RoutineCard({ routine, onPress, onQuickLook }: { routine: RoutineRow; o
           </View>
           {routine.isActive ? (
             <View style={rcStyles.activeBadge}>
-              <Text style={rcStyles.activeBadgeText}>Active</Text>
+              <Text style={[rcStyles.activeBadgeText, ft(600)]}>Active</Text>
             </View>
           ) : (
-            <Text style={rcStyles.closedLabel}>Closed</Text>
+            <Text style={[rcStyles.closedLabel, ft(400)]}>Closed</Text>
           )}
         </View>
 
@@ -1914,9 +1912,12 @@ function RoutineCard({ routine, onPress, onQuickLook }: { routine: RoutineRow; o
 const rcStyles = StyleSheet.create({
   shadow: {
     borderRadius: 16, marginBottom: 0,
-    shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 8, elevation: 3,
+    // Depth-pass lift shadow — matches sessCardOuter/wCardOuter above.
+    shadowColor: '#000', shadowOffset: { width: 0, height: 5 }, shadowOpacity: 0.08, shadowRadius: 12, elevation: 4,
   },
-  card: { backgroundColor: '#fff', borderRadius: 16, overflow: 'hidden', padding: 14, paddingHorizontal: 14 },
+  // Dark-green outline (July 2026): the routine card's identity next to the dark cover
+  // cards — deliberate brand border, exempt from the app-wide borderless rule.
+  card: { backgroundColor: '#fff', borderRadius: 16, overflow: 'hidden', padding: 14, paddingHorizontal: 14, borderWidth: 1.5, borderColor: HEADER },
   topRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 12 },
   textBlock: { flex: 1, gap: 4 },
   routineName: { fontSize: 15, fontWeight: '600', color: '#1a1a1a' },

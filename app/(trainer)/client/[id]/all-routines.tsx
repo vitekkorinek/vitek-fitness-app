@@ -659,7 +659,9 @@ const rcStyles = StyleSheet.create({
     borderRadius: 16, marginBottom: 0,
     shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.07, shadowRadius: 10, elevation: 3,
   },
-  card: { borderRadius: 16, overflow: 'hidden', padding: 14, paddingHorizontal: 14 },
+  // Dark-green outline (July 2026): the routine card's identity next to the dark cover
+  // cards — deliberate brand border, exempt from the app-wide borderless rule.
+  card: { borderRadius: 16, overflow: 'hidden', padding: 14, paddingHorizontal: 14, borderWidth: 1.5, borderColor: HEADER },
   topRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 12 },
   textBlock: { flex: 1, gap: 4 },
   routineName: { fontSize: 15, fontWeight: '600', color: '#1a1a1a' },

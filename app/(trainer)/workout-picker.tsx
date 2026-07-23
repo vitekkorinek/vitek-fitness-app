@@ -16,8 +16,9 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SymbolView } from 'expo-symbols';
 import { LinearGradient } from 'expo-linear-gradient';
 import { supabase } from '@/lib/supabase';
-import WorkoutPaperCover from '@/components/WorkoutPaperCover';
+import WorkoutPaperCover, { DARK_CARD_FOOTER } from '@/components/WorkoutPaperCover';
 import { fetchExerciseNames } from '@/lib/exerciseNames';
+import { ft, fd } from '@/lib/appType';
 import { useAuth } from '@/context/AuthContext';
 
 type WorkoutRow = {
@@ -249,8 +250,8 @@ function WorkoutPickerRow({
           )}
         </WorkoutPaperCover>
         <View style={rowStyles.footer}>
-          <Text style={rowStyles.name} numberOfLines={1}>{workout.name}</Text>
-          <Text style={rowStyles.footerSub} numberOfLines={1}>{workout.clientName}</Text>
+          <Text style={[rowStyles.name, fd(700)]} numberOfLines={1}>{workout.name}</Text>
+          <Text style={[rowStyles.footerSub, ft(400)]} numberOfLines={1}>{workout.clientName}</Text>
         </View>
       </View>
     </TouchableOpacity>
@@ -305,16 +306,18 @@ const styles = StyleSheet.create({
 });
 
 const rowStyles = StyleSheet.create({
+  // Brand-dark card: frame + footer painted the cover gradient's last stop so
+  // cover and footer read as one object. Dark-card shadow spec.
   card: {
-    borderRadius: 14, backgroundColor: '#fff',
-    shadowColor: '#000', shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.08, shadowRadius: 6, elevation: 3,
+    borderRadius: 14, backgroundColor: DARK_CARD_FOOTER,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.22, shadowRadius: 10, elevation: 6,
   },
-  cardInner: { borderRadius: 14, overflow: 'hidden', backgroundColor: '#fff' },
-  footer: { paddingHorizontal: 12, paddingVertical: 6, backgroundColor: '#fff' },
-  footerSub: { fontSize: 11, color: '#999' },
+  cardInner: { borderRadius: 14, overflow: 'hidden', backgroundColor: DARK_CARD_FOOTER },
+  footer: { paddingHorizontal: 12, paddingVertical: 6, backgroundColor: 'transparent' },
+  footerSub: { fontSize: 11, color: 'rgba(255,255,255,0.6)' },
   copySpinner: { position: 'absolute', top: 8, right: 10 },
   cardDisabled: { opacity: 0.5 },
-  name: { fontSize: 15, fontWeight: '700', color: '#1a1a1a' },
+  name: { fontSize: 15, fontWeight: '700', color: '#fff' },
   sub: { fontSize: 10, color: 'rgba(255,255,255,0.65)' },
 });

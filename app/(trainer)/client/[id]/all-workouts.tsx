@@ -26,8 +26,9 @@ import { BottomSheet } from '@/components/BottomSheet';
 import { CATEGORY_COLORS, CATEGORY_OPTIONS, STRETCHING_CATEGORIES } from '@/lib/workoutCategories';
 import { resolveWeeklyGoal } from '@/lib/weeklyGoal';
 import type { WorkoutCategory } from '@/lib/workoutCategories';
-import WorkoutPaperCover from '@/components/WorkoutPaperCover';
+import WorkoutPaperCover, { DARK_CARD_FOOTER } from '@/components/WorkoutPaperCover';
 import { fetchExerciseNames } from '@/lib/exerciseNames';
+import { ft, fd } from '@/lib/appType';
 
 type WorkoutRow = {
   id: string;
@@ -573,25 +574,25 @@ function WorkoutItem({
   }
 
   return (
-    <TouchableOpacity style={coverCardStyles.card} onPress={onPress} activeOpacity={0.92}>
-      <View style={coverCardStyles.cardInner}>
+    <TouchableOpacity style={[coverCardStyles.card, coverCardStyles.cardDark]} onPress={onPress} activeOpacity={0.92}>
+      <View style={[coverCardStyles.cardInner, coverCardStyles.cardInnerDark]}>
         <WorkoutPaperCover category={workout.category} exerciseNames={workout.exerciseNames} />
         {/* Name demoted from the cover to the footer — the exercises are the content now. */}
-        <View style={coverCardStyles.footer}>
+        <View style={[coverCardStyles.footer, coverCardStyles.footerDark]}>
           <View style={coverCardStyles.footerLeft}>
             <View style={coverCardStyles.nameRow}>
-              <Text style={coverCardStyles.itemName} numberOfLines={1}>{workout.name}</Text>
+              <Text style={[coverCardStyles.itemName, coverCardStyles.textOnDark, fd(700)]} numberOfLines={1}>{workout.name}</Text>
               {workout.thisWeekCount > 0 && workout.status !== 'completed' && (
                 <View style={[coverCardStyles.checkBadge, workout.thisWeekCount > 1 && { width: undefined, paddingHorizontal: 5 }]}>
                   <Text style={coverCardStyles.checkMark}>✓{workout.thisWeekCount > 1 ? ` ×${workout.thisWeekCount}` : ''}</Text>
                 </View>
               )}
             </View>
-            <Text style={coverCardStyles.footerSub} numberOfLines={1}>{subtitle}</Text>
+            <Text style={[coverCardStyles.footerSub, coverCardStyles.subOnDark, ft(400)]} numberOfLines={1}>{subtitle}</Text>
           </View>
           {isTrainer && (
             <TouchableOpacity style={coverCardStyles.footerMenuBtn} onPress={onMenuPress} hitSlop={8} activeOpacity={0.5}>
-              <SymbolView name="ellipsis" size={16} tintColor="#999" />
+              <SymbolView name="ellipsis" size={16} tintColor={'rgba(255,255,255,0.65)'} />
             </TouchableOpacity>
           )}
         </View>
@@ -715,6 +716,15 @@ const coverCardStyles = StyleSheet.create({
     shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.08, shadowRadius: 6, elevation: 3,
   },
   cardInner: { borderRadius: 14, overflow: 'hidden', backgroundColor: '#fff' },
+  // Brand-dark card style (locked design trial): whole card in the home-tile register —
+  // frame + footer painted the cover gradient's last stop (DARK_CARD_FOOTER) so cover and
+  // footer read as one seamless dark object. Dark-card shadow spec — dark grounds absorb
+  // the white-card shadow.
+  cardDark:      { backgroundColor: DARK_CARD_FOOTER, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.22, shadowRadius: 10, elevation: 6 },
+  cardInnerDark: { backgroundColor: DARK_CARD_FOOTER },
+  footerDark:    { backgroundColor: 'transparent' },
+  textOnDark:    { color: '#fff' },
+  subOnDark:     { color: 'rgba(255,255,255,0.6)' },
   menuBtn: { position: 'absolute', top: 9, right: 10 },
   footer: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 6, gap: 8, backgroundColor: '#fff' },
   footerLeft: { flex: 1 },

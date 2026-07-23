@@ -26,7 +26,8 @@ import { SessionDetailsSheet } from '@/components/SessionDetailsSheet';
 import { BottomSheet } from '@/components/BottomSheet';
 import { CATEGORY_COLORS } from '@/lib/workoutCategories';
 import type { WorkoutCategory } from '@/lib/workoutCategories';
-import WorkoutPaperCover from '@/components/WorkoutPaperCover';
+import WorkoutPaperCover, { DARK_CARD_FOOTER } from '@/components/WorkoutPaperCover';
+import { ft, fd } from '@/lib/appType';
 import { fetchExerciseNames } from '@/lib/exerciseNames';
 import type { Routine } from '@/types/database';
 
@@ -808,17 +809,17 @@ function WorkoutItem({
         <View style={coverCardStyles.footer}>
           <View style={coverCardStyles.footerLeft}>
             <View style={coverCardStyles.nameRow}>
-              <Text style={coverCardStyles.itemName} numberOfLines={1}>{workout.name}</Text>
+              <Text style={[coverCardStyles.itemName, fd(700)]} numberOfLines={1}>{workout.name}</Text>
               {isDone && (
                 <View style={coverCardStyles.doneBadge}>
                   <SymbolView name="checkmark" size={9} tintColor="#fff" />
                 </View>
               )}
             </View>
-            <Text style={coverCardStyles.footerSub} numberOfLines={1}>{lastDoneText}</Text>
+            <Text style={[coverCardStyles.footerSub, ft(400)]} numberOfLines={1}>{lastDoneText}</Text>
           </View>
           <TouchableOpacity style={coverCardStyles.footerMenuBtn} onPress={onMenuPress} hitSlop={8} activeOpacity={0.5}>
-            <SymbolView name="ellipsis" size={16} tintColor="#999" />
+            <SymbolView name="ellipsis" size={16} tintColor="rgba(255,255,255,0.65)" />
           </TouchableOpacity>
         </View>
       </View>
@@ -1016,18 +1017,20 @@ const styles = StyleSheet.create({
 });
 
 const coverCardStyles = StyleSheet.create({
+  // Locked dark home-tile card: frame + footer painted the cover gradient's last stop
+  // (DARK_CARD_FOOTER) so cover and footer read as one object. Dark-card shadow spec.
   card: {
-    borderRadius: 14, backgroundColor: '#fff',
-    shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.08, shadowRadius: 6, elevation: 3,
+    borderRadius: 14, backgroundColor: DARK_CARD_FOOTER,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.22, shadowRadius: 10, elevation: 6,
   },
-  cardInner: { borderRadius: 14, overflow: 'hidden', backgroundColor: '#fff' },
+  cardInner: { borderRadius: 14, overflow: 'hidden', backgroundColor: DARK_CARD_FOOTER },
   menuBtn: { position: 'absolute', top: 9, right: 10 },
-  footer: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 6, gap: 8, backgroundColor: '#fff' },
+  footer: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 6, gap: 8, backgroundColor: 'transparent' },
   footerLeft: { flex: 1 },
-  footerSub: { fontSize: 11, color: '#999' },
+  footerSub: { fontSize: 11, color: 'rgba(255,255,255,0.6)' },
   footerMenuBtn: { padding: 4 },
   nameRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  itemName: { fontSize: 15, fontWeight: '700', color: '#1a1a1a', flexShrink: 1 },
+  itemName: { fontSize: 15, fontWeight: '700', color: '#fff', flexShrink: 1 },
   itemSub: { fontSize: 10, color: 'rgba(255,255,255,0.65)' },
   doneBadge: {
     width: 16, height: 16, borderRadius: 8,
