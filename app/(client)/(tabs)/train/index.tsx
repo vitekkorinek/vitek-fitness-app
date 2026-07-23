@@ -15,8 +15,6 @@ import { supabase } from '@/lib/supabase';
 import { useSessionStore } from '@/store/sessionStore';
 import { fetchClientTraining } from '@/lib/clientTraining';
 import { resolveWeeklyGoal } from '@/lib/weeklyGoal';
-import { CATEGORY_COLORS } from '@/lib/workoutCategories';
-import type { WorkoutCategory } from '@/lib/workoutCategories';
 import type { ClientTrainingData } from '@/lib/clientTraining';
 import { BottomSheet } from '@/components/BottomSheet';
 import { useHeaderHeight } from '@/components/LightHeader';
@@ -25,8 +23,10 @@ import { SessionDetailsSheet } from '@/components/SessionDetailsSheet';
 import { RoutineDetailsSheet } from '@/components/RoutineDetailsSheet';
 import type { RoutineWorkoutPick } from '@/components/RoutineDetailsSheet';
 import CategoryCover, { categoryHasCover, WORKOUT_COVER_PHOTOS_ENABLED } from '@/components/CategoryCover';
-import WorkoutPaperCover, { DARK_CARD_FOOTER } from '@/components/WorkoutPaperCover';
+import WorkoutPaperCover, { DARK_CARD_FOOTER, DARK_CARD_GRADIENT } from '@/components/WorkoutPaperCover';
 import { fetchExerciseNames } from '@/lib/exerciseNames';
+import { CATEGORY_COLORS } from '@/lib/workoutCategories';
+import type { WorkoutCategory } from '@/lib/workoutCategories';
 import { ft, fd } from '@/lib/appType';
 
 const BG     = '#faf9f7';
@@ -211,6 +211,7 @@ type WorkoutCard = {
 
 type RoutineWorkoutItem = {
   id: string;
+  name: string;
   category: string | null;
   orderIndex: number;
   isDoneInCycle: boolean;
@@ -729,6 +730,7 @@ export default function TrainTabScreen() {
     if (!activeRoutine) return null;
     const workouts: RoutineWorkoutItem[] = (routineWorkouts ?? []).map(w => ({
       id: w.id,
+      name: w.name,
       category: w.category ?? null,
       orderIndex: w.order_index,
       isDoneInCycle: w.isDoneInCycle ?? false,
@@ -890,7 +892,7 @@ export default function TrainTabScreen() {
           </View>
           {activeRoutineRow ? (
             <View style={{ marginHorizontal: 16 }}>
-              <RoutineCard
+              <ActiveRoutineCard
                 routine={activeRoutineRow}
                 onPress={() => router.push(`/(client)/routine/${activeRoutineRow!.id}` as any)}
                 onQuickLook={() => openRoutineDetails({ id: activeRoutineRow!.id, name: activeRoutineRow!.name })}
@@ -1792,19 +1794,17 @@ const sectionStyles = StyleSheet.create({
   noRoutine:      { fontSize: 13, color: '#999', textAlign: 'center', paddingVertical: 12 },
 });
 
-// ─── RoutineCard (copied verbatim from the My Routines screen) ─────────────────
+// ─── ActiveRoutineCard ─────────────────────────────────────────────────────────
+// The ONE active routine, full workout-card anatomy (Vitek's own sketch): the
+// cover's content is the routine's workouts as free-floating category-colored
+// pills — the "exercise list" analog — with the countdown ring on the right where
+// a workout cover keeps its silhouette; the footer carries name + a
+// "Done – X · Next – Y" status line + ⋯. Status lives in the footer ON PURPOSE so
+// the pills stay clean (no labels under them). The big white RoutineCard still
+// lives on the all-routines screens, where a real list justifies cards.
 
-function formatRoutinePeriod(createdAt: string, closedAt: string | null): string {
-  const fmt = (d: string) => {
-    const dt = new Date(d);
-    return `${dt.getDate()}.${dt.getMonth() + 1}.${dt.getFullYear()}`;
-  };
-  if (!closedAt) return `Since ${fmt(createdAt)}`;
-  return `${fmt(createdAt)} – ${fmt(closedAt)}`;
-}
-
-function ProgressRing({ size, current, total, visible }: { size: number; current: number; total: number; visible: boolean }) {
-  const strokeWidth = 2.5;
+function ProgressRing({ size, current, total, visible, onDark }: { size: number; current: number; total: number; visible: boolean; onDark?: boolean }) {
+  const strokeWidth = 3;
   const radius = (size - strokeWidth * 2) / 2;
   const circumference = 2 * Math.PI * radius;
   const progress = total > 0 ? Math.min(current / total, 1) : 0;
@@ -1815,7 +1815,7 @@ function ProgressRing({ size, current, total, visible }: { size: number; current
   return (
     <View style={{ width: size, height: size, alignItems: 'center', justifyContent: 'center' }}>
       <Svg width={size} height={size} style={{ position: 'absolute' }}>
-        <SvgCircle cx={size / 2} cy={size / 2} r={radius} stroke="rgba(36,172,136,0.2)" strokeWidth={strokeWidth} fill="none" />
+        <SvgCircle cx={size / 2} cy={size / 2} r={radius} stroke={onDark ? 'rgba(255,255,255,0.18)' : 'rgba(36,172,136,0.2)'} strokeWidth={strokeWidth} fill="none" />
         <SvgCircle
           cx={size / 2} cy={size / 2} r={radius}
           stroke={ACCENT}
@@ -1828,110 +1828,77 @@ function ProgressRing({ size, current, total, visible }: { size: number; current
           origin={`${size / 2}, ${size / 2}`}
         />
       </Svg>
-      <Text style={{ fontSize: size * 0.18, fontWeight: '700', color: HEADER, lineHeight: size * 0.22 }}>
+      <Text style={{ fontSize: size * 0.2, fontWeight: '700', color: onDark ? '#fff' : HEADER, lineHeight: size * 0.24 }}>
         {current}/{total}
       </Text>
     </View>
   );
 }
 
-function RoutineCard({ routine, onPress, onQuickLook }: { routine: RoutineRow; onPress: () => void; onQuickLook?: () => void }) {
+function ActiveRoutineCard({ routine, onPress, onQuickLook }: { routine: RoutineRow; onPress: () => void; onQuickLook?: () => void }) {
   const total = routine.routineTotal;
-  const { cycleDoneCount, cycleJustCompleted } = routine;
-  const ringCurrent = cycleJustCompleted ? total : cycleDoneCount;
-  const completedPct = total > 0 ? Math.round((ringCurrent / total) * 100) : 0;
-  const period = formatRoutinePeriod(routine.createdAt, routine.closedAt);
+  const ringCurrent = routine.cycleJustCompleted ? total : routine.cycleDoneCount;
+  const sorted = [...routine.workouts].sort((a, b) => a.orderIndex - b.orderIndex);
+  const doneNames = routine.cycleJustCompleted ? [] : sorted.filter(w => w.isDoneInCycle).map(w => w.name);
+  const nextName = sorted.find(w => w.id === routine.nextUpWorkoutId)?.name ?? null;
+  const statusLine = total === 0 ? 'No workouts'
+    : routine.cycleJustCompleted ? `Cycle complete · Next – ${nextName ?? '—'}`
+    : [doneNames.length > 0 ? `Done – ${doneNames.join(', ')}` : null, nextName ? `Next – ${nextName}` : null]
+        .filter(Boolean).join(' · ');
 
   return (
-    <TouchableOpacity onPress={onPress} activeOpacity={0.85} style={rcStyles.shadow}>
-      <View style={rcStyles.card}>
-        <View style={rcStyles.topRow}>
-          <ProgressRing
-            size={48}
-            current={ringCurrent}
-            total={total || 1}
-            visible={routine.isActive && total > 0}
-          />
-          <View style={rcStyles.textBlock}>
-            <Text style={[rcStyles.routineName, fd(600)]} numberOfLines={1}>{routine.name}</Text>
-            <Text style={[rcStyles.routineSubtitle, ft(400)]}>
-              {routine.isActive && total > 0
-                ? `${total} workout${total !== 1 ? 's' : ''} · ${completedPct}% complete`
-                : routine.isActive ? 'No workouts' : period}
-            </Text>
-          </View>
-          {routine.isActive ? (
-            <View style={rcStyles.activeBadge}>
-              <Text style={[rcStyles.activeBadgeText, ft(600)]}>Active</Text>
-            </View>
-          ) : (
-            <Text style={[rcStyles.closedLabel, ft(400)]}>Closed</Text>
-          )}
-        </View>
-
-        {routine.workouts.length > 0 && (
-          <View style={rcStyles.stripsRow}>
-            {routine.workouts.map(w => {
-              const stripColor = w.category ? (CATEGORY_COLORS[w.category as WorkoutCategory]?.border ?? '#888') : '#888';
-              const isNext = !cycleJustCompleted && routine.nextUpWorkoutId === w.id;
-              const isDone = cycleJustCompleted || w.isDoneInCycle;
+    <TouchableOpacity onPress={onPress} activeOpacity={0.88} style={[arStyles.outer, darkCardStyles.outer]}>
+      <View style={[arStyles.inner, darkCardStyles.inner]}>
+        <View style={arStyles.cover}>
+          <LinearGradient colors={DARK_CARD_GRADIENT} start={{ x: 0.5, y: 0 }} end={{ x: 0.5, y: 1 }} style={StyleSheet.absoluteFill} />
+          <View style={arStyles.pillsWrap}>
+            {sorted.map(w => {
+              // Uncategorised workouts fall back to the brand mint pair — a pill
+              // must never render as plain white-alpha on the dark ground.
+              const colors = w.category ? CATEGORY_COLORS[w.category as WorkoutCategory] : null;
               return (
-                <View key={w.id} style={[rcStyles.strip, { backgroundColor: stripColor, opacity: (isDone || isNext) ? 1 : 0.4 }]} />
-              );
-            })}
-          </View>
-        )}
-
-        {routine.workouts.length > 0 && (
-          <View style={rcStyles.labelsRow}>
-            {routine.workouts.map(w => {
-              const isNext = !cycleJustCompleted && routine.nextUpWorkoutId === w.id;
-              const isDone = cycleJustCompleted || w.isDoneInCycle;
-              const statusChar = isNext ? '→' : isDone ? '✓' : '—';
-              const statusColor = isNext ? ACCENT : isDone ? ACCENT : '#ccc';
-              const label = (w.category ?? '').length > 8 ? (w.category ?? '').slice(0, 7) + '…' : (w.category ?? '—');
-              return (
-                <View key={w.id} style={rcStyles.labelCell}>
-                  <Text style={rcStyles.labelText} numberOfLines={1}>{label}</Text>
-                  <Text style={[rcStyles.statusChar, { color: statusColor }]}>{statusChar}</Text>
+                <View key={w.id} style={[arStyles.pill, { backgroundColor: colors?.pillBg ?? '#E1F5EE' }]}>
+                  <Text style={[arStyles.pillText, { color: colors?.pillText ?? ACCENT }, ft(700)]} numberOfLines={1}>{w.name}</Text>
                 </View>
               );
             })}
           </View>
-        )}
-        {onQuickLook && (
-          <TouchableOpacity style={rcStyles.menuBtn} onPress={onQuickLook} hitSlop={8} activeOpacity={0.6}>
-            <SymbolView name="ellipsis" size={13} tintColor={MUTED} />
-          </TouchableOpacity>
-        )}
+          <View style={arStyles.ringWrap}>
+            <ProgressRing size={56} current={ringCurrent} total={total || 1} visible={total > 0} onDark />
+          </View>
+        </View>
+        <View style={[arStyles.footer, darkCardStyles.footerBg]}>
+          <View style={arStyles.footerLeft}>
+            <Text style={[arStyles.name, darkCardStyles.textOnDark, fd(700)]} numberOfLines={1}>{routine.name}</Text>
+            <Text style={[arStyles.sub, { color: ACCENT }, ft(600)]} numberOfLines={1}>{statusLine}</Text>
+          </View>
+          {onQuickLook && (
+            <TouchableOpacity style={arStyles.menuBtn} onPress={onQuickLook} hitSlop={8} activeOpacity={0.6}>
+              <SymbolView name="ellipsis" size={16} tintColor={DARK_MUTED_ICON} />
+            </TouchableOpacity>
+          )}
+        </View>
       </View>
     </TouchableOpacity>
   );
 }
 
-const rcStyles = StyleSheet.create({
-  shadow: {
-    borderRadius: 16, marginBottom: 0,
-    // Depth-pass lift shadow — matches sessCardOuter/wCardOuter above.
-    shadowColor: '#000', shadowOffset: { width: 0, height: 5 }, shadowOpacity: 0.08, shadowRadius: 12, elevation: 4,
-  },
-  // Dark-green outline (July 2026): the routine card's identity next to the dark cover
-  // cards — deliberate brand border, exempt from the app-wide borderless rule.
-  card: { backgroundColor: '#fff', borderRadius: 16, overflow: 'hidden', padding: 14, paddingHorizontal: 14, borderWidth: 1.5, borderColor: HEADER },
-  topRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 12 },
-  textBlock: { flex: 1, gap: 4 },
-  routineName: { fontSize: 15, fontWeight: '600', color: '#1a1a1a' },
-  routineSubtitle: { fontSize: 11, color: '#999' },
-  activeBadge: { backgroundColor: '#E1F5EE', borderRadius: 100, paddingHorizontal: 8, paddingVertical: 3 },
-  activeBadgeText: { fontSize: 10, fontWeight: '600', color: ACCENT },
-  closedLabel: { fontSize: 11, color: '#999' },
-  stripsRow: { flexDirection: 'row', gap: 4, marginBottom: 6 },
-  strip: { flex: 1, height: 4, borderRadius: 2 },
-  labelsRow: { flexDirection: 'row', gap: 4 },
-  labelCell: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 3 },
-  labelText: { fontSize: 8, flexShrink: 1, color: '#999' },
-  statusChar: { fontSize: 9, fontWeight: '600' },
-  menuBtn: { position: 'absolute', top: 8, right: 8, padding: 6 },
+const arStyles = StyleSheet.create({
+  outer: { borderRadius: 12 },
+  inner: { borderRadius: 12, overflow: 'hidden' },
+  // Shorter than the strip covers on purpose — one pill row + the ring is all it
+  // holds, and the 84px family height read as empty bulk on device.
+  cover: { height: 72, paddingTop: 10, paddingHorizontal: 12 },
+  // Right margin clears the ring the way exercise lists clear the silhouette.
+  pillsWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginRight: 76 },
+  pill: { borderRadius: 100, paddingHorizontal: 9, paddingVertical: 4, maxWidth: '55%' },
+  pillText: { fontSize: 10, fontWeight: '700' },
+  ringWrap: { position: 'absolute', right: 14, top: (72 - 56) / 2 },
+  footer: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 6, gap: 8 },
+  footerLeft: { flex: 1 },
+  name: { fontSize: 15, fontWeight: '700' },
+  sub: { fontSize: 11 },
+  menuBtn: { padding: 4 },
 });
 
 // ─── RoutineQuickLookModal (copied verbatim from the My Routines screen) ───────

@@ -326,7 +326,8 @@ export default function AllWorkoutsScreen() {
               else { router.push(`/(client)/workout/session-intro?workoutId=${w.id}` as any); }
             };
             return (
-              <View style={{ gap: 8 }}>
+              // Dark cards need more air between them than the old white ones did.
+              <View style={{ gap: 14 }}>
                 {doneList.map(w => (
                   <WorkoutItem key={w.id} workout={w} thisWeekCount={w.thisWeekCount} onPress={makeOnPress(w)} onQuickLook={() => openQuickLook(w)} />
                 ))}
@@ -434,6 +435,7 @@ function WorkoutItem({ workout, onPress, thisWeekCount, onQuickLook }: { workout
         <WorkoutPaperCover
           category={isDone ? null : workout.category}
           exerciseNames={workout.exerciseNames}
+          size="strip" // keep in step with the Training-tab week-strip session cards
           style={isDone ? { opacity: 0.55 } : undefined}
         >
           {isDone && (
