@@ -23,6 +23,13 @@ interface SessionStore {
   pendingLogDate: string | null;
   setPendingLogDate: (date: string | null) => void;
   clearPendingLogDate: () => void;
+  // One-shot relay for Do Mode's 48h-warning "Pick a different workout": Do Mode
+  // sets it and replaces to the Training tab ROOT (the only cross-navigator move
+  // that's stack-safe from a root-stack screen); the tab's focus effect consumes
+  // it by pushing all-workouts from INSIDE the tab. Deep hrefs from Do Mode
+  // (replace/navigate/back) all failed on device — see CLAUDE-domode.md 48h guard.
+  pendingOpenWorkoutGallery: boolean;
+  setPendingOpenWorkoutGallery: (v: boolean) => void;
 }
 
 export const useSessionStore = create<SessionStore>((set) => ({
@@ -37,4 +44,6 @@ export const useSessionStore = create<SessionStore>((set) => ({
   pendingLogDate: null,
   setPendingLogDate: (date) => set({ pendingLogDate: date }),
   clearPendingLogDate: () => set({ pendingLogDate: null }),
+  pendingOpenWorkoutGallery: false,
+  setPendingOpenWorkoutGallery: (v) => set({ pendingOpenWorkoutGallery: v }),
 }));

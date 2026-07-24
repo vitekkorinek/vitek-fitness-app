@@ -821,17 +821,25 @@ export default function TrainerWorkoutSessionScreen() {
       : `on ${Number(c.date.slice(8, 10))}.${Number(c.date.slice(5, 7))}.`;
     // Primary = the COACHED action (Vitek: the warning should redirect, not just
     // abort — and the big green button should be the recommended choice). It
-    // POPS back to where this workout was picked (gallery list / Training tab /
-    // routine detail) — an earlier router.replace deep into the train tab's
-    // nested stack corrupted navigation on device (blank Do Mode remounts + a
-    // back loop between gallery and workout; July 24). "Start anyway" is the
-    // gray secondary pill; tap-outside quietly stays on the preview (no
-    // explicit Cancel row).
+    // sets the store relay flag and replaces to the Training tab ROOT — the
+    // session-complete pattern, the ONE cross-navigator move proven safe from
+    // this root-stack screen; the tab's focus effect then pushes all-workouts
+    // from INSIDE the tab. THREE failed cuts on device (July 24): deep
+    // router.replace into the nested tab stack corrupted navigation (blank
+    // remounts + back loop); router.back() landed on the Training tab for
+    // gallery-mini origins ("cancels everything" — session-intro replaces
+    // itself away); router.navigate with the deep href re-created the back
+    // loop. Do NOT try deep hrefs from here again. "Start anyway" is the gray
+    // secondary pill; tap-outside quietly stays on the preview (no explicit
+    // Cancel row).
     setConfirmModal({
       title: 'Same muscles trained recently',
       message: `You trained ${c.category}${c.workoutName ? ` — ${c.workoutName}` : ''} ${when}. The same muscle group needs at least 48 hours of rest — better to train something else today.\n\nRecommended: ${recommendedCategories(c.trainedCategories).join(', ')}.`,
       actions: [
-        { text: 'Pick a different workout', primary: true, onPress: () => router.back() },
+        { text: 'Pick a different workout', primary: true, onPress: () => {
+          useSessionStore.getState().setPendingOpenWorkoutGallery(true);
+          router.replace('/(client)/(tabs)/train' as any);
+        } },
         { text: 'Start anyway', onPress: proceed },
       ],
     });

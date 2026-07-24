@@ -714,9 +714,20 @@ export default function TrainTabScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      // Clear any pending log-date left over from a log flow the user backed out of,
-      // so a normal "start now" log never picks up a stale past date.
-      useSessionStore.getState().clearPendingLogDate();
+      const store = useSessionStore.getState();
+      if (store.pendingOpenWorkoutGallery) {
+        // One-shot relay from Do Mode's 48h warning ("Pick a different workout"):
+        // Do Mode replaced to this tab (the only stack-safe target), we finish the
+        // trip by pushing the gallery from INSIDE the tab. pendingLogDate is
+        // deliberately NOT cleared on this pass — a past-day log keeps its date
+        // for the re-pick.
+        store.setPendingOpenWorkoutGallery(false);
+        router.push('/(client)/(tabs)/train/all-workouts' as any);
+      } else {
+        // Clear any pending log-date left over from a log flow the user backed out of,
+        // so a normal "start now" log never picks up a stale past date.
+        store.clearPendingLogDate();
+      }
       setLoading(true);
       load().finally(() => setLoading(false));
       // Landing on the tab (incl. after the log → session-complete flow) is where a
