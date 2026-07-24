@@ -27,6 +27,7 @@ import { CATEGORY_COLORS, CATEGORY_OPTIONS, STRETCHING_CATEGORIES } from '@/lib/
 import { resolveWeeklyGoal } from '@/lib/weeklyGoal';
 import type { WorkoutCategory } from '@/lib/workoutCategories';
 import WorkoutPaperCover, { DARK_CARD_FOOTER } from '@/components/WorkoutPaperCover';
+import { useCardVariant } from '@/lib/cardVariant';
 import { fetchExerciseNames } from '@/lib/exerciseNames';
 import { ft, fd } from '@/lib/appType';
 
@@ -544,6 +545,10 @@ function WorkoutItem({
   onPress: () => void;
   onMenuPress: () => void;
 }) {
+  // Workout card style (set in trainer Account → Appearance): footer is always the
+  // OPPOSITE of the cover — 'dark' = dark cover + WHITE footer, 'light' = white cover
+  // + DARK footer. Hook stays above the rename early-return (hooks must be unconditional).
+  const footerDark = useCardVariant(s => s.variant) === 'light';
   const gradColors = (CATEGORY_GRADIENTS[workout.category ?? ''] ?? GRADIENT_DEFAULT) as [string, string];
   const catColors = workout.category ? CATEGORY_COLORS[workout.category as WorkoutCategory] : null;
   const subtitle = [
@@ -574,25 +579,25 @@ function WorkoutItem({
   }
 
   return (
-    <TouchableOpacity style={[coverCardStyles.card, coverCardStyles.cardDark]} onPress={onPress} activeOpacity={0.92}>
-      <View style={[coverCardStyles.cardInner, coverCardStyles.cardInnerDark]}>
+    <TouchableOpacity style={[coverCardStyles.card, footerDark && coverCardStyles.frameDarkBg]} onPress={onPress} activeOpacity={0.92}>
+      <View style={[coverCardStyles.cardInner, footerDark && coverCardStyles.cardInnerDark]}>
         <WorkoutPaperCover category={workout.category} exerciseNames={workout.exerciseNames} />
         {/* Name demoted from the cover to the footer — the exercises are the content now. */}
-        <View style={[coverCardStyles.footer, coverCardStyles.footerDark]}>
+        <View style={[coverCardStyles.footer, footerDark && coverCardStyles.footerDark]}>
           <View style={coverCardStyles.footerLeft}>
             <View style={coverCardStyles.nameRow}>
-              <Text style={[coverCardStyles.itemName, coverCardStyles.textOnDark, fd(700)]} numberOfLines={1}>{workout.name}</Text>
+              <Text style={[coverCardStyles.itemName, footerDark && coverCardStyles.textOnDark, fd(700)]} numberOfLines={1}>{workout.name}</Text>
               {workout.thisWeekCount > 0 && workout.status !== 'completed' && (
                 <View style={[coverCardStyles.checkBadge, workout.thisWeekCount > 1 && { width: undefined, paddingHorizontal: 5 }]}>
                   <Text style={coverCardStyles.checkMark}>✓{workout.thisWeekCount > 1 ? ` ×${workout.thisWeekCount}` : ''}</Text>
                 </View>
               )}
             </View>
-            <Text style={[coverCardStyles.footerSub, coverCardStyles.subOnDark, ft(400)]} numberOfLines={1}>{subtitle}</Text>
+            <Text style={[coverCardStyles.footerSub, footerDark && coverCardStyles.subOnDark, ft(400)]} numberOfLines={1}>{subtitle}</Text>
           </View>
           {isTrainer && (
             <TouchableOpacity style={coverCardStyles.footerMenuBtn} onPress={onMenuPress} hitSlop={8} activeOpacity={0.5}>
-              <SymbolView name="ellipsis" size={16} tintColor={'rgba(255,255,255,0.65)'} />
+              <SymbolView name="ellipsis" size={16} tintColor={footerDark ? 'rgba(255,255,255,0.65)' : '#bbb'} />
             </TouchableOpacity>
           )}
         </View>
@@ -713,14 +718,14 @@ const GRADIENT_DEFAULT: [string, string] = ['#2a2a2a', '#444444'];
 const coverCardStyles = StyleSheet.create({
   card: {
     borderRadius: 14, backgroundColor: '#fff',
-    shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.08, shadowRadius: 6, elevation: 3,
+    // Light lift shadow in BOTH card styles (matches the client My Workouts cards).
+    shadowColor: '#000', shadowOffset: { width: 0, height: 5 }, shadowOpacity: 0.08, shadowRadius: 12, elevation: 4,
   },
   cardInner: { borderRadius: 14, overflow: 'hidden', backgroundColor: '#fff' },
-  // Brand-dark card style (locked design trial): whole card in the home-tile register —
-  // frame + footer painted the cover gradient's last stop (DARK_CARD_FOOTER) so cover and
-  // footer read as one seamless dark object. Dark-card shadow spec — dark grounds absorb
-  // the white-card shadow.
-  cardDark:      { backgroundColor: DARK_CARD_FOOTER, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.22, shadowRadius: 10, elevation: 6 },
+  // Dark FOOTER overrides — applied only for the 'light' card style (white cover needs
+  // the dark footer, painted the cover gradient's last stop DARK_CARD_FOOTER). The
+  // 'dark' style keeps the white base footer under its dark cover.
+  frameDarkBg:   { backgroundColor: DARK_CARD_FOOTER },
   cardInnerDark: { backgroundColor: DARK_CARD_FOOTER },
   footerDark:    { backgroundColor: 'transparent' },
   textOnDark:    { color: '#fff' },

@@ -24,6 +24,7 @@ import { relativeTime } from '@/lib/utils';
 import { CATEGORY_COLORS } from '@/lib/workoutCategories';
 import type { WorkoutCategory } from '@/lib/workoutCategories';
 import WorkoutPaperCover, { DARK_CARD_FOOTER } from '@/components/WorkoutPaperCover';
+import { useCardVariant } from '@/lib/cardVariant';
 import { ft, fd } from '@/lib/appType';
 import { fetchExerciseNames } from '@/lib/exerciseNames';
 import type { Routine } from '@/types/database';
@@ -366,27 +367,32 @@ function WorkoutItem({ workout, isDone, onPress, onQuickLook }: {
   onQuickLook?: () => void;
 }) {
   const subtitle = workout.lastSessionDate ? relativeTime(workout.lastSessionDate) : 'Not yet done';
+  // Workout card style (set in Me → Appearance): the cover flips inside
+  // WorkoutPaperCover, and the footer is always the OPPOSITE of the cover — 'dark' =
+  // dark cover + WHITE footer, 'light' = white cover + DARK footer. Light lift shadow
+  // in both.
+  const footerDark = useCardVariant(s => s.variant) === 'light';
 
   return (
-    <TouchableOpacity style={coverCardStyles.card} onPress={onPress} activeOpacity={0.92}>
-      <View style={coverCardStyles.cardInner}>
+    <TouchableOpacity style={[coverCardStyles.card, footerDark && coverCardStyles.cardDarkBg]} onPress={onPress} activeOpacity={0.92}>
+      <View style={[coverCardStyles.cardInner, footerDark && coverCardStyles.cardDarkBg]}>
         <WorkoutPaperCover category={workout.category} exerciseNames={workout.exerciseNames} />
         {/* Name demoted from the cover to the footer — the exercises are the content now. */}
         <View style={coverCardStyles.footer}>
           <View style={coverCardStyles.footerLeft}>
             <View style={coverCardStyles.nameRow}>
-              <Text style={[coverCardStyles.itemName, fd(700)]} numberOfLines={1}>{workout.name}</Text>
+              <Text style={[coverCardStyles.itemName, footerDark && coverCardStyles.textOnDark, fd(700)]} numberOfLines={1}>{workout.name}</Text>
               {isDone && (
                 <View style={coverCardStyles.doneBadge}>
                   <SymbolView name="checkmark" size={7} tintColor="#fff" />
                 </View>
               )}
             </View>
-            <Text style={[coverCardStyles.footerSub, ft(400)]} numberOfLines={1}>{subtitle}</Text>
+            <Text style={[coverCardStyles.footerSub, footerDark && coverCardStyles.subOnDark, ft(400)]} numberOfLines={1}>{subtitle}</Text>
           </View>
           {onQuickLook && (
             <TouchableOpacity style={coverCardStyles.footerMenuBtn} onPress={onQuickLook} hitSlop={8} activeOpacity={0.6}>
-              <SymbolView name="ellipsis" size={16} tintColor="rgba(255,255,255,0.65)" />
+              <SymbolView name="ellipsis" size={16} tintColor={footerDark ? 'rgba(255,255,255,0.65)' : '#bbb'} />
             </TouchableOpacity>
           )}
         </View>
@@ -397,19 +403,24 @@ function WorkoutItem({ workout, isDone, onPress, onQuickLook }: {
 
 
 const coverCardStyles = StyleSheet.create({
-  // Locked dark home-tile card: frame + footer painted the cover gradient's last stop
-  // (DARK_CARD_FOOTER) so cover and footer read as one object. Dark-card shadow spec.
+  // Card-style-aware card (client setting): base = WHITE frame/footer + light lift
+  // shadow (the 'dark' style: dark cover, white footer); `cardDarkBg`/`textOnDark`/
+  // `subOnDark` flip the footer dark for the 'light' style (white cover, dark footer,
+  // painted the cover gradient's last stop so cover and footer read as one object).
   card: {
-    borderRadius: 14, backgroundColor: DARK_CARD_FOOTER,
-    shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.22, shadowRadius: 10, elevation: 6,
+    borderRadius: 14, backgroundColor: '#fff',
+    shadowColor: '#000', shadowOffset: { width: 0, height: 5 }, shadowOpacity: 0.08, shadowRadius: 12, elevation: 4,
   },
-  cardInner: { borderRadius: 14, overflow: 'hidden', backgroundColor: DARK_CARD_FOOTER },
+  cardDarkBg: { backgroundColor: DARK_CARD_FOOTER },
+  cardInner: { borderRadius: 14, overflow: 'hidden', backgroundColor: '#fff' },
   footer: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 6, gap: 8, backgroundColor: 'transparent' },
   footerLeft: { flex: 1 },
-  footerSub: { fontSize: 11, color: 'rgba(255,255,255,0.6)' },
+  footerSub: { fontSize: 11, color: '#999' },
+  subOnDark: { color: 'rgba(255,255,255,0.6)' },
   footerMenuBtn: { padding: 4 },
   nameRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  itemName: { fontSize: 15, fontWeight: '700', color: '#fff', flexShrink: 1 },
+  itemName: { fontSize: 15, fontWeight: '700', color: '#1a1a1a', flexShrink: 1 },
+  textOnDark: { color: '#fff' },
   itemSub:  { fontSize: 10, color: 'rgba(255,255,255,0.65)' },
   doneBadge: {
     width: 15, height: 15, borderRadius: 8,

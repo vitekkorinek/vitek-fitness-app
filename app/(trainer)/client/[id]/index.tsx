@@ -36,6 +36,7 @@ import { mondayOf, addDaysStr } from '@/lib/weeklyGoal';
 import { CATEGORY_COLORS } from '@/lib/workoutCategories';
 import type { WorkoutCategory } from '@/lib/workoutCategories';
 import WorkoutPaperCover, { ExerciseNamesProvider, DARK_CARD_FOOTER } from '@/components/WorkoutPaperCover';
+import { useCardVariant } from '@/lib/cardVariant';
 import { fetchExerciseNames } from '@/lib/exerciseNames';
 import { ft, fd } from '@/lib/appType';
 import t from '@/i18n/en';
@@ -712,6 +713,8 @@ function PlanWorkoutFlow({ clientId, initialDate, onClose, onDone }: {
   onClose: () => void;
   onDone: () => void;
 }) {
+  // Workout card style (trainer Account → Appearance) — picker-card ground follows the cover.
+  const coverDark = useCardVariant(s => s.variant) === 'dark';
   const [planStep, setPlanStep] = useState<'pick' | 'schedule'>('pick');
   const [planWorkoutsForPicker, setPlanWorkoutsForPicker] = useState<{ id: string; name: string; category: string | null; cover_image_url: string | null; doneThisWeek: boolean }[]>([]);
   const [planLoadingWorkouts, setPlanLoadingWorkouts] = useState(true);
@@ -801,7 +804,7 @@ function PlanWorkoutFlow({ clientId, initialDate, onClose, onDone }: {
                     return (
                       <TouchableOpacity
                         key={w.id}
-                        style={planStyles.pickerCard}
+                        style={[planStyles.pickerCard, coverDark && darkCardStyles.bg]}
                         activeOpacity={0.85}
                         onPress={() => { setPlanPickedId(w.id); setPlanPickedName(w.name); setPlanStep('schedule'); }}
                       >
@@ -1013,6 +1016,10 @@ function TrainingTab({
 }) {
   const { profile } = useAuth();
   const isTrainer = profile?.role === 'trainer';
+  // Workout card style (trainer Account → Appearance): footer always the OPPOSITE of
+  // the cover — 'dark' = dark cover + WHITE footer, 'light' = white cover + DARK footer.
+  const galleryFooterDark = useCardVariant(s => s.variant) === 'light';
+  const coverDark = !galleryFooterDark;
   const { suspendedSession } = useSessionStore();
   const {
     activeRoutine,
@@ -1484,25 +1491,25 @@ function TrainingTab({
               {workoutCards.map(c => (
                 <TouchableOpacity
                   key={c.id}
-                  style={sectionStyles.wCardOuter}
+                  style={[sectionStyles.wCardOuter, galleryFooterDark && darkCardStyles.bg]}
                   activeOpacity={0.85}
                   onPress={() => router.push(`/(trainer)/client/${clientId}/workout/${c.id}` as any)}
                 >
-                  <View style={sectionStyles.wCard}>
+                  <View style={[sectionStyles.wCard, galleryFooterDark && darkCardStyles.bg]}>
                     <WorkoutPaperCover category={c.category} workoutId={c.id} size="mini" />
                     {/* Name + ONE sub line, matching the full card's footer. */}
                     <View style={sectionStyles.wBody}>
                       <View style={{ flex: 1 }}>
-                        <Text style={[sectionStyles.wName, fd(700)]} numberOfLines={1}>{c.name}</Text>
+                        <Text style={[sectionStyles.wName, galleryFooterDark && darkCardStyles.textOnDark, fd(700)]} numberOfLines={1}>{c.name}</Text>
                         <Text style={[sectionStyles.wStatus, ft(600)]} numberOfLines={1}>
-                          <Text style={{ color: c.lastDoneDate ? ACCENT : 'rgba(255,255,255,0.5)' }}>
+                          <Text style={{ color: c.lastDoneDate ? ACCENT : galleryFooterDark ? 'rgba(255,255,255,0.5)' : '#999' }}>
                             {c.lastDoneDate ? `Done ${fmtShortDate(c.lastDoneDate)}` : 'Never done'}
                           </Text>
-                          {!!c.routineName && <Text style={[sectionStyles.wSub, ft(400)]}> · {c.routineName}</Text>}
+                          {!!c.routineName && <Text style={[sectionStyles.wSub, galleryFooterDark && darkCardStyles.subOnDark, ft(400)]}> · {c.routineName}</Text>}
                         </Text>
                       </View>
                       <TouchableOpacity style={sectionStyles.wFooterMenuBtn} hitSlop={8} activeOpacity={0.6} onPress={() => setActiveMenu({ id: c.id, name: c.name, category: c.category })}>
-                        <SymbolView name="ellipsis" size={16} tintColor="rgba(255,255,255,0.65)" />
+                        <SymbolView name="ellipsis" size={16} tintColor={galleryFooterDark ? DARK_MUTED_ICON : '#bbb'} />
                       </TouchableOpacity>
                     </View>
                   </View>
@@ -1567,22 +1574,24 @@ function TrainingTab({
               </View>
             ) : (
               <TouchableOpacity
-                style={coverCardStyles.card}
+                style={[coverCardStyles.card, coverDark && darkCardStyles.bg]}
                 onPress={() => router.push(`/(trainer)/client/${clientId}/workout/${lastSessionWorkoutId}` as any)}
                 activeOpacity={0.92}
               >
                 <WorkoutPaperCover category={lastSessionCategory} workoutId={lastSessionWorkoutId} />
+                {/* Cover-crop card: the texts OVERLAY the cover, so they follow the
+                    cover's ground (white on dark / ink on white), not a footer. */}
                 <View style={coverCardStyles.bottom}>
                   <View style={coverCardStyles.bottomLeft}>
-                    <Text style={[coverCardStyles.itemName, fd(700)]} numberOfLines={1}>{lastSessionWorkoutName}</Text>
-                    <Text style={[coverCardStyles.itemSub, ft(400)]} numberOfLines={1}>
+                    <Text style={[coverCardStyles.itemName, coverDark && darkCardStyles.textOnDark, fd(700)]} numberOfLines={1}>{lastSessionWorkoutName}</Text>
+                    <Text style={[coverCardStyles.itemSub, coverDark && darkCardStyles.subOnDark, ft(400)]} numberOfLines={1}>
                       {recentActivitySub}{lastSessionDate ? ` · ${new Date(lastSessionDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}` : ''}
                     </Text>
                   </View>
                   <View style={coverCardStyles.bottomRight}>
                     {isTrainer && mostRecentWorkout && (
                       <TouchableOpacity onPress={() => setActiveMenu(mostRecentWorkout)} hitSlop={8} activeOpacity={0.5}>
-                        <SymbolView name="ellipsis" size={13} tintColor="rgba(255,255,255,0.65)" />
+                        <SymbolView name="ellipsis" size={13} tintColor={coverDark ? DARK_MUTED_ICON : '#bbb'} />
                       </TouchableOpacity>
                     )}
                   </View>
@@ -1983,6 +1992,9 @@ function WeekStripCard({
   onLogWorkout: () => void;
   onReloadStrip: () => void;
 }) {
+  // Workout card style: the week-strip session cards follow the setting like every other
+  // workout card since July 24 (the locked all-dark hero is gone on both sides).
+  const footerDark = useCardVariant(s => s.variant) === 'light';
   const weekOffsetRef = useRef(weekOffset);
   weekOffsetRef.current = weekOffset;
   const [noSessModal, setNoSessModal] = useState(false);
@@ -2104,21 +2116,21 @@ function WeekStripCard({
       {daySessions.map((session) => (
         session.status === 'scheduled' ? (
           /* Scheduled session — standalone card below strip */
-          <View key={session.id} style={wsStyles.sessCardOuter}>
+          <View key={session.id} style={[wsStyles.sessCardOuter, footerDark && darkCardStyles.bg]}>
             <TouchableOpacity
-              style={wsStyles.sessCardInner}
+              style={[wsStyles.sessCardInner, footerDark && darkCardStyles.bg]}
               onPress={() => session.workoutId ? router.push(`/(trainer)/client/${clientId}/workout/${session.workoutId}` as any) : undefined}
               activeOpacity={0.88}
             >
               <WorkoutPaperCover category={session.category} workoutId={session.workoutId} size="strip" />
               <View style={wsStyles.sessionHighlights}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                  <Text style={[wsStyles.sessFooterName, fd(700)]} numberOfLines={1}>{session.workoutName ?? 'Session'}</Text>
-                  <View style={wsStyles.notYetBadge}>
-                    <Text style={[wsStyles.notYetText, ft(600)]}>Not yet done</Text>
+                  <Text style={[wsStyles.sessFooterName, footerDark && darkCardStyles.textOnDark, fd(700)]} numberOfLines={1}>{session.workoutName ?? 'Session'}</Text>
+                  <View style={[wsStyles.notYetBadge, footerDark && wsStyles.notYetBadgeOnDark]}>
+                    <Text style={[wsStyles.notYetText, footerDark && wsStyles.notYetTextOnDark, ft(600)]}>Not yet done</Text>
                   </View>
                   <TouchableOpacity onPress={() => onScheduledMenu(session)} hitSlop={8} activeOpacity={0.5}>
-                    <SymbolView name="ellipsis" size={15} tintColor="rgba(255,255,255,0.65)" />
+                    <SymbolView name="ellipsis" size={15} tintColor={footerDark ? DARK_MUTED_ICON : '#bbb'} />
                   </TouchableOpacity>
                 </View>
               </View>
@@ -2126,8 +2138,8 @@ function WeekStripCard({
           </View>
         ) : loadingIds.has(session.id) ? (
           /* Completed session — loading its detail */
-          <View key={session.id} style={wsStyles.sessCardOuter}>
-            <View style={[wsStyles.sessCardInner, { alignItems: 'center', paddingVertical: 16 }]}>
+          <View key={session.id} style={[wsStyles.sessCardOuter, footerDark && darkCardStyles.bg]}>
+            <View style={[wsStyles.sessCardInner, footerDark && darkCardStyles.bg, { alignItems: 'center', paddingVertical: 16 }]}>
               <ActivityIndicator color={ACCENT} />
             </View>
           </View>
@@ -2136,9 +2148,9 @@ function WeekStripCard({
           (() => {
             const detail = details[session.id];
             return (
-          <View key={session.id} style={wsStyles.sessCardOuter}>
+          <View key={session.id} style={[wsStyles.sessCardOuter, footerDark && darkCardStyles.bg]}>
             <TouchableOpacity
-              style={wsStyles.sessCardInner}
+              style={[wsStyles.sessCardInner, footerDark && darkCardStyles.bg]}
               onPress={() => detail.workoutId ? router.push(`/(trainer)/client/${clientId}/workout/${detail.workoutId}` as any) : undefined}
               activeOpacity={0.88}
             >
@@ -2148,17 +2160,17 @@ function WeekStripCard({
                   "Duration"/"Exercises" labels are redundant next to their own icons. */}
               <View style={wsStyles.sessionHighlights}>
                 <View style={wsStyles.hlStatsRow}>
-                  <Text style={[wsStyles.sessFooterName, fd(700)]} numberOfLines={1}>{detail.workoutName ?? 'Session'}</Text>
+                  <Text style={[wsStyles.sessFooterName, footerDark && darkCardStyles.textOnDark, fd(700)]} numberOfLines={1}>{detail.workoutName ?? 'Session'}</Text>
                   <View style={wsStyles.hlStatChip}>
                     <SymbolView name="timer" size={13} tintColor={ACCENT} />
-                    <Text style={[wsStyles.hlStatValue, ft(700)]}>{detail.durationSeconds != null ? `${Math.round(detail.durationSeconds / 60)} min` : '—'}</Text>
+                    <Text style={[wsStyles.hlStatValue, footerDark && darkCardStyles.textOnDark, ft(700)]}>{detail.durationSeconds != null ? `${Math.round(detail.durationSeconds / 60)} min` : '—'}</Text>
                   </View>
                   <View style={wsStyles.hlStatChip}>
                     <SymbolView name="checkmark.circle.fill" size={13} tintColor={ACCENT} />
-                    <Text style={[wsStyles.hlStatValue, ft(700)]}>{detail.exercisesDoneCount} / {detail.exercisesTotal}</Text>
+                    <Text style={[wsStyles.hlStatValue, footerDark && darkCardStyles.textOnDark, ft(700)]}>{detail.exercisesDoneCount} / {detail.exercisesTotal}</Text>
                   </View>
                   <TouchableOpacity onPress={() => onScheduledMenu(session)} hitSlop={8} activeOpacity={0.5}>
-                    <SymbolView name="ellipsis" size={15} tintColor="rgba(255,255,255,0.65)" />
+                    <SymbolView name="ellipsis" size={15} tintColor={footerDark ? DARK_MUTED_ICON : '#bbb'} />
                   </TouchableOpacity>
                 </View>
               </View>
@@ -2644,6 +2656,17 @@ function RoutineQuickLookModal({ routineId, routineName, onClose }: { routineId:
   );
 }
 
+// Dark-FOOTER/ground overrides for the "Workout card style" setting's 'light' pick
+// (white cover + DARK footer) — and, on the cover-crop overlay cards, for the 'dark'
+// pick's white-on-dark texts. Base card styles below are WHITE + light lift shadow in
+// BOTH styles; these get appended conditionally at the call sites.
+const darkCardStyles = StyleSheet.create({
+  bg:         { backgroundColor: DARK_CARD_FOOTER },
+  textOnDark: { color: '#fff' },
+  subOnDark:  { color: 'rgba(255,255,255,0.6)' },
+});
+const DARK_MUTED_ICON = 'rgba(255,255,255,0.65)';
+
 const sectionStyles = StyleSheet.create({
   fullBleed:      { marginHorizontal: -16 },
   headerRow:      { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingTop: 30, paddingBottom: 14 },
@@ -2652,13 +2675,15 @@ const sectionStyles = StyleSheet.create({
   headerLabel:    { fontSize: 12, fontWeight: '700', color: '#1a1a1a', textTransform: 'uppercase', letterSpacing: 0.5, marginLeft: 7 },
   hScroll:        { paddingHorizontal: 16, gap: 10 },
 
-  wCardOuter:     { width: 212, height: 127, borderRadius: 14, backgroundColor: DARK_CARD_FOOTER, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.22, shadowRadius: 10, elevation: 6 },
-  wCard:          { flex: 1, borderRadius: 14, overflow: 'hidden', backgroundColor: DARK_CARD_FOOTER },
-  wName:          { fontSize: 15, fontWeight: '700', color: '#fff' },
+  // Card-style-aware gallery mini (matches the client Training-tab gallery): white base
+  // + light lift shadow; darkCardStyles.bg flips the frame for the 'light' style.
+  wCardOuter:     { width: 212, height: 127, borderRadius: 14, backgroundColor: '#fff', shadowColor: '#000', shadowOffset: { width: 0, height: 5 }, shadowOpacity: 0.08, shadowRadius: 12, elevation: 4 },
+  wCard:          { flex: 1, borderRadius: 14, overflow: 'hidden', backgroundColor: '#fff' },
+  wName:          { fontSize: 15, fontWeight: '700', color: '#1a1a1a' },
   wMenuBtn:       { position: 'absolute', top: 7, right: 7, width: 26, height: 26, borderRadius: 13, backgroundColor: 'rgba(0,0,0,0.5)', alignItems: 'center', justifyContent: 'center' },
   wBody:          { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 12, paddingVertical: 6 },
   wFooterMenuBtn: { padding: 4 },
-  wSub:           { fontSize: 11, fontWeight: '400', color: 'rgba(255,255,255,0.6)' },
+  wSub:           { fontSize: 11, fontWeight: '400', color: '#999' },
   wStatus:        { fontSize: 11, fontWeight: '600' },
 
   seeAllCard:     { width: 80, height: 127, borderRadius: 14, backgroundColor: 'rgba(36,172,136,0.08)', borderWidth: 1.5, borderStyle: 'dashed', borderColor: 'rgba(36,172,136,0.3)', alignItems: 'center', justifyContent: 'center', gap: 6 },
@@ -4165,6 +4190,9 @@ function WorkoutRow({
   onPress: () => void;
   onMenuPress: () => void;
 }) {
+  // Workout card style — overlay texts follow the COVER here (this is a cover-crop card
+  // with no separate footer). Hook stays above the rename early-return.
+  const coverDark = useCardVariant(s => s.variant) === 'dark';
   const gradColors = (CATEGORY_GRADIENTS[workout.category ?? ''] ?? GRADIENT_DEFAULT) as [string, string];
   const lastDoneText = workout.lastSessionDate
     ? t.clientProfile.training.lastDone(relativeTime(workout.lastSessionDate))
@@ -4193,17 +4221,17 @@ function WorkoutRow({
   }
 
   return (
-    <TouchableOpacity style={coverCardStyles.card} onPress={onPress} activeOpacity={0.92}>
+    <TouchableOpacity style={[coverCardStyles.card, coverDark && darkCardStyles.bg]} onPress={onPress} activeOpacity={0.92}>
       <WorkoutPaperCover category={workout.category} workoutId={workout.id} />
       <View style={coverCardStyles.bottom}>
         <View style={coverCardStyles.bottomLeft}>
-          <Text style={[coverCardStyles.itemName, fd(700)]} numberOfLines={1}>{workout.name}</Text>
-          <Text style={[coverCardStyles.itemSub, ft(400)]} numberOfLines={1}>{lastDoneText}</Text>
+          <Text style={[coverCardStyles.itemName, coverDark && darkCardStyles.textOnDark, fd(700)]} numberOfLines={1}>{workout.name}</Text>
+          <Text style={[coverCardStyles.itemSub, coverDark && darkCardStyles.subOnDark, ft(400)]} numberOfLines={1}>{lastDoneText}</Text>
         </View>
         <View style={coverCardStyles.bottomRight}>
           {isTrainer && (
             <TouchableOpacity onPress={onMenuPress} hitSlop={8} activeOpacity={0.5}>
-              <SymbolView name="ellipsis" size={13} tintColor="rgba(255,255,255,0.65)" />
+              <SymbolView name="ellipsis" size={13} tintColor={coverDark ? DARK_MUTED_ICON : '#bbb'} />
             </TouchableOpacity>
           )}
         </View>
@@ -4686,9 +4714,13 @@ const CATEGORY_GRADIENTS: Record<string, [string, string]> = {
 const GRADIENT_DEFAULT: [string, string] = ['#2a2a2a', '#444444'];
 
 const coverCardStyles = StyleSheet.create({
+  // Cover-crop card (Recent Activity + WorkoutRow): the cover fills the 70px card and
+  // the texts OVERLAY its bottom, so they follow the COVER's ground — ink base for the
+  // 'light' style, darkCardStyles overrides appended when the cover is dark. White base
+  // + light lift shadow in both styles.
   card: {
-    height: 70, borderRadius: 14, overflow: 'hidden', marginBottom: 0, backgroundColor: DARK_CARD_FOOTER,
-    shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.22, shadowRadius: 10, elevation: 6,
+    height: 70, borderRadius: 14, overflow: 'hidden', marginBottom: 0, backgroundColor: '#fff',
+    shadowColor: '#000', shadowOffset: { width: 0, height: 5 }, shadowOpacity: 0.08, shadowRadius: 12, elevation: 4,
   },
   bottom: {
     position: 'absolute', bottom: 0, left: 0, right: 0,
@@ -4697,8 +4729,8 @@ const coverCardStyles = StyleSheet.create({
   },
   bottomLeft: { flex: 1, gap: 2 },
   bottomRight: { flexDirection: 'row', alignItems: 'center', gap: 6, flexShrink: 0 },
-  itemName: { fontSize: 11, fontWeight: '500', color: '#ffffff' },
-  itemSub: { fontSize: 8, color: 'rgba(255,255,255,0.6)' },
+  itemName: { fontSize: 11, fontWeight: '500', color: '#1a1a1a' },
+  itemSub: { fontSize: 8, color: 'rgba(0,0,0,0.45)' },
   catPill: {
     backgroundColor: 'rgba(255,255,255,0.15)',
     borderWidth: 0.5, borderColor: 'rgba(255,255,255,0.3)',
@@ -4796,7 +4828,7 @@ const planStyles = StyleSheet.create({
   weeksNum:       { fontSize: 22, fontWeight: '700', color: TEXT, minWidth: 36, textAlign: 'center' },
   saveBtn:            { backgroundColor: ACCENT, borderRadius: 100, paddingVertical: 14, alignSelf: 'stretch', alignItems: 'center', marginTop: 16 },
   saveBtnText:        { fontSize: 15, fontWeight: '700', color: '#fff' },
-  pickerCard:          { height: 70, borderRadius: 12, overflow: 'hidden', backgroundColor: DARK_CARD_FOOTER, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.22, shadowRadius: 10, elevation: 6 },
+  pickerCard:          { height: 70, borderRadius: 12, overflow: 'hidden', backgroundColor: '#fff', shadowColor: '#000', shadowOffset: { width: 0, height: 5 }, shadowOpacity: 0.08, shadowRadius: 12, elevation: 4 },
   pickerCardFooter:    { paddingHorizontal: 12, paddingVertical: 6, backgroundColor: 'transparent' },
   pickerCardName:      { fontSize: 15, fontWeight: '700', color: '#fff' },
   pickerCardCheck:     { position: 'absolute', top: 7, right: 7, width: 20, height: 20, borderRadius: 10, backgroundColor: '#24ac88', alignItems: 'center', justifyContent: 'center' },
@@ -4875,17 +4907,19 @@ const wsStyles = StyleSheet.create({
 
   addCircle:   { width: 40, height: 40, borderRadius: 20, alignSelf: 'center', marginTop: 12, backgroundColor: ACCENT, alignItems: 'center', justifyContent: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.12, shadowRadius: 6, elevation: 3 },
 
-  sessCardOuter: { borderRadius: 16, marginTop: 12, backgroundColor: DARK_CARD_FOOTER, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.22, shadowRadius: 10, elevation: 6 },
-  sessCardInner: { borderRadius: 16, overflow: 'hidden', backgroundColor: DARK_CARD_FOOTER },
+  // Card-style-aware (white base + light lift shadow; darkCardStyles.bg appended for
+  // the 'light' style's dark footer) — matches the client week-strip session cards.
+  sessCardOuter: { borderRadius: 16, marginTop: 12, backgroundColor: '#fff', shadowColor: '#000', shadowOffset: { width: 0, height: 5 }, shadowOpacity: 0.08, shadowRadius: 12, elevation: 4 },
+  sessCardInner: { borderRadius: 16, overflow: 'hidden', backgroundColor: '#fff' },
   checkBadge:  { position: 'absolute', top: 8, right: 8, width: 18, height: 18, borderRadius: 9, backgroundColor: ACCENT, alignItems: 'center', justifyContent: 'center' },
   checkMark:   { fontSize: 10, color: '#fff', fontWeight: '700', lineHeight: 14 },
 
   sessionHighlights: { paddingHorizontal: 10, paddingVertical: 10, backgroundColor: 'transparent' },
   hlSectionLabel:    { fontSize: 9, fontWeight: '700', color: MUTED, letterSpacing: 0.6, textTransform: 'uppercase', marginBottom: 8, textAlign: 'center' },
   hlStatsRow:    { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  sessFooterName: { flex: 1, fontSize: 15, fontWeight: '700', color: '#fff' },
+  sessFooterName: { flex: 1, fontSize: 15, fontWeight: '700', color: '#1a1a1a' },
   hlStatChip:    { flex: 1, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 4 },
-  hlStatValue:   { fontSize: 13, fontWeight: '700', color: '#fff' },
+  hlStatValue:   { fontSize: 13, fontWeight: '700', color: '#1a1a1a' },
   hlNoteChip:    { flexDirection: 'row', alignItems: 'flex-start', gap: 6, backgroundColor: '#f5f5f3', borderRadius: 8, paddingVertical: 7, paddingHorizontal: 8, marginTop: 8 },
   hlNoteText:    { fontSize: 11, color: '#555', flex: 1, lineHeight: 16 },
   hlSectionDivider: { height: 1, backgroundColor: '#eeeeec', marginVertical: 8 },
@@ -4900,9 +4934,12 @@ const wsStyles = StyleSheet.create({
   hlDeltaDown:     { color: '#e85d4a' },
   hlDeltaSame:     { color: '#f5a623' },
   hlDivider:       { height: 0.5, backgroundColor: '#f0f0ee' },
-  // Scheduled session
-  notYetBadge: { backgroundColor: 'rgba(255,255,255,0.16)', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 5 },
-  notYetText:  { fontSize: 12, fontWeight: '600', color: 'rgba(255,255,255,0.85)' },
+  // Scheduled session — quiet gray badge on the white footer; white-alpha twin on the
+  // 'light' style's dark footer.
+  notYetBadge:       { backgroundColor: 'rgba(0,0,0,0.06)', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 5 },
+  notYetText:        { fontSize: 12, fontWeight: '600', color: '#8a8a86' },
+  notYetBadgeOnDark: { backgroundColor: 'rgba(255,255,255,0.16)' },
+  notYetTextOnDark:  { color: 'rgba(255,255,255,0.85)' },
 });
 
 // ─── Move-training calendar modal styles ─────────────────────────────────────

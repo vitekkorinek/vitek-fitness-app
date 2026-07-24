@@ -44,6 +44,7 @@ import { relativeTime } from '@/lib/utils';
 import { CATEGORY_COLORS, CATEGORY_OPTIONS, STRETCHING_CATEGORIES } from '@/lib/workoutCategories';
 import type { WorkoutCategory } from '@/lib/workoutCategories';
 import WorkoutPaperCover, { DARK_CARD_FOOTER } from '@/components/WorkoutPaperCover';
+import { useCardVariant } from '@/lib/cardVariant';
 import { ft, fd } from '@/lib/appType';
 import { fetchExerciseNames, fetchTemplateExerciseNames } from '@/lib/exerciseNames';
 import t from '@/i18n/en';
@@ -2138,6 +2139,11 @@ function WorkoutLibraryRow({
   onPress: () => void;
   onMenuPress: () => void;
 }) {
+  // Workout card style (set in trainer Account → Appearance): footer is always the
+  // OPPOSITE of the cover — 'dark' = dark cover + WHITE footer, 'light' = white cover
+  // + DARK footer. Hook stays above the rename early-return (hooks must be unconditional).
+  const coverDark = useCardVariant(s => s.variant) === 'dark';
+  const footerDark = !coverDark;
   if (isRenaming) {
     return (
       <View style={wStyles.renameRow}>
@@ -2164,24 +2170,24 @@ function WorkoutLibraryRow({
   const subtitle = workout.lastSessionDate ? formatShortDate(workout.lastSessionDate) : 'Not yet done';
 
   return (
-    <TouchableOpacity style={coverCardStyles.card} onPress={onPress} activeOpacity={0.92}>
-      <View style={coverCardStyles.cardInner}>
+    <TouchableOpacity style={[coverCardStyles.card, footerDark && coverCardStyles.cardDarkBg]} onPress={onPress} activeOpacity={0.92}>
+      <View style={[coverCardStyles.cardInner, footerDark && coverCardStyles.cardDarkBg]}>
         <WorkoutPaperCover category={workout.category} exerciseNames={workout.exerciseNames}>
           {!!clientFirstName && (
-            <View style={coverCardStyles.clientPill}>
-              <SymbolView name="person.fill" size={9} tintColor="#fff" />
-              <Text style={coverCardStyles.clientPillText}>{clientFirstName}</Text>
+            <View style={[coverCardStyles.clientPill, !coverDark && coverCardStyles.clientPillOnLight]}>
+              <SymbolView name="person.fill" size={9} tintColor={coverDark ? '#fff' : '#8a8a86'} />
+              <Text style={[coverCardStyles.clientPillText, !coverDark && coverCardStyles.clientPillTextOnLight]}>{clientFirstName}</Text>
             </View>
           )}
         </WorkoutPaperCover>
         {/* Name demoted from the cover to the footer — the exercises are the content now. */}
         <View style={coverCardStyles.footer}>
           <View style={coverCardStyles.footerLeft}>
-            <Text style={[coverCardStyles.itemName, fd(700)]} numberOfLines={1}>{workout.name}</Text>
-            <Text style={[coverCardStyles.footerSub, ft(400)]} numberOfLines={1}>{subtitle}</Text>
+            <Text style={[coverCardStyles.itemName, footerDark && coverCardStyles.textOnDark, fd(700)]} numberOfLines={1}>{workout.name}</Text>
+            <Text style={[coverCardStyles.footerSub, footerDark && coverCardStyles.subOnDark, ft(400)]} numberOfLines={1}>{subtitle}</Text>
           </View>
           <TouchableOpacity style={coverCardStyles.footerMenuBtn} onPress={onMenuPress} hitSlop={8} activeOpacity={0.5}>
-            <SymbolView name="ellipsis" size={16} tintColor="rgba(255,255,255,0.65)" />
+            <SymbolView name="ellipsis" size={16} tintColor={footerDark ? 'rgba(255,255,255,0.65)' : '#bbb'} />
           </TouchableOpacity>
         </View>
       </View>
@@ -2210,6 +2216,9 @@ function TemplateLibraryRow({
   onPress: () => void;
   onMenuPress: () => void;
 }) {
+  // Workout card style — same contrast-footer logic as WorkoutLibraryRow above.
+  const coverDark = useCardVariant(s => s.variant) === 'dark';
+  const footerDark = !coverDark;
   if (isRenaming) {
     return (
       <View style={wStyles.renameRow}>
@@ -2235,21 +2244,21 @@ function TemplateLibraryRow({
   const subtitle = `${template.exerciseCount} ${template.exerciseCount === 1 ? 'exercise' : 'exercises'}`;
 
   return (
-    <TouchableOpacity style={coverCardStyles.card} onPress={onPress} activeOpacity={0.92}>
-      <View style={coverCardStyles.cardInner}>
+    <TouchableOpacity style={[coverCardStyles.card, footerDark && coverCardStyles.cardDarkBg]} onPress={onPress} activeOpacity={0.92}>
+      <View style={[coverCardStyles.cardInner, footerDark && coverCardStyles.cardDarkBg]}>
         <WorkoutPaperCover category={template.category} exerciseNames={template.exerciseNames}>
-          <View style={tmplStyles.badge}>
-            <SymbolView name="rectangle.stack" size={10} tintColor="rgba(255,255,255,0.9)" />
-            <Text style={tmplStyles.badgeText}>TEMPLATE</Text>
+          <View style={[tmplStyles.badge, !coverDark && tmplStyles.badgeOnLight]}>
+            <SymbolView name="rectangle.stack" size={10} tintColor={coverDark ? 'rgba(255,255,255,0.9)' : '#8a8a86'} />
+            <Text style={[tmplStyles.badgeText, !coverDark && tmplStyles.badgeTextOnLight]}>TEMPLATE</Text>
           </View>
         </WorkoutPaperCover>
         <View style={coverCardStyles.footer}>
           <View style={coverCardStyles.footerLeft}>
-            <Text style={[coverCardStyles.itemName, fd(700)]} numberOfLines={1}>{template.name}</Text>
-            <Text style={[coverCardStyles.footerSub, ft(400)]} numberOfLines={1}>{subtitle}</Text>
+            <Text style={[coverCardStyles.itemName, footerDark && coverCardStyles.textOnDark, fd(700)]} numberOfLines={1}>{template.name}</Text>
+            <Text style={[coverCardStyles.footerSub, footerDark && coverCardStyles.subOnDark, ft(400)]} numberOfLines={1}>{subtitle}</Text>
           </View>
           <TouchableOpacity style={coverCardStyles.footerMenuBtn} onPress={onMenuPress} hitSlop={8} activeOpacity={0.5}>
-            <SymbolView name="ellipsis" size={16} tintColor="rgba(255,255,255,0.65)" />
+            <SymbolView name="ellipsis" size={16} tintColor={footerDark ? 'rgba(255,255,255,0.65)' : '#bbb'} />
           </TouchableOpacity>
         </View>
       </View>
@@ -2609,20 +2618,25 @@ const CATEGORY_GRADIENTS: Record<string, [string, string]> = {
 const GRADIENT_DEFAULT: [string, string] = ['#2a2a2a', '#444444'];
 
 const coverCardStyles = StyleSheet.create({
-  // Brand-dark card: frame + footer painted the cover gradient's last stop
-  // (DARK_CARD_FOOTER) so cover and footer read as one seamless dark object.
-  // Dark-card shadow spec — dark grounds absorb the white-card shadow.
+  // Card-style-aware card ("Workout card style" — trainer picks it in Account →
+  // Appearance): base = WHITE frame/footer + light lift shadow (the 'dark' style: dark
+  // cover, white footer); `cardDarkBg`/`textOnDark`/`subOnDark` flip the frame/footer to
+  // DARK_CARD_FOOTER for the 'light' style (white cover, dark footer). Light lift
+  // shadow in BOTH styles — the old 0.22 all-dark spec left with the seamless card.
   card: {
-    borderRadius: 14, backgroundColor: DARK_CARD_FOOTER,
-    shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.22, shadowRadius: 10, elevation: 6,
+    borderRadius: 14, backgroundColor: '#fff',
+    shadowColor: '#000', shadowOffset: { width: 0, height: 5 }, shadowOpacity: 0.08, shadowRadius: 12, elevation: 4,
   },
-  cardInner: { borderRadius: 14, overflow: 'hidden', backgroundColor: DARK_CARD_FOOTER },
-  footer: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 6, gap: 8, backgroundColor: DARK_CARD_FOOTER },
+  cardDarkBg: { backgroundColor: DARK_CARD_FOOTER },
+  cardInner: { borderRadius: 14, overflow: 'hidden', backgroundColor: '#fff' },
+  footer: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 6, gap: 8, backgroundColor: 'transparent' },
   footerLeft: { flex: 1 },
-  footerSub: { fontSize: 11, color: 'rgba(255,255,255,0.6)' },
+  footerSub: { fontSize: 11, color: '#999' },
+  subOnDark: { color: 'rgba(255,255,255,0.6)' },
   footerMenuBtn: { padding: 4 },
   menuBtn: { position: 'absolute', top: 9, right: 10 },
-  itemName: { fontSize: 15, fontWeight: '700', color: '#fff' },
+  itemName: { fontSize: 15, fontWeight: '700', color: '#1a1a1a' },
+  textOnDark: { color: '#fff' },
   clientPill: {
     position: 'absolute', top: 9, left: 10,
     flexDirection: 'row', alignItems: 'center', gap: 3,
@@ -2630,6 +2644,10 @@ const coverCardStyles = StyleSheet.create({
     paddingHorizontal: 8, paddingVertical: 3,
   },
   clientPillText: { fontSize: 10, fontWeight: '700', color: '#fff' },
+  // On the white ('light'-style) cover the scrim pill flips to the quiet ink register
+  // (same treatment as the client My Workouts done-badge on a light cover).
+  clientPillOnLight:     { backgroundColor: 'rgba(0,0,0,0.06)' },
+  clientPillTextOnLight: { color: '#8a8a86' },
 });
 
 const tmplStyles = StyleSheet.create({
@@ -2640,6 +2658,8 @@ const tmplStyles = StyleSheet.create({
     paddingHorizontal: 8, paddingVertical: 3,
   },
   badgeText: { fontSize: 8, fontWeight: '700', color: 'rgba(255,255,255,0.9)', letterSpacing: 0.5 },
+  badgeOnLight:     { backgroundColor: 'rgba(0,0,0,0.06)' },
+  badgeTextOnLight: { color: '#8a8a86' },
 });
 
 const BG     = '#faf9f7';

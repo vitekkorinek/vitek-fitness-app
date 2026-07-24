@@ -27,6 +27,7 @@ import { CATEGORY_COLORS, CATEGORY_OPTIONS, STRETCHING_CATEGORIES } from '@/lib/
 import { resolveWeeklyGoal } from '@/lib/weeklyGoal';
 import type { WorkoutCategory } from '@/lib/workoutCategories';
 import WorkoutPaperCover, { DARK_CARD_FOOTER } from '@/components/WorkoutPaperCover';
+import { useCardVariant } from '@/lib/cardVariant';
 import { fetchExerciseNames } from '@/lib/exerciseNames';
 import { ft, fd } from '@/lib/appType';
 
@@ -422,6 +423,12 @@ const wpStyles = StyleSheet.create({
 // ─── WorkoutItem ──────────────────────────────────────────────────────────────
 
 function WorkoutItem({ workout, onPress, thisWeekCount, onQuickLook }: { workout: WorkoutRow; onPress: () => void; thisWeekCount?: number; onQuickLook?: () => void }) {
+  // Workout card style (setting in lib/cardVariant.ts, picked in Me → Appearance).
+  // The footer is always the OPPOSITE of the cover: 'dark' = dark cover + WHITE footer,
+  // 'light' = white cover + DARK footer (the cover flips inside WorkoutPaperCover).
+  // Both styles keep the base light lift shadow.
+  const coverDark = useCardVariant(s => s.variant) === 'dark';
+  const footerDark = !coverDark;
   const isDone = workout.status === 'completed';
   const catColors = workout.category ? CATEGORY_COLORS[workout.category as WorkoutCategory] : null;
   const subtitle = [
@@ -430,8 +437,12 @@ function WorkoutItem({ workout, onPress, thisWeekCount, onQuickLook }: { workout
   ].join(' · ');
 
   return (
-    <TouchableOpacity style={[coverCardStyles.cardWrap, coverCardStyles.cardWrapDark, isDone && coverCardStyles.cardDone]} onPress={onPress} activeOpacity={0.92}>
-      <View style={[coverCardStyles.cardInner, coverCardStyles.cardInnerDark]}>
+    <TouchableOpacity
+      style={[coverCardStyles.cardWrap, footerDark && coverCardStyles.frameDarkBg, isDone && coverCardStyles.cardDone]}
+      onPress={onPress}
+      activeOpacity={0.92}
+    >
+      <View style={[coverCardStyles.cardInner, footerDark && coverCardStyles.cardInnerDark]}>
         <WorkoutPaperCover
           category={isDone ? null : workout.category}
           exerciseNames={workout.exerciseNames}
@@ -439,29 +450,29 @@ function WorkoutItem({ workout, onPress, thisWeekCount, onQuickLook }: { workout
           style={isDone ? { opacity: 0.55 } : undefined}
         >
           {isDone && (
-            <View style={[coverCardStyles.doneBadge, coverCardStyles.doneBadgeDark]}>
-              <Text style={[coverCardStyles.doneBadgeText, coverCardStyles.doneBadgeTextDark]}>Done</Text>
+            <View style={[coverCardStyles.doneBadge, coverDark && coverCardStyles.doneBadgeDark]}>
+              <Text style={[coverCardStyles.doneBadgeText, coverDark && coverCardStyles.doneBadgeTextDark]}>Done</Text>
             </View>
           )}
         </WorkoutPaperCover>
-        {/* White footer: name (demoted from the cover — the exercises are the content now,
+        {/* Footer: name (demoted from the cover — the exercises are the content now,
             but the name is still the workout's handle for search, Do Mode's header and
-            session history) + last-done + ⋯ */}
-        <View style={[coverCardStyles.footer, coverCardStyles.footerDark]}>
+            session history) + last-done + ⋯. Painted the opposite of the cover. */}
+        <View style={[coverCardStyles.footer, footerDark && coverCardStyles.footerDark]}>
           <View style={coverCardStyles.footerLeft}>
             <View style={coverCardStyles.nameRow}>
-              <Text style={[coverCardStyles.itemName, coverCardStyles.textOnDark, fd(700)]} numberOfLines={1}>{workout.name}</Text>
+              <Text style={[coverCardStyles.itemName, footerDark && coverCardStyles.textOnDark, fd(700)]} numberOfLines={1}>{workout.name}</Text>
               {!!thisWeekCount && thisWeekCount > 0 && !isDone && (
                 <View style={[coverCardStyles.checkBadge, thisWeekCount > 1 && { width: undefined, paddingHorizontal: 7 }]}>
                   <Text style={coverCardStyles.checkMark}>✓{thisWeekCount > 1 ? ` ×${thisWeekCount}` : ''}</Text>
                 </View>
               )}
             </View>
-            <Text style={[coverCardStyles.footerSub, coverCardStyles.subOnDark, ft(400)]} numberOfLines={1}>{subtitle}</Text>
+            <Text style={[coverCardStyles.footerSub, footerDark && coverCardStyles.subOnDark, ft(400)]} numberOfLines={1}>{subtitle}</Text>
           </View>
           {onQuickLook && (
             <TouchableOpacity style={coverCardStyles.footerMenuBtn} onPress={onQuickLook} hitSlop={10} activeOpacity={0.6}>
-              <SymbolView name="ellipsis" size={16} tintColor={'rgba(255,255,255,0.65)'} />
+              <SymbolView name="ellipsis" size={16} tintColor={footerDark ? 'rgba(255,255,255,0.65)' : '#bbb'} />
             </TouchableOpacity>
           )}
         </View>
@@ -479,10 +490,10 @@ const coverCardStyles = StyleSheet.create({
     shadowColor: '#000', shadowOffset: { width: 0, height: 5 }, shadowOpacity: 0.08, shadowRadius: 12, elevation: 4,
   },
   cardInner: { borderRadius: 14, overflow: 'hidden', backgroundColor: '#fff' },
-  // Design-trial 'dark' overrides: whole card in the home-tile register (frame + footer
-  // painted the cover gradient's last stop → one seamless dark object). Dark-card shadow
-  // spec — dark grounds absorb the white-card shadow.
-  cardWrapDark:  { backgroundColor: DARK_CARD_FOOTER, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.22, shadowRadius: 10, elevation: 6 },
+  // Dark FOOTER overrides — applied only for the 'light' card style (white cover needs
+  // the dark footer). The 'dark' style keeps the white base footer under its dark cover.
+  // Both styles keep the base light lift shadow above (no 0.22 halo on either).
+  frameDarkBg:   { backgroundColor: DARK_CARD_FOOTER },
   cardInnerDark: { backgroundColor: DARK_CARD_FOOTER },
   footerDark:    { backgroundColor: 'transparent' },
   textOnDark:    { color: '#fff' },

@@ -17,6 +17,7 @@ import { SymbolView } from 'expo-symbols';
 import { LinearGradient } from 'expo-linear-gradient';
 import { supabase } from '@/lib/supabase';
 import WorkoutPaperCover, { DARK_CARD_FOOTER } from '@/components/WorkoutPaperCover';
+import { useCardVariant } from '@/lib/cardVariant';
 import { fetchExerciseNames } from '@/lib/exerciseNames';
 import { ft, fd } from '@/lib/appType';
 import { useAuth } from '@/context/AuthContext';
@@ -234,24 +235,27 @@ export default function WorkoutPickerScreen() {
 function WorkoutPickerRow({
   workout, copying, disabled, onPress,
 }: { workout: WorkoutRow; copying: boolean; disabled: boolean; onPress: () => void }) {
+  // Workout card style (trainer Account → Appearance): footer always the OPPOSITE of
+  // the cover — 'dark' = dark cover + WHITE footer, 'light' = white cover + DARK footer.
+  const footerDark = useCardVariant(s => s.variant) === 'light';
   const gradColors = (CATEGORY_GRADIENTS[workout.category ?? ''] ?? GRADIENT_DEFAULT) as [string, string];
 
   return (
     <TouchableOpacity
-      style={[rowStyles.card, disabled && !copying && rowStyles.cardDisabled]}
+      style={[rowStyles.card, footerDark && rowStyles.cardDarkBg, disabled && !copying && rowStyles.cardDisabled]}
       onPress={onPress}
       activeOpacity={0.85}
       disabled={disabled}
     >
-      <View style={rowStyles.cardInner}>
+      <View style={[rowStyles.cardInner, footerDark && rowStyles.cardDarkBg]}>
         <WorkoutPaperCover category={workout.category} exerciseNames={workout.exerciseNames} size="mini">
           {copying && (
             <View style={rowStyles.copySpinner}><ActivityIndicator size="small" color={ACCENT} /></View>
           )}
         </WorkoutPaperCover>
         <View style={rowStyles.footer}>
-          <Text style={[rowStyles.name, fd(700)]} numberOfLines={1}>{workout.name}</Text>
-          <Text style={[rowStyles.footerSub, ft(400)]} numberOfLines={1}>{workout.clientName}</Text>
+          <Text style={[rowStyles.name, footerDark && rowStyles.textOnDark, fd(700)]} numberOfLines={1}>{workout.name}</Text>
+          <Text style={[rowStyles.footerSub, footerDark && rowStyles.subOnDark, ft(400)]} numberOfLines={1}>{workout.clientName}</Text>
         </View>
       </View>
     </TouchableOpacity>
@@ -306,18 +310,22 @@ const styles = StyleSheet.create({
 });
 
 const rowStyles = StyleSheet.create({
-  // Brand-dark card: frame + footer painted the cover gradient's last stop so
-  // cover and footer read as one object. Dark-card shadow spec.
+  // Card-style-aware card ("Workout card style", trainer Account → Appearance): white
+  // base + light lift shadow; the *Dark overrides flip the frame/footer to
+  // DARK_CARD_FOOTER for the 'light' style (white cover + dark footer).
   card: {
-    borderRadius: 14, backgroundColor: DARK_CARD_FOOTER,
-    shadowColor: '#000', shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.22, shadowRadius: 10, elevation: 6,
+    borderRadius: 14, backgroundColor: '#fff',
+    shadowColor: '#000', shadowOffset: { width: 0, height: 5 },
+    shadowOpacity: 0.08, shadowRadius: 12, elevation: 4,
   },
-  cardInner: { borderRadius: 14, overflow: 'hidden', backgroundColor: DARK_CARD_FOOTER },
+  cardDarkBg: { backgroundColor: DARK_CARD_FOOTER },
+  cardInner: { borderRadius: 14, overflow: 'hidden', backgroundColor: '#fff' },
   footer: { paddingHorizontal: 12, paddingVertical: 6, backgroundColor: 'transparent' },
-  footerSub: { fontSize: 11, color: 'rgba(255,255,255,0.6)' },
+  footerSub: { fontSize: 11, color: '#999' },
+  subOnDark: { color: 'rgba(255,255,255,0.6)' },
   copySpinner: { position: 'absolute', top: 8, right: 10 },
   cardDisabled: { opacity: 0.5 },
-  name: { fontSize: 15, fontWeight: '700', color: '#fff' },
+  name: { fontSize: 15, fontWeight: '700', color: '#1a1a1a' },
+  textOnDark: { color: '#fff' },
   sub: { fontSize: 10, color: 'rgba(255,255,255,0.65)' },
 });

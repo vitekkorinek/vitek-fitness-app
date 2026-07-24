@@ -25,6 +25,15 @@ const BodyView = BodyHighlighter as unknown as React.ComponentType<any>;
  *                   hue tips the figure from "embossed material" toward "anatomical
  *                   picture", and at whisper level the hue can't be read as category
  *                   info anyway. Don't reintroduce.
+ * variant='ink'   → the light-cover twin of 'brand' (the "Workout card style"
+ *                   setting's 'light' pick — see useCardVariant in lib/cardVariant.ts,
+ *                   set in client Me → Appearance / trainer Account → Appearance,
+ *                   app-wide both sides since July 24): NO wash (the card
+ *                   supplies a white ground), silhouette as a quiet dark-GREEN-ink ghost
+ *                   (HEADER green mixed into white — same explicit per-part hex-fill
+ *                   mechanism and per-category paperCrop framing as 'brand', just
+ *                   mirrored for a light ground). Slightly quieter mix levels than
+ *                   brand's, because dark marks on white read stronger than white on dark.
  * variant='color' → bright same-hue gradient (the two Do Mode hero banners)
  * variant='soft'  → muted / earthier same-hue gradient (tiny legacy thumbnails)
  * variant='muted' → darker, calmer version (unused for now, kept for the Do Mode header)
@@ -173,14 +182,20 @@ export default function CategoryCover({
   style,
 }: {
   category?: string | null;
-  variant?: 'color' | 'soft' | 'muted' | 'brand';
+  variant?: 'color' | 'soft' | 'muted' | 'brand' | 'ink';
   watermarkSize?: number; // accepted for back-compat; sizing is now measured from the box
   style?: ViewStyle;
 }) {
   const [box, setBox] = useState({ w: 0, h: 0 });
   const cfg = resolve(category);
   const isBrand = variant === 'brand';
+  const isInk = variant === 'ink';
+  // Card variants (brand + ink) share the explicit-fill + paperCrop machinery; they only
+  // differ in which ground the figure is mixed into.
+  const isCard = isBrand || isInk;
   const BRAND_MID = '#1a3830';
+  const INK_BASE = '#ffffff';
+  const INK = '36,78,67'; // HEADER green as ink — ties the light figure to the brand story
   const grad = cfg
     ? (variant === 'muted' ? cfg.muted : variant === 'soft' ? cfg.soft : cfg.grad)
     : (['#2a5448', '#1f3f35', '#1a3832'] as [string, string, string]);
@@ -190,10 +205,14 @@ export default function CategoryCover({
   // category-tint experiment is gone (see the variant note up top): monochrome
   // value-steps read as embossed material, matching the home tiles; color read as an
   // anatomical picture. The figure should be found, not noticed.
-  const bodyFill = isBrand
+  const bodyFill = isInk
+    ? mixHex(INK_BASE, INK, 0.07)
+    : isBrand
     ? mixHex(BRAND_MID, '255,255,255', 0.09)
     : variant === 'muted' ? 'rgba(255,255,255,0.055)' : 'rgba(255,255,255,0.10)';
-  const hl: [string, string] = isBrand
+  const hl: [string, string] = isInk
+    ? [mixHex(INK_BASE, INK, 0.16), mixHex(INK_BASE, INK, 0.28)]
+    : isBrand
     ? [mixHex(BRAND_MID, '255,255,255', 0.20), mixHex(BRAND_MID, '255,255,255', 0.33)]
     : variant === 'muted'
       ? ['rgba(255,255,255,0.11)', 'rgba(255,255,255,0.19)']
@@ -210,11 +229,11 @@ export default function CategoryCover({
   let bodyNode: React.ReactNode = null;
   if (cfg?.body && box.h > 0) {
     const b = cfg.body;
-    // brand: explicit fill for EVERY part (see ALL_SLUGS) — lit muscles keep their
+    // brand/ink: explicit fill for EVERY part (see ALL_SLUGS) — lit muscles keep their
     // intensity colour, everything else gets the quiet body tint.
     const litFill = new Map(b.slugs.map(sl => [sl.slug, hl[Math.min(sl.intensity, 2) - 1]]));
     const brandData = ALL_SLUGS.map(slug => ({ slug, styles: { fill: litFill.get(slug) ?? bodyFill } }));
-    const crop = isBrand ? cfg.paperCrop : undefined;
+    const crop = isCard ? cfg.paperCrop : undefined;
     const scale = (box.h * (crop?.zoom ?? b.zoom ?? 2.3)) / 400;
     const bodyH = 400 * scale;
     const bodyW = 200 * scale;
@@ -226,15 +245,18 @@ export default function CategoryCover({
             untouched muscles fall back to its `defaultFill` ("#3f3f3f", a hard charcoal).
             `background` has always been silently ignored, which is why the figure renders
             near-black. Harmless as a shadow on the dark gradient variants, so they keep
-            passing it unchanged; `brand` passes explicit per-part fills (top of the lib's
-            fill-resolution chain) so nothing can fall back to charcoal. */}
+            passing it unchanged; `brand`/`ink` pass explicit per-part fills (top of the
+            lib's fill-resolution chain) so nothing can fall back to charcoal. */}
         <BodyView
-          data={isBrand ? brandData : b.slugs}
+          data={isCard ? brandData : b.slugs}
           side={b.side}
           scale={scale}
           colors={hl}
           background={bodyFill}
-          {...(isBrand ? { defaultFill: bodyFill, border: mixHex(BRAND_MID, '255,255,255', 0.15) } : null)}
+          {...(isCard ? {
+            defaultFill: bodyFill,
+            border: isInk ? mixHex(INK_BASE, INK, 0.12) : mixHex(BRAND_MID, '255,255,255', 0.15),
+          } : null)}
         />
       </View>
     );
@@ -242,8 +264,9 @@ export default function CategoryCover({
 
   return (
     <View style={[StyleSheet.absoluteFill, { overflow: 'hidden' }, style]} pointerEvents="none" onLayout={onLayout}>
-      {/* brand draws NO wash — the card supplies the dark ground under this overlay. */}
-      {!isBrand && (
+      {/* brand/ink draw NO wash — the card supplies the ground under this overlay
+          (dark gradient for brand, white for ink). */}
+      {!isCard && (
         <LinearGradient
           colors={grad}
           start={{ x: 0.35, y: 0 }}

@@ -20,10 +20,9 @@ import { BottomSheet } from '@/components/BottomSheet';
 import { useHeaderHeight } from '@/components/LightHeader';
 import { useTabBarHeight } from '@/components/FloatingTabBar';
 import { SessionDetailsSheet } from '@/components/SessionDetailsSheet';
-import { RoutineDetailsSheet } from '@/components/RoutineDetailsSheet';
-import type { RoutineWorkoutPick } from '@/components/RoutineDetailsSheet';
 import CategoryCover, { categoryHasCover, WORKOUT_COVER_PHOTOS_ENABLED } from '@/components/CategoryCover';
-import WorkoutPaperCover, { DARK_CARD_FOOTER, DARK_CARD_GRADIENT } from '@/components/WorkoutPaperCover';
+import WorkoutPaperCover, { DARK_CARD_FOOTER } from '@/components/WorkoutPaperCover';
+import { useCardVariant } from '@/lib/cardVariant';
 import { fetchExerciseNames } from '@/lib/exerciseNames';
 import { CATEGORY_COLORS } from '@/lib/workoutCategories';
 import type { WorkoutCategory } from '@/lib/workoutCategories';
@@ -38,18 +37,25 @@ const HEADER = '#244e43';
 const TEXT   = '#1a1a1a';
 const MUTED  = '#999';
 
-// Dark card-frame styles (LOCKED July 2026 — the brand-dark cards won the device trial),
-// appended after the base frame styles. The frame + footer go DARK_CARD_FOOTER — the last
-// stop of the cover gradient — so the whole card reads as ONE home-tile-register object.
-// Shadow follows the app's dark-card spec (dark grounds absorb the white-card shadow).
+// Dark-FOOTER overrides for the card-style setting's 'light' pick (a white cover needs
+// the dark footer, painted DARK_CARD_FOOTER — the cover gradient's last stop). Appended
+// after the white base frame styles only when the variant is 'light'; the 'dark' style
+// keeps the white base footer under its dark cover. Every card keeps the base light
+// lift shadow in both styles (the old 0.22 all-dark spec has no users here any more).
 const darkCardStyles = StyleSheet.create({
-  outer:      { backgroundColor: DARK_CARD_FOOTER, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.22, shadowRadius: 10, elevation: 6 },
-  inner:      { backgroundColor: DARK_CARD_FOOTER },
-  footerBg:   { backgroundColor: 'transparent' },
-  textOnDark: { color: '#fff' },
-  subOnDark:  { color: 'rgba(255,255,255,0.55)' },
+  outerBg:     { backgroundColor: DARK_CARD_FOOTER },
+  inner:       { backgroundColor: DARK_CARD_FOOTER },
+  footerBg:    { backgroundColor: 'transparent' },
+  textOnDark:  { color: '#fff' },
+  subOnDark:   { color: 'rgba(255,255,255,0.55)' },
 });
 const DARK_MUTED_ICON = 'rgba(255,255,255,0.65)';
+
+// Workout card style (setting in lib/cardVariant.ts — client Me → Appearance, trainer
+// Account → Appearance): since July 24 EVERY workout cover card follows it, the
+// week-strip session cards included (the locked all-dark "now" hero is gone). The
+// footer is always the OPPOSITE of the cover — 'dark' = dark cover + WHITE footer,
+// 'light' = white cover + DARK footer (the cover flips inside WorkoutPaperCover).
 
 const MONTH_NAMES = [
   'January','February','March','April','May','June',
@@ -206,6 +212,7 @@ type WorkoutCard = {
   category: string | null;
   routineName: string | null;
   lastDoneDate: string | null;
+  doneThisWeek: boolean;
   exerciseNames: string[];
 };
 
@@ -238,9 +245,11 @@ export default function TrainTabScreen() {
   const { width: sw } = useWindowDimensions();
   const headerH = useHeaderHeight();
   const tabBarH = useTabBarHeight();
+  // Gallery-mini footer paint — opposite of the cover: 'dark' style = white footer,
+  // 'light' style = dark footer (see the card-style comment above darkCardStyles).
+  const galleryFooterDark = useCardVariant(s => s.variant) === 'light';
   const [training, setTraining]                 = useState<ClientTrainingData | null>(null);
   const [workoutCards, setWorkoutCards]         = useState<WorkoutCard[]>([]);
-  const [quickLookRoutine, setQuickLookRoutine] = useState<{ id: string; name: string } | null>(null);
   const [loading, setLoading]                   = useState(true);
   const [refreshing, setRefreshing]     = useState(false);
 
@@ -287,25 +296,6 @@ export default function TrainTabScreen() {
     });
     setDetailsVisible(true);
   }, []);
-
-  // Routine overview sheet (lists the routine's workouts)
-  const [routineSheetVisible, setRoutineSheetVisible] = useState(false);
-  const pendingRoutineWorkout = useRef<RoutineWorkoutPick | null>(null);
-  const openRoutineDetails = useCallback((r: { id: string; name: string }) => {
-    setQuickLookRoutine(r);
-    setRoutineSheetVisible(true);
-  }, []);
-  // Tapping a workout inside the routine sheet → close it, then (after it fully
-  // dismisses) open that workout's detail sheet — avoids two stacked native modals.
-  const openRoutineWorkout = useCallback((w: RoutineWorkoutPick) => {
-    pendingRoutineWorkout.current = w;
-    setRoutineSheetVisible(false);
-  }, []);
-  const onRoutineSheetClosed = useCallback(() => {
-    const w = pendingRoutineWorkout.current;
-    pendingRoutineWorkout.current = null;
-    if (w) openWorkoutDetails(w);
-  }, [openWorkoutDetails]);
 
   // Session ⋯ menu (Move training / Delete) state
   const [sessMenu, setSessMenu]                 = useState<WeekSession | null>(null);
@@ -389,9 +379,20 @@ export default function TrainTabScreen() {
         .order('date', { ascending: false }),
     ]);
 
+    // Current REAL week bounds for the up-next split — always today's week, never the
+    // viewed strip week (the gallery is deliberately week-strip-independent).
+    const now = new Date();
+    const nowDow = now.getDay();
+    const mon = new Date(now.getFullYear(), now.getMonth(), now.getDate() + (nowDow === 0 ? -6 : 1 - nowDow));
+    const weekStart = localDateStr(mon);
+    const weekEnd = localDateStr(new Date(mon.getFullYear(), mon.getMonth(), mon.getDate() + 6));
+
     const lastDone = new Map<string, string>();
+    const doneThisWeek = new Set<string>();
     for (const s of (doneSess ?? []) as any[]) {
-      if (s.workout_id && !lastDone.has(s.workout_id)) lastDone.set(s.workout_id, s.date);
+      if (!s.workout_id) continue;
+      if (!lastDone.has(s.workout_id)) lastDone.set(s.workout_id, s.date);
+      if (s.date >= weekStart && s.date <= weekEnd) doneThisWeek.add(s.workout_id);
     }
 
     const visible = ((wData ?? []) as any[])
@@ -406,11 +407,17 @@ export default function TrainTabScreen() {
         category: w.category ?? null,
         routineName: w.routines?.name ?? null,
         lastDoneDate: lastDone.get(w.id) ?? null,
+        doneThisWeek: doneThisWeek.has(w.id),
         exerciseNames: exMap.get(w.id) ?? [],
       }));
 
-    // Most recently done first; never-done fall to the end (kept in created-desc order).
+    // Up-next ordering (July 2026 restructure): workouts NOT yet done this week lead,
+    // this-week ones fall to the back — otherwise the workout just performed showed up
+    // twice in a row (week-strip session card + first gallery mini). Within each group
+    // the old recency order holds: most recently done first, never-done last
+    // (kept in created-desc order).
     cards.sort((a, b) => {
+      if (a.doneThisWeek !== b.doneThisWeek) return a.doneThisWeek ? 1 : -1;
       if (a.lastDoneDate && b.lastDoneDate) return b.lastDoneDate.localeCompare(a.lastDoneDate);
       if (a.lastDoneDate) return -1;
       if (b.lastDoneDate) return 1;
@@ -836,6 +843,28 @@ export default function TrainTabScreen() {
             <SymbolView name="plus" size={18} tintColor="#fff" weight="semibold" />
           </TouchableOpacity>
 
+          {/* ── ROUTINE section — first under the strip (the plan before the parts), and
+                 deliberately NOT a card: a client has at most one active routine, so a
+                 gallery-style card read as a "gallery of one" and stacked a fourth dark
+                 slab onto the tab. The readout sits directly on the background; no active
+                 routine → the whole section disappears (no placeholder). ──────────── */}
+          {activeRoutineRow && (
+            <>
+              <View style={sectionStyles.headerRow}>
+                <View style={sectionStyles.headerLeft}>
+                  <Text style={[sectionStyles.headerLabel, { marginLeft: 0 }, ft(700)]}>Routine</Text>
+                </View>
+                <TouchableOpacity onPress={() => router.push('/(client)/(tabs)/train/all-routines' as any)} hitSlop={8} activeOpacity={0.7}>
+                  <SymbolView name="chevron.right" size={15} tintColor="#999" weight="semibold" />
+                </TouchableOpacity>
+              </View>
+              <RoutineReadout
+                routine={activeRoutineRow}
+                onPress={() => router.push(`/(client)/routine/${activeRoutineRow!.id}` as any)}
+              />
+            </>
+          )}
+
           {/* ── WORKOUTS section ───────────────────────────────────── */}
           <View style={sectionStyles.headerRow}>
             <View style={sectionStyles.headerLeft}>
@@ -849,27 +878,27 @@ export default function TrainTabScreen() {
             {workoutCards.map(c => (
               <TouchableOpacity
                 key={c.id}
-                style={[sectionStyles.wCardOuter, darkCardStyles.outer]}
+                style={[sectionStyles.wCardOuter, galleryFooterDark && darkCardStyles.outerBg]}
                 activeOpacity={0.85}
                 onPress={() => router.push(`/(client)/workout/session-intro?workoutId=${c.id}` as any)}
               >
-                <View style={[sectionStyles.wCard, darkCardStyles.inner]}>
+                <View style={[sectionStyles.wCard, galleryFooterDark && darkCardStyles.inner]}>
                   <WorkoutPaperCover category={c.category} exerciseNames={c.exerciseNames} size="mini" />
                   <View style={sectionStyles.wBody}>
                     {/* Name + ONE sub line, same shape as the full card's footer — the
                         routine used to be its own row, which made cards with a routine a
                         line taller than those without. */}
                     <View style={{ flex: 1 }}>
-                      <Text style={[sectionStyles.wName, darkCardStyles.textOnDark, fd(700)]} numberOfLines={1}>{c.name}</Text>
+                      <Text style={[sectionStyles.wName, galleryFooterDark && darkCardStyles.textOnDark, fd(700)]} numberOfLines={1}>{c.name}</Text>
                       <Text style={[sectionStyles.wStatus, ft(600)]} numberOfLines={1}>
-                        <Text style={{ color: c.lastDoneDate ? ACCENT : 'rgba(255,255,255,0.5)' }}>
+                        <Text style={{ color: c.lastDoneDate ? ACCENT : galleryFooterDark ? 'rgba(255,255,255,0.5)' : '#999' }}>
                           {c.lastDoneDate ? `Done ${formatShortDate(c.lastDoneDate)}` : 'Never done'}
                         </Text>
-                        {!!c.routineName && <Text style={[sectionStyles.wSub, darkCardStyles.subOnDark, ft(400)]}> · {c.routineName}</Text>}
+                        {!!c.routineName && <Text style={[sectionStyles.wSub, galleryFooterDark && darkCardStyles.subOnDark, ft(400)]}> · {c.routineName}</Text>}
                       </Text>
                     </View>
                     <TouchableOpacity style={sectionStyles.wFooterMenuBtn} hitSlop={8} activeOpacity={0.6} onPress={() => openWorkoutDetails(c)}>
-                      <SymbolView name="ellipsis" size={16} tintColor={DARK_MUTED_ICON} />
+                      <SymbolView name="ellipsis" size={16} tintColor={galleryFooterDark ? DARK_MUTED_ICON : '#bbb'} />
                     </TouchableOpacity>
                   </View>
                 </View>
@@ -880,27 +909,6 @@ export default function TrainTabScreen() {
               <Text style={[sectionStyles.seeAllCardText, ft(600)]}>See all {workoutCards.length}</Text>
             </TouchableOpacity>
           </ScrollView>
-
-          {/* ── ROUTINES section ───────────────────────────────────── */}
-          <View style={sectionStyles.headerRow}>
-            <View style={sectionStyles.headerLeft}>
-              <Text style={[sectionStyles.headerLabel, { marginLeft: 0 }, ft(700)]}>Routines</Text>
-            </View>
-            <TouchableOpacity onPress={() => router.push('/(client)/(tabs)/train/all-routines' as any)} hitSlop={8} activeOpacity={0.7}>
-              <SymbolView name="chevron.right" size={15} tintColor="#999" weight="semibold" />
-            </TouchableOpacity>
-          </View>
-          {activeRoutineRow ? (
-            <View style={{ marginHorizontal: 16 }}>
-              <ActiveRoutineCard
-                routine={activeRoutineRow}
-                onPress={() => router.push(`/(client)/routine/${activeRoutineRow!.id}` as any)}
-                onQuickLook={() => openRoutineDetails({ id: activeRoutineRow!.id, name: activeRoutineRow!.name })}
-              />
-            </View>
-          ) : (
-            <Text style={[sectionStyles.noRoutine, ft(400)]}>No active routine</Text>
-          )}
           <View style={{ height: 24 }} />
 
           {/* Add training modal — day-aware. Today = Log (train now). Other day = Plan (schedule). */}
@@ -1246,15 +1254,6 @@ export default function TrainTabScreen() {
         </BottomSheet>
       )}
 
-      <RoutineDetailsSheet
-        visible={routineSheetVisible}
-        onClose={() => setRoutineSheetVisible(false)}
-        onClosed={onRoutineSheetClosed}
-        routineId={quickLookRoutine?.id ?? null}
-        routineName={quickLookRoutine?.name ?? ''}
-        onOpenWorkout={openRoutineWorkout}
-      />
-
       <SessionDetailsSheet
         visible={detailsVisible}
         onClose={() => setDetailsVisible(false)}
@@ -1424,6 +1423,11 @@ function WeeklyGaugeCard({
 }: WeeklyGaugeCardProps) {
   const exceeded = weeklyCompleted > weeklyGoal;
   const [sessionsListOpen, setSessionsListOpen] = useState(false);
+  // Workout card style: since July 24 the week-strip session cards follow the setting
+  // like every other workout card (footer OPPOSITE of the cover) — the locked all-dark
+  // "now" hero is gone; with every card sharing the contrast-footer anatomy, a seamless
+  // dark card read as inconsistency, not emphasis.
+  const footerDark = useCardVariant(s => s.variant) === 'light';
   // Completed sessions only — planned/scheduled never count toward the gauge.
   const completedSessions = weekSessions.filter(s => s.status === 'completed');
   const PAD = 8;
@@ -1440,7 +1444,7 @@ function WeeklyGaugeCard({
       {/* Arc */}
       <View style={{ alignItems: 'center' }}>
         {/* Container extended by 48px so absolute-positioned stats have room below the arc. */}
-        <Pressable style={{ position: 'relative', width: svgW, height: svgH + 48 }}>
+        <View style={{ position: 'relative', width: svgW, height: svgH + 48 }}>
           <Svg width={svgW} height={svgH}>
             {exceeded && (
               <Defs>
@@ -1488,7 +1492,7 @@ function WeeklyGaugeCard({
               </>
             )}
           </View>
-        </Pressable>
+        </View>
       </View>
 
       {/* Pips AND the motivational message removed (July 2026 clean pass) — the arc fill +
@@ -1564,8 +1568,8 @@ function WeeklyGaugeCard({
           {daySessions.map((session) => (
             session.status === 'scheduled' ? (
               /* Planned (scheduled) session — not performed. The client logs it for real on the day. */
-              <View key={session.id} style={[gcStyles.sessCardOuter, darkCardStyles.outer]}>
-                <View style={[gcStyles.sessCard, darkCardStyles.inner]}>
+              <View key={session.id} style={[gcStyles.sessCardOuter, footerDark && darkCardStyles.outerBg]}>
+                <View style={[gcStyles.sessCard, footerDark && darkCardStyles.inner]}>
                   {/* Planned/future days are view-only — tapping the cover opens the pre-session
                       screen with just "View session" (they can't start a future day). */}
                   <TouchableOpacity
@@ -1578,12 +1582,12 @@ function WeeklyGaugeCard({
                       size="strip"
                     />
                   </TouchableOpacity>
-                  <View style={[gcStyles.hlWrap, darkCardStyles.footerBg]}>
+                  <View style={[gcStyles.hlWrap, footerDark && darkCardStyles.footerBg]}>
                     <View style={gcStyles.hlRow}>
-                      <Text style={[gcStyles.sessFooterName, darkCardStyles.textOnDark, fd(700)]} numberOfLines={1}>{session.workoutName ?? 'Session'}</Text>
+                      <Text style={[gcStyles.sessFooterName, footerDark && darkCardStyles.textOnDark, fd(700)]} numberOfLines={1}>{session.workoutName ?? 'Session'}</Text>
                       <View style={gcStyles.plannedBadge}><Text style={[gcStyles.plannedBadgeText, ft(700)]}>PLANNED</Text></View>
                       <TouchableOpacity onPress={() => onShowSessionMenu(session)} hitSlop={8} activeOpacity={0.5}>
-                        <SymbolView name="ellipsis" size={15} tintColor={DARK_MUTED_ICON} />
+                        <SymbolView name="ellipsis" size={15} tintColor={footerDark ? DARK_MUTED_ICON : '#bbb'} />
                       </TouchableOpacity>
                     </View>
                   </View>
@@ -1593,8 +1597,8 @@ function WeeklyGaugeCard({
               (() => {
                 const sessionDetail = sessionDetails[session.id] ?? null;
                 return (
-              <View key={session.id} style={[gcStyles.sessCardOuter, darkCardStyles.outer]}>
-              <View style={[gcStyles.sessCard, darkCardStyles.inner]}>
+              <View key={session.id} style={[gcStyles.sessCardOuter, footerDark && darkCardStyles.outerBg]}>
+              <View style={[gcStyles.sessCard, footerDark && darkCardStyles.inner]}>
                 <TouchableOpacity
                   activeOpacity={0.88}
                   onPress={() => session.workout_id && onOpenSession(session.workout_id, { date: selectedDate })}
@@ -1608,19 +1612,19 @@ function WeeklyGaugeCard({
                   </View>
                   {/* One row: name, then the two stats as bare icon+value — the "Duration"
                       and "Exercises" labels were redundant next to their own icons. */}
-                  <View style={[gcStyles.hlWrap, darkCardStyles.footerBg]}>
+                  <View style={[gcStyles.hlWrap, footerDark && darkCardStyles.footerBg]}>
                     <View style={gcStyles.hlRow}>
-                      <Text style={[gcStyles.sessFooterName, darkCardStyles.textOnDark, fd(700)]} numberOfLines={1}>{session.workoutName ?? 'Session'}</Text>
+                      <Text style={[gcStyles.sessFooterName, footerDark && darkCardStyles.textOnDark, fd(700)]} numberOfLines={1}>{session.workoutName ?? 'Session'}</Text>
                       <View style={gcStyles.hlChip}>
                         <SymbolView name="timer" size={13} tintColor={ACCENT} />
-                        <Text style={[gcStyles.hlVal, darkCardStyles.textOnDark, ft(700)]}>{formatDuration(session.duration_seconds)}</Text>
+                        <Text style={[gcStyles.hlVal, footerDark && darkCardStyles.textOnDark, ft(700)]}>{formatDuration(session.duration_seconds)}</Text>
                       </View>
                       <View style={gcStyles.hlChip}>
                         <SymbolView name="checkmark.circle.fill" size={13} tintColor={ACCENT} />
-                        <Text style={[gcStyles.hlVal, darkCardStyles.textOnDark, ft(700)]}>{sessionDetail ? `${sessionDetail.exercisesDone} / ${sessionDetail.exercisesTotal}` : '—'}</Text>
+                        <Text style={[gcStyles.hlVal, footerDark && darkCardStyles.textOnDark, ft(700)]}>{sessionDetail ? `${sessionDetail.exercisesDone} / ${sessionDetail.exercisesTotal}` : '—'}</Text>
                       </View>
                       <TouchableOpacity onPress={() => onShowSessionMenu(session)} hitSlop={8} activeOpacity={0.5}>
-                        <SymbolView name="ellipsis" size={15} tintColor={DARK_MUTED_ICON} />
+                        <SymbolView name="ellipsis" size={15} tintColor={footerDark ? DARK_MUTED_ICON : '#bbb'} />
                       </TouchableOpacity>
                     </View>
                   </View>
@@ -1715,8 +1719,9 @@ const gcStyles = StyleSheet.create({
   // Depth pass (July 2026): Training-tab cards run a LIFT shadow instead of the app-wide
   // definition shadow (y2/0.06/r8) — on the near-white bg the standard spec reads as
   // flat. Device round 1 said y6/0.10/r16 greyed the whole screen and pooled darker in
-  // the gaps between minis, so it was trimmed to y5/0.08/r12. In 'dark' card mode
-  // darkCardStyles.outer overrides this entirely (dark cards separate by value).
+  // the gaps between minis, so it was trimmed to y5/0.08/r12. This shadow now applies
+  // in BOTH card styles (July 24 — the 'light' style only swaps the bg via
+  // darkCardStyles.outerBg; the old all-dark 0.22 spec is gone).
   sessCardOuter:  { marginHorizontal: 16, marginTop: 16, borderRadius: 12, backgroundColor: '#fff', shadowColor: '#000', shadowOffset: { width: 0, height: 5 }, shadowOpacity: 0.08, shadowRadius: 12, elevation: 4 },
   sessCard:       { borderRadius: 12, overflow: 'hidden', backgroundColor: '#fff' },
   checkBadge:     { position: 'absolute', top: 8, right: 8, width: 18, height: 18, borderRadius: 9, backgroundColor: '#24ac88', alignItems: 'center', justifyContent: 'center' },
@@ -1790,18 +1795,19 @@ const sectionStyles = StyleSheet.create({
   seeAllCard:     { width: 80, height: 127, borderRadius: 14, backgroundColor: 'rgba(36,172,136,0.08)', borderWidth: 1.5, borderStyle: 'dashed', borderColor: 'rgba(36,172,136,0.3)', alignItems: 'center', justifyContent: 'center', gap: 6 },
   seeAllArrow:    { fontSize: 18, color: '#24ac88' },
   seeAllCardText: { fontSize: 11, color: '#24ac88', fontWeight: '600', textAlign: 'center' },
-
-  noRoutine:      { fontSize: 13, color: '#999', textAlign: 'center', paddingVertical: 12 },
 });
 
-// ─── ActiveRoutineCard ─────────────────────────────────────────────────────────
-// The ONE active routine, full workout-card anatomy (Vitek's own sketch): the
-// cover's content is the routine's workouts as free-floating category-colored
-// pills — the "exercise list" analog — with the countdown ring on the right where
-// a workout cover keeps its silhouette; the footer carries name + a
-// "Done – X · Next – Y" status line + ⋯. Status lives in the footer ON PURPOSE so
-// the pills stay clean (no labels under them). The big white RoutineCard still
-// lives on the all-routines screens, where a real list justifies cards.
+// ─── RoutineReadout ───────────────────────────────────────────────────────────
+// The ONE active routine as an UNBOXED progress readout directly on the tab
+// background — deliberately not a card (July 2026 restructure; the v4
+// ActiveRoutineCard it replaces lives at `2dc5f6c`). A client has at most one
+// active routine, so a card here was a "gallery of one" and the tab's fourth
+// dark slab; the routine is STATE, not a library item. Kept from v4: the accent
+// "Done – X · Next – Y" status line and the cycle ring (now the light variant).
+// New: the routine-detail PROGRAM ORDER strip row as the map — one category-
+// colored strip per workout, full opacity when done/next in this cycle, 0.4
+// pending (exact routine-detail semantics). Tap anywhere → routine detail; the
+// ⋯ quick-look sheet was dropped with the card (detail is one tap away).
 
 function ProgressRing({ size, current, total, visible, onDark }: { size: number; current: number; total: number; visible: boolean; onDark?: boolean }) {
   const strokeWidth = 3;
@@ -1835,7 +1841,7 @@ function ProgressRing({ size, current, total, visible, onDark }: { size: number;
   );
 }
 
-function ActiveRoutineCard({ routine, onPress, onQuickLook }: { routine: RoutineRow; onPress: () => void; onQuickLook?: () => void }) {
+function RoutineReadout({ routine, onPress }: { routine: RoutineRow; onPress: () => void }) {
   const total = routine.routineTotal;
   const ringCurrent = routine.cycleJustCompleted ? total : routine.cycleDoneCount;
   const sorted = [...routine.workouts].sort((a, b) => a.orderIndex - b.orderIndex);
@@ -1847,158 +1853,42 @@ function ActiveRoutineCard({ routine, onPress, onQuickLook }: { routine: Routine
         .filter(Boolean).join(' · ');
 
   return (
-    <TouchableOpacity onPress={onPress} activeOpacity={0.88} style={[arStyles.outer, darkCardStyles.outer]}>
-      <View style={[arStyles.inner, darkCardStyles.inner]}>
-        <View style={arStyles.cover}>
-          <LinearGradient colors={DARK_CARD_GRADIENT} start={{ x: 0.5, y: 0 }} end={{ x: 0.5, y: 1 }} style={StyleSheet.absoluteFill} />
-          <View style={arStyles.pillsWrap}>
-            {sorted.map(w => {
-              // Uncategorised workouts fall back to the brand mint pair — a pill
-              // must never render as plain white-alpha on the dark ground.
-              const colors = w.category ? CATEGORY_COLORS[w.category as WorkoutCategory] : null;
-              return (
-                <View key={w.id} style={[arStyles.pill, { backgroundColor: colors?.pillBg ?? '#E1F5EE' }]}>
-                  <Text style={[arStyles.pillText, { color: colors?.pillText ?? ACCENT }, ft(700)]} numberOfLines={1}>{w.name}</Text>
-                </View>
-              );
-            })}
-          </View>
-          <View style={arStyles.ringWrap}>
-            <ProgressRing size={56} current={ringCurrent} total={total || 1} visible={total > 0} onDark />
-          </View>
+    <TouchableOpacity style={roStyles.wrap} onPress={onPress} activeOpacity={0.7}>
+      <View style={roStyles.topRow}>
+        <View style={roStyles.topLeft}>
+          <Text style={[roStyles.name, fd(700)]} numberOfLines={1}>{routine.name}</Text>
+          <Text style={[roStyles.status, ft(600)]} numberOfLines={1}>{statusLine}</Text>
         </View>
-        <View style={[arStyles.footer, darkCardStyles.footerBg]}>
-          <View style={arStyles.footerLeft}>
-            <Text style={[arStyles.name, darkCardStyles.textOnDark, fd(700)]} numberOfLines={1}>{routine.name}</Text>
-            <Text style={[arStyles.sub, { color: ACCENT }, ft(600)]} numberOfLines={1}>{statusLine}</Text>
-          </View>
-          {onQuickLook && (
-            <TouchableOpacity style={arStyles.menuBtn} onPress={onQuickLook} hitSlop={8} activeOpacity={0.6}>
-              <SymbolView name="ellipsis" size={16} tintColor={DARK_MUTED_ICON} />
-            </TouchableOpacity>
-          )}
-        </View>
+        <ProgressRing size={48} current={ringCurrent} total={total || 1} visible={total > 0} />
       </View>
+      {total > 0 && (
+        <View style={roStyles.stripsRow}>
+          {sorted.map(w => {
+            const lit = routine.cycleJustCompleted || w.isDoneInCycle || w.id === routine.nextUpWorkoutId;
+            return (
+              <View
+                key={w.id}
+                style={[roStyles.strip, {
+                  backgroundColor: (w.category ? CATEGORY_COLORS[w.category as WorkoutCategory]?.border : undefined) ?? '#888',
+                  opacity: lit ? 1 : 0.4,
+                }]}
+              />
+            );
+          })}
+        </View>
+      )}
     </TouchableOpacity>
   );
 }
 
-const arStyles = StyleSheet.create({
-  outer: { borderRadius: 12 },
-  inner: { borderRadius: 12, overflow: 'hidden' },
-  // Shorter than the strip covers on purpose — one pill row + the ring is all it
-  // holds, and the 84px family height read as empty bulk on device.
-  cover: { height: 72, paddingTop: 10, paddingHorizontal: 12 },
-  // Right margin clears the ring the way exercise lists clear the silhouette.
-  pillsWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginRight: 76 },
-  pill: { borderRadius: 100, paddingHorizontal: 9, paddingVertical: 4, maxWidth: '55%' },
-  pillText: { fontSize: 10, fontWeight: '700' },
-  ringWrap: { position: 'absolute', right: 14, top: (72 - 56) / 2 },
-  footer: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 6, gap: 8 },
-  footerLeft: { flex: 1 },
-  name: { fontSize: 15, fontWeight: '700' },
-  sub: { fontSize: 11 },
-  menuBtn: { padding: 4 },
-});
-
-// ─── RoutineQuickLookModal (copied verbatim from the My Routines screen) ───────
-
-type RoutineWorkoutDetail = { id: string; name: string; exerciseCount: number };
-
-function RoutineQuickLookModal({
-  routineId,
-  routineName,
-  onClose,
-}: {
-  routineId: string | null;
-  routineName: string;
-  onClose: () => void;
-}) {
-  const [workoutDetails, setWorkoutDetails] = useState<RoutineWorkoutDetail[]>([]);
-  const [loading, setLoading] = useState(false);
-
-  useEffect(() => {
-    if (!routineId) { setWorkoutDetails([]); return; }
-    setLoading(true);
-    supabase
-      .from('workouts')
-      .select('id, name, order_index')
-      .eq('routine_id', routineId)
-      .order('order_index')
-      .then(async ({ data: wData }) => {
-        const wRows = (wData ?? []) as any[];
-        const wIds = wRows.map(w => w.id);
-        const { data: weData } = wIds.length
-          ? await supabase
-              .from('workout_exercises')
-              .select('workout_id')
-              .in('workout_id', wIds)
-          : { data: [] };
-        const countMap = new Map<string, number>();
-        ((weData ?? []) as any[]).forEach(we => {
-          countMap.set(we.workout_id, (countMap.get(we.workout_id) ?? 0) + 1);
-        });
-        setWorkoutDetails(wRows.map(w => ({ id: w.id, name: w.name, exerciseCount: countMap.get(w.id) ?? 0 })));
-        setLoading(false);
-      });
-  }, [routineId]);
-
-  if (!routineId) return null;
-
-  return (
-    <BottomSheet onClose={onClose}>
-      {close => (
-        <View style={qlStyles.sheetBody}>
-          <Text style={qlStyles.title} numberOfLines={2}>{routineName}</Text>
-          <View style={qlStyles.divider} />
-          {loading ? (
-            <ActivityIndicator color={ACCENT} style={{ paddingVertical: 24 }} />
-          ) : workoutDetails.length === 0 ? (
-            <Text style={qlStyles.empty}>No workouts in this routine</Text>
-          ) : (
-            <ScrollView style={qlStyles.scroll} showsVerticalScrollIndicator={false}>
-              {workoutDetails.map((w, idx) => (
-                <View key={w.id} style={[qlStyles.row, idx < workoutDetails.length - 1 && qlStyles.rowBorder]}>
-                  <Text style={qlStyles.workoutName}>{w.name}</Text>
-                  <Text style={qlStyles.exerciseCount}>{w.exerciseCount} exercise{w.exerciseCount !== 1 ? 's' : ''}</Text>
-                </View>
-              ))}
-            </ScrollView>
-          )}
-          <TouchableOpacity style={qlStyles.doneBtn} onPress={() => close()} activeOpacity={0.8}>
-            <Text style={qlStyles.doneBtnText}>Done</Text>
-          </TouchableOpacity>
-        </View>
-      )}
-    </BottomSheet>
-  );
-}
-
-const qlStyles = StyleSheet.create({
-  sheetBody: { paddingHorizontal: 20, paddingBottom: 8, maxHeight: '75%' },
-  overlay: {
-    flex: 1, backgroundColor: 'rgba(0,0,0,0.45)',
-    alignItems: 'center', justifyContent: 'center',
-    paddingHorizontal: 24,
-  },
-  card: {
-    width: '100%', backgroundColor: '#fff', borderRadius: 16,
-    paddingHorizontal: 20, paddingTop: 20, paddingBottom: 20,
-    maxHeight: '75%',
-  },
-  title: { fontSize: 17, fontWeight: '700', color: TEXT, textAlign: 'center' },
-  divider: { height: StyleSheet.hairlineWidth, backgroundColor: '#e8e8e4', marginVertical: 14 },
-  scroll: {},
-  row: { paddingVertical: 10 },
-  rowBorder: { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#e8e8e4' },
-  workoutName: { fontSize: 15, fontWeight: '600', color: HEADER },
-  exerciseCount: { fontSize: 12, color: MUTED, marginTop: 2 },
-  empty: { color: MUTED, textAlign: 'center', paddingVertical: 24, fontSize: 14 },
-  doneBtn: {
-    marginTop: 18, backgroundColor: ACCENT, borderRadius: 100,
-    paddingVertical: 12, alignItems: 'center',
-  },
-  doneBtnText: { color: '#fff', fontWeight: '700', fontSize: 15 },
+const roStyles = StyleSheet.create({
+  wrap:      { marginHorizontal: 16 },
+  topRow:    { flexDirection: 'row', alignItems: 'center', gap: 14 },
+  topLeft:   { flex: 1 },
+  name:      { fontSize: 16, fontWeight: '700', color: TEXT },
+  status:    { fontSize: 12, color: ACCENT, marginTop: 3 },
+  stripsRow: { flexDirection: 'row', gap: 5, marginTop: 12 },
+  strip:     { flex: 1, height: 4, borderRadius: 2 },
 });
 
 // ─── Styles ───────────────────────────────────────────────────────────────────

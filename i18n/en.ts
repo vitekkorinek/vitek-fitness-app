@@ -497,6 +497,11 @@ const en = {
     country: 'Country',
     notSet: 'Not set',
     profileUpdated: 'Profile updated',
+    appearance: 'Appearance',
+    workoutCardStyle: 'Workout card style',
+    workoutCardStyleSub: 'How your workout cards look',
+    cardStyleDark: 'Dark',
+    cardStyleLight: 'Light',
     changePassword: 'Change password',
     changePasswordTitle: 'Change password',
     passwordUpdated: 'Password updated',
@@ -677,6 +682,11 @@ const en = {
     bannerPhotoSection: 'CLIENT HOME BANNER',
     bannerDragHint: 'Drag to adjust vertical position',
     bannerPreviewLabel: 'Preview',
+    appearance: 'TRAINER CARDS APPEARANCE',
+    workoutCardStyle: 'Workout card style',
+    workoutCardStyleSub: 'How your workout cards look',
+    cardStyleDark: 'Dark',
+    cardStyleLight: 'Light',
   },
 
   // Common

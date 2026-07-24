@@ -23,6 +23,10 @@ import { supabase } from '@/lib/supabase';
 import { VFIcon } from '@/components/VFIcon';
 import { TrainerLogoButton } from '@/components/TrainerLogoButton';
 import { useTabBarHeight } from '@/components/FloatingTabBar';
+import { SymbolView } from 'expo-symbols';
+import { BottomSheet } from '@/components/BottomSheet';
+import { useCardVariant, type CoverCardVariant } from '@/lib/cardVariant';
+import { DARK_CARD_FOOTER, DARK_CARD_GRADIENT } from '@/components/WorkoutPaperCover';
 import { nameInitial } from '@/lib/utils';
 import t from '@/i18n/en';
 
@@ -89,6 +93,12 @@ export default function AccountScreen() {
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [fieldModal, setFieldModal] = useState<FieldModal | null>(null);
   const [fieldDraft, setFieldDraft] = useState('');
+  // Workout card style (lib/cardVariant.ts) — device-local, applies instantly; shown in
+  // the TRAINER CARDS APPEARANCE section below (after the client-home-banner section)
+  // and deliberately OUTSIDE the Save flow (it's not part of trainer_settings).
+  const [cardStyleOpen, setCardStyleOpen] = useState(false);
+  const cardVariant    = useCardVariant(s => s.variant);
+  const setCardVariant = useCardVariant(s => s.setVariant);
 
   // Banner photo state — saved to users table, not trainer_settings
   const [bannerPhotoUrl, setBannerPhotoUrl] = useState('');
@@ -463,6 +473,17 @@ export default function AccountScreen() {
             ) : null}
           </View>
 
+          {/* Trainer cards appearance — device-local, applies instantly; deliberately
+              outside the Save flow (it's not part of trainer_settings). */}
+          <Text style={styles.sectionLabel}>{t.account.appearance}</Text>
+          <View style={styles.card}>
+            <BizRow
+              label={t.account.workoutCardStyle}
+              value={cardVariant === 'dark' ? t.account.cardStyleDark : t.account.cardStyleLight}
+              onPress={() => setCardStyleOpen(true)}
+            />
+          </View>
+
           {/* Business Details */}
           <Text style={styles.sectionLabel}>{t.account.businessDetails}</Text>
           <View style={styles.card}>
@@ -661,6 +682,44 @@ export default function AccountScreen() {
             </InputAccessoryView>
           )}
         </Modal>
+      )}
+
+      {/* ── Workout card style sheet (mirrors the client Me tab picker) ── */}
+      {cardStyleOpen && (
+        <BottomSheet onClose={() => setCardStyleOpen(false)}>
+          {close => (
+            <View style={{ paddingHorizontal: 20, paddingBottom: 4, gap: 12, alignItems: 'stretch' }}>
+              <Text style={[modalStyles.title, { textAlign: 'center' }]}>{t.account.workoutCardStyle}</Text>
+              <Text style={cardStyleSt.sub}>{t.account.workoutCardStyleSub}</Text>
+              {([
+                ['dark', t.account.cardStyleDark],
+                ['light', t.account.cardStyleLight],
+              ] as [CoverCardVariant, string][]).map(([v, label]) => (
+                <TouchableOpacity
+                  key={v}
+                  style={[cardStyleSt.option, cardVariant === v && cardStyleSt.optionActive]}
+                  onPress={() => { setCardVariant(v); close(); }}
+                  activeOpacity={0.85}
+                >
+                  {/* Miniature of the card anatomy — footer is always the OPPOSITE of
+                      the cover: dark cover + white footer, or white cover + dark footer. */}
+                  <View style={cardStyleSt.swatch}>
+                    <View style={[cardStyleSt.swatchCover, v === 'light' && cardStyleSt.swatchCoverLight]}>
+                      <View style={[cardStyleSt.swatchLine, { width: 22 }, v === 'light' && cardStyleSt.swatchLineLight]} />
+                      <View style={[cardStyleSt.swatchLine, { width: 15 }, v === 'light' && cardStyleSt.swatchLineLight]} />
+                    </View>
+                    <View style={[cardStyleSt.swatchFooter, v === 'dark' && cardStyleSt.swatchFooterLight]} />
+                  </View>
+                  <Text style={[cardStyleSt.optionLabel, cardVariant === v && cardStyleSt.optionLabelActive]}>{label}</Text>
+                  {cardVariant === v && <SymbolView name="checkmark" size={15} tintColor="#24ac88" weight="semibold" />}
+                </TouchableOpacity>
+              ))}
+              <TouchableOpacity onPress={() => close()} hitSlop={8} style={{ alignSelf: 'center', paddingTop: 4 }}>
+                <Text style={modalStyles.cancel}>{t.common.cancel}</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+        </BottomSheet>
       )}
 
       {/* Solid light header (rendered last so it overlays the content) */}
@@ -866,6 +925,32 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   signOutText: { fontSize: 16, fontWeight: '600', color: '#e53935' },
+});
+
+// Workout card style picker — option rows with a miniature of the card anatomy
+// (footer strip always the opposite of the cover: dark/white or white/dark).
+// Mirrors cardStyleSt in the client Me tab.
+const cardStyleSt = StyleSheet.create({
+  sub:    { fontSize: 12, color: '#999', textAlign: 'center', marginTop: -6, marginBottom: 2 },
+  option: {
+    flexDirection: 'row', alignItems: 'center', gap: 14,
+    borderRadius: 14, paddingHorizontal: 14, paddingVertical: 11,
+    backgroundColor: '#fff',
+    shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 3, elevation: 1,
+  },
+  optionActive:      { backgroundColor: '#E9F7F2' },
+  optionLabel:       { flex: 1, fontSize: 15, color: '#1a1a1a' },
+  optionLabelActive: { fontWeight: '700', color: '#244e43' },
+  swatch: {
+    width: 48, height: 40, borderRadius: 9, overflow: 'hidden',
+    borderWidth: 1, borderColor: 'rgba(0,0,0,0.10)',
+  },
+  swatchCover:      { flex: 1, backgroundColor: DARK_CARD_GRADIENT[1], padding: 6, gap: 3, justifyContent: 'center' },
+  swatchCoverLight: { backgroundColor: '#fff' },
+  swatchLine:       { height: 3, borderRadius: 2, backgroundColor: 'rgba(255,255,255,0.55)' },
+  swatchLineLight:  { backgroundColor: 'rgba(0,0,0,0.35)' },
+  swatchFooter:      { height: 12, backgroundColor: DARK_CARD_FOOTER },
+  swatchFooterLight: { backgroundColor: '#fff' },
 });
 
 const modalStyles = StyleSheet.create({

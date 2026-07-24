@@ -24,6 +24,8 @@ import { useAuth } from '@/context/AuthContext';
 import { BottomSheet } from '@/components/BottomSheet';
 import { useHeaderHeight } from '@/components/LightHeader';
 import { useTabBarHeight } from '@/components/FloatingTabBar';
+import { useCardVariant, type CoverCardVariant } from '@/lib/cardVariant';
+import { DARK_CARD_FOOTER, DARK_CARD_GRADIENT } from '@/components/WorkoutPaperCover';
 import t from '@/i18n/en';
 import type { SessionPackage, Invoice } from '@/types/database';
 
@@ -117,6 +119,11 @@ export default function MeScreen() {
   // Sign-out confirm modal
   const [signOutOpen, setSignOutOpen] = useState(false);
   const [signingOut, setSigningOut]   = useState(false);
+
+  // Workout card style (client setting — lib/cardVariant.ts, applies instantly app-wide)
+  const cardVariant    = useCardVariant(s => s.variant);
+  const setCardVariant = useCardVariant(s => s.setVariant);
+  const [cardStyleOpen, setCardStyleOpen] = useState(false);
 
   // Sync profile fields when profile loads/refreshes
   useEffect(() => {
@@ -505,6 +512,16 @@ export default function MeScreen() {
           )}
         </View>
 
+        {/* ── Appearance ─────────────────────────────────────────────── */}
+        <SectionHeader title={t.clientMe.appearance} />
+        <View style={styles.card}>
+          <EditableRow
+            label={t.clientMe.workoutCardStyle}
+            value={cardVariant === 'dark' ? t.clientMe.cardStyleDark : t.clientMe.cardStyleLight}
+            onPress={() => setCardStyleOpen(true)}
+          />
+        </View>
+
         {/* ── Account ────────────────────────────────────────────────── */}
         <SectionHeader title={t.clientMe.account} />
         <View style={styles.card}>
@@ -593,6 +610,44 @@ export default function MeScreen() {
                   {t.clientMe.female}
                 </Text>
               </TouchableOpacity>
+              <TouchableOpacity onPress={() => close()} hitSlop={8} style={{ alignSelf: 'center', paddingTop: 4 }}>
+                <Text style={modal.cancel}>{t.common.cancel}</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+        </BottomSheet>
+      )}
+
+      {/* ── Workout card style sheet ─────────────────────────────────── */}
+      {cardStyleOpen && (
+        <BottomSheet onClose={() => setCardStyleOpen(false)}>
+          {close => (
+            <View style={{ paddingHorizontal: 20, paddingBottom: 4, gap: 12, alignItems: 'stretch' }}>
+              <Text style={[modal.title, { textAlign: 'center' }]}>{t.clientMe.workoutCardStyle}</Text>
+              <Text style={cardStyleSt.sub}>{t.clientMe.workoutCardStyleSub}</Text>
+              {([
+                ['dark', t.clientMe.cardStyleDark],
+                ['light', t.clientMe.cardStyleLight],
+              ] as [CoverCardVariant, string][]).map(([v, label]) => (
+                <TouchableOpacity
+                  key={v}
+                  style={[cardStyleSt.option, cardVariant === v && cardStyleSt.optionActive]}
+                  onPress={() => { setCardVariant(v); close(); }}
+                  activeOpacity={0.85}
+                >
+                  {/* Miniature of the card anatomy — footer is always the OPPOSITE of
+                      the cover: dark cover + white footer, or white cover + dark footer. */}
+                  <View style={cardStyleSt.swatch}>
+                    <View style={[cardStyleSt.swatchCover, v === 'light' && cardStyleSt.swatchCoverLight]}>
+                      <View style={[cardStyleSt.swatchLine, { width: 22 }, v === 'light' && cardStyleSt.swatchLineLight]} />
+                      <View style={[cardStyleSt.swatchLine, { width: 15 }, v === 'light' && cardStyleSt.swatchLineLight]} />
+                    </View>
+                    <View style={[cardStyleSt.swatchFooter, v === 'dark' && cardStyleSt.swatchFooterLight]} />
+                  </View>
+                  <Text style={[cardStyleSt.optionLabel, cardVariant === v && cardStyleSt.optionLabelActive]}>{label}</Text>
+                  {cardVariant === v && <SymbolView name="checkmark" size={15} tintColor={ACCENT} weight="semibold" />}
+                </TouchableOpacity>
+              ))}
               <TouchableOpacity onPress={() => close()} hitSlop={8} style={{ alignSelf: 'center', paddingTop: 4 }}>
                 <Text style={modal.cancel}>{t.common.cancel}</Text>
               </TouchableOpacity>
@@ -809,4 +864,29 @@ const modal = StyleSheet.create({
   sexOptionActive: { backgroundColor: ACCENT },
   sexOptionText:  { fontSize: 15, color: TEXT },
   sexOptionTextActive: { color: '#fff', fontWeight: '700' },
+});
+
+// Workout card style picker — option rows with a miniature of the card anatomy
+// (footer strip always the opposite of the cover: dark/white or white/dark).
+const cardStyleSt = StyleSheet.create({
+  sub:    { fontSize: 12, color: MUTED, textAlign: 'center', marginTop: -6, marginBottom: 2 },
+  option: {
+    flexDirection: 'row', alignItems: 'center', gap: 14,
+    borderRadius: 14, paddingHorizontal: 14, paddingVertical: 11,
+    backgroundColor: '#fff',
+    shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 3, elevation: 1,
+  },
+  optionActive:      { backgroundColor: '#E9F7F2' },
+  optionLabel:       { flex: 1, fontSize: 15, color: TEXT },
+  optionLabelActive: { fontWeight: '700', color: HEADER },
+  swatch: {
+    width: 48, height: 40, borderRadius: 9, overflow: 'hidden',
+    borderWidth: 1, borderColor: 'rgba(0,0,0,0.10)',
+  },
+  swatchCover:      { flex: 1, backgroundColor: DARK_CARD_GRADIENT[1], padding: 6, gap: 3, justifyContent: 'center' },
+  swatchCoverLight: { backgroundColor: '#fff' },
+  swatchLine:       { height: 3, borderRadius: 2, backgroundColor: 'rgba(255,255,255,0.55)' },
+  swatchLineLight:  { backgroundColor: 'rgba(0,0,0,0.35)' },
+  swatchFooter:      { height: 12, backgroundColor: DARK_CARD_FOOTER },
+  swatchFooterLight: { backgroundColor: '#fff' },
 });
