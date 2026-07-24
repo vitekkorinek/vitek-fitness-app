@@ -9,11 +9,12 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { SymbolView } from 'expo-symbols';
-import Svg, { Circle as SvgCircle, Rect as SvgRect, Line as SvgLine, Path as SvgPath, Defs, LinearGradient as SvgLinearGradient, Stop } from 'react-native-svg';
+import Svg, { Rect as SvgRect, Line as SvgLine, Path as SvgPath, Defs, LinearGradient as SvgLinearGradient, Stop } from 'react-native-svg';
 import { useAuth } from '@/context/AuthContext';
 import { supabase } from '@/lib/supabase';
 import { useSessionStore } from '@/store/sessionStore';
 import { fetchClientTraining } from '@/lib/clientTraining';
+import { fetchMuscleRestConflict, fetchMuscleWorkAround, recommendedCategories, type NearbyMuscleWork } from '@/lib/muscleRest';
 import { resolveWeeklyGoal } from '@/lib/weeklyGoal';
 import type { ClientTrainingData } from '@/lib/clientTraining';
 import { BottomSheet } from '@/components/BottomSheet';
@@ -222,6 +223,8 @@ type RoutineWorkoutItem = {
   category: string | null;
   orderIndex: number;
   isDoneInCycle: boolean;
+  doneThisWeek: boolean;
+  missedLastWeek: boolean;
   lastSessionDate: string | null;
 };
 
@@ -637,12 +640,17 @@ export default function TrainTabScreen() {
   const scheduleWorkout = useCallback(async (workoutId: string) => {
     if (!profile?.id || scheduling) return;
     setScheduling(true);
-    const { error } = await supabase.from('sessions').insert({
-      client_id: profile.id,
-      workout_id: workoutId,
-      date: selectedDate,
-      status: 'scheduled',
-    });
+    let error: any = null;
+    try {
+      ({ error } = await supabase.from('sessions').insert({
+        client_id: profile.id,
+        workout_id: workoutId,
+        date: selectedDate,
+        status: 'scheduled',
+      }));
+    } catch (e) {
+      error = e; // a network throw must not leave `scheduling` stuck true
+    }
     setScheduling(false);
     if (error) {
       console.log('[scheduleWorkout] error:', error);
@@ -653,6 +661,42 @@ export default function TrainTabScreen() {
     setStartModalOpen(false);
     await loadWeekSessions(weekDatesRef.current);
   }, [profile?.id, scheduling, selectedDate, loadWeekSessions]);
+
+  // Plan-time 48h guard (July 2026 — mirrors Do Mode's guardStart, but for
+  // scheduling): checks completed AND already-planned sessions within a day of
+  // the target date. Conflict → in-sheet warning panel (planWarn) — a centered
+  // Modal here would stack on the BottomSheet's native Modal and block touches
+  // on iOS, so the sheet swaps its content instead.
+  const [planWarn, setPlanWarn] = useState<{ message: string; workoutId: string } | null>(null);
+  const [planChecking, setPlanChecking] = useState(false);
+  // Muscle work (completed + planned) within a day of the PLAN target date —
+  // fetched when the + modal opens on a non-today day, feeds the plan-variant
+  // rest hint so the message is visible BEFORE picking a workout (Vitek's July
+  // 24 report: the today variant hinted, the plan variant showed nothing).
+  const [planNearby, setPlanNearby] = useState<NearbyMuscleWork[]>([]);
+  useEffect(() => {
+    if (!startModalOpen || selectedDate === todayStr || !profile?.id) { setPlanNearby([]); return; }
+    let alive = true;
+    fetchMuscleWorkAround(profile.id, selectedDate)
+      .then(rows => { if (alive) setPlanNearby(rows); })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, [startModalOpen, selectedDate, profile?.id]);
+  const guardPlan = useCallback(async (workoutId: string, category: string | null) => {
+    if (!profile?.id || scheduling || planChecking) return;
+    setPlanChecking(true);
+    const c = category
+      ? await fetchMuscleRestConflict(profile.id, category, selectedDate, { includePlanned: true }).catch(() => null)
+      : null;
+    setPlanChecking(false);
+    if (!c) { scheduleWorkout(workoutId); return; }
+    const day = new Date(c.date + 'T12:00:00').toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
+    const what = `${c.category}${c.workoutName ? ` — ${c.workoutName}` : ''}`;
+    setPlanWarn({
+      message: `${c.status === 'scheduled' ? `You have ${what} planned on ${day}` : `You trained ${what} on ${day}`}. The same muscle group needs at least 48 hours of rest.\n\nRecommended: ${recommendedCategories(c.trainedCategories).join(', ')}.`,
+      workoutId,
+    });
+  }, [profile?.id, scheduling, planChecking, selectedDate, scheduleWorkout]);
 
   const load = useCallback(async () => {
     if (!profile?.id) return;
@@ -741,6 +785,8 @@ export default function TrainTabScreen() {
       category: w.category ?? null,
       orderIndex: w.order_index,
       isDoneInCycle: w.isDoneInCycle ?? false,
+      doneThisWeek: w.doneThisWeek ?? false,
+      missedLastWeek: w.missedLastWeek ?? false,
       lastSessionDate: w.lastSessionDate ?? null,
     }));
     const sortedByOrder = [...workouts].sort((a, b) => a.orderIndex - b.orderIndex);
@@ -915,13 +961,84 @@ export default function TrainTabScreen() {
           {startModalOpen && (() => {
             const isToday = selectedDate === todayStr;
             const dayFull = new Date(selectedDate + 'T12:00:00').toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'short' });
-            const hasWorkouts = (training?.standaloneWorkouts ?? []).length > 0 || (isToday ? false : workoutCards.length > 0);
-            const routineNextUp = activeRoutineRow?.nextUpWorkoutId ?? null;
+            // "any workout" spans standalone AND routine workouts (all-workouts lists
+            // both), so a routine-only client can still log from the library
+            const hasWorkouts = (training?.standaloneWorkouts ?? []).length > 0 || !!activeRoutine || (isToday ? false : workoutCards.length > 0);
+            // Routine done/next line (weekly semantics, matching the readout):
+            // Next = first routine workout in program order not done this week —
+            // ALSO the workout "Plan routine" schedules (label must match action;
+            // replaced the cycle-based nextUpWorkoutId here July 24).
+            const rw = activeRoutineRow ? [...activeRoutineRow.workouts].sort((a, b) => a.orderIndex - b.orderIndex) : [];
+            const doneRW = rw.filter(w => w.doneThisWeek);
+            const weeklyNextRW = rw.find(w => !w.doneThisWeek) ?? rw[0] ?? null;
+            const routineSub = weeklyNextRW
+              ? (doneRW.length === rw.length
+                  ? `All done this week · Next – ${weeklyNextRW.name}`
+                  : `${doneRW.length ? `Done – ${doneRW.map(w => w.name).join(', ')} · ` : ''}Next – ${weeklyNextRW.name}`)
+              : null;
+            // 48h rest hint (July 2026, Vitek's wording): name EVERY muscle category
+            // trained today/yesterday, then list what's still safe to train
+            // (recommendedCategories — overlap-map complement, never empty: Mobility
+            // always survives). Advisory only — the workout-specific warning fires at
+            // Do Mode START. A category trained both days is mentioned once, as today.
+            const mw = training?.recentMuscleWork ?? [];
+            const trainedTodayCats = [...new Set(mw.filter(r => r.date === todayStr).map(r => r.category))];
+            const trainedYdCats = [...new Set(mw.filter(r => r.date !== todayStr).map(r => r.category))]
+              .filter(c => !trainedTodayCats.includes(c));
+            const trainedParts = [
+              trainedYdCats.length ? `${trainedYdCats.join(', ')} yesterday` : null,
+              trainedTodayCats.length ? `${trainedTodayCats.join(', ')} today` : null,
+            ].filter(Boolean);
+            const restHint = isToday && trainedParts.length
+              ? `You trained ${trainedParts.join(' and ')} — give those muscles a rest today.`
+              : null;
+            const restRec = restHint ? recommendedCategories([...trainedTodayCats, ...trainedYdCats]) : [];
+            // Plan-variant hint — same idea, relative to the TARGET day, and it also
+            // sees already-PLANNED sessions ("planned Upper Body the day after").
+            const planParts: string[] = [];
+            if (!isToday && planNearby.length) {
+              const rel = (d: string) => (d === selectedDate ? 'on this day' : d < selectedDate ? 'the day before' : 'the day after');
+              const groups = new Map<string, string[]>();
+              planNearby.forEach(r => {
+                const key = `${r.status === 'scheduled' ? 'planned' : 'trained'} ${rel(r.date)}`;
+                const arr = groups.get(key) ?? [];
+                if (!arr.includes(r.category)) arr.push(r.category);
+                groups.set(key, arr);
+              });
+              groups.forEach((cats, key) => {
+                const sp = key.indexOf(' ');
+                planParts.push(`${key.slice(0, sp)} ${cats.join(', ')} ${key.slice(sp + 1)}`);
+              });
+            }
+            const planHint = planParts.length
+              ? `You ${planParts.join(' and ')} — give those muscles a rest on this day.`
+              : null;
+            const planRec = planHint ? recommendedCategories(planNearby.map(r => r.category)) : [];
+            const anyRec = isToday ? (restHint ? restRec : null) : (planHint ? planRec : null);
             return (
-              <BottomSheet onClose={() => { setStartModalOpen(false); setPlanPickerOpen(false); }}>
+              <BottomSheet onClose={() => { setStartModalOpen(false); setPlanPickerOpen(false); setPlanWarn(null); }}>
                 {close => (
                   <View style={{ paddingHorizontal: 20 }}>
-                    {planPickerOpen ? (
+                    {planWarn ? (
+                      <>
+                        <Text style={startModalStyles.title}>Same muscles within 48 hours</Text>
+                        <Text style={[startModalStyles.warnMsg, ft(500)]}>{planWarn.message}</Text>
+                        <TouchableOpacity
+                          style={startModalStyles.warnPrimaryBtn}
+                          activeOpacity={0.85}
+                          onPress={() => { setPlanWarn(null); setPlanPickerOpen(true); }}
+                        >
+                          <Text style={startModalStyles.warnPrimaryText}>Pick a different workout</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          style={startModalStyles.cancel}
+                          disabled={scheduling}
+                          onPress={() => { const id = planWarn.workoutId; setPlanWarn(null); scheduleWorkout(id); }}
+                        >
+                          <Text style={startModalStyles.cancelText}>Plan anyway</Text>
+                        </TouchableOpacity>
+                      </>
+                    ) : planPickerOpen ? (
                       <>
                         <Text style={startModalStyles.title}>Plan a workout</Text>
                         <Text style={startModalStyles.subtitle}>{dayFull}</Text>
@@ -933,8 +1050,8 @@ export default function TrainTabScreen() {
                               <TouchableOpacity
                                 key={c.id}
                                 style={startModalStyles.planRow}
-                                onPress={() => scheduleWorkout(c.id)}
-                                disabled={scheduling}
+                                onPress={() => guardPlan(c.id, c.category)}
+                                disabled={scheduling || planChecking}
                                 activeOpacity={0.7}
                               >
                                 <View style={startModalStyles.planThumb}>
@@ -958,8 +1075,16 @@ export default function TrainTabScreen() {
                       <>
                         <Text style={startModalStyles.title}>{isToday ? 'Log training' : 'Plan training'}</Text>
                         <Text style={startModalStyles.subtitle}>{isToday ? 'Today' : dayFull}</Text>
+                        {/* Amber day-status on top; the green Recommended line lives on
+                            the "any workout" row itself, mirroring the routine row's
+                            green Done/Next sub-line (Vitek: "that is clean") */}
+                        {restHint && <Text style={[startModalStyles.restHint, ft(600)]}>{restHint}</Text>}
+                        {planHint && <Text style={[startModalStyles.restHint, ft(600)]}>{planHint}</Text>}
 
-                        {/* Workout */}
+                        {/* Any workout — the full library (July 24 relabel, Vitek:
+                            routine vs workout as sibling options was confusing since
+                            the workouts live INSIDE the routine; "any" vs "from your
+                            routine" makes the containment explicit) */}
                         <TouchableOpacity
                           style={[startModalStyles.option, !hasWorkouts && { opacity: 0.4 }]}
                           activeOpacity={hasWorkouts ? 0.8 : 1}
@@ -967,35 +1092,38 @@ export default function TrainTabScreen() {
                             ? () => { useSessionStore.getState().setPendingLogDate(null); close(() => router.push('/(client)/(tabs)/train/all-workouts' as any)); }
                             : () => setPlanPickerOpen(true)}
                         >
-                          <Text style={startModalStyles.optionIcon}>🏋️</Text>
                           <View style={startModalStyles.optionText}>
-                            <Text style={startModalStyles.optionLabel}>{isToday ? 'Log workout' : 'Plan workout'}</Text>
-                          </View>
-                          <Text style={startModalStyles.optionChevron}>›</Text>
-                        </TouchableOpacity>
-
-                        <View style={startModalStyles.sep} />
-
-                        {/* Routine */}
-                        {(() => {
-                          const routineEnabled = !!activeRoutine && (isToday || !!routineNextUp);
-                          return (
-                        <TouchableOpacity
-                          style={[startModalStyles.option, !routineEnabled && { opacity: 0.4 }]}
-                          activeOpacity={routineEnabled ? 0.8 : 1}
-                          onPress={!routineEnabled ? undefined : isToday
-                            ? () => { useSessionStore.getState().setPendingLogDate(null); close(() => router.push('/(client)/(tabs)/train/all-routines' as any)); }
-                            : () => scheduleWorkout(routineNextUp!)}
-                        >
-                          <Text style={startModalStyles.optionIcon}>📋</Text>
-                          <View style={startModalStyles.optionText}>
-                            <Text style={startModalStyles.optionLabel}>{isToday ? 'Log routine' : 'Plan routine'}</Text>
-                            {!isToday && activeRoutine && (
-                              <Text style={startModalStyles.optionSub}>Schedules the next workout in your routine</Text>
+                            <Text style={startModalStyles.optionLabel}>{isToday ? 'Log any workout' : 'Plan any workout'}</Text>
+                            {anyRec && anyRec.length > 0 && (
+                              <Text style={[startModalStyles.optionSub, startModalStyles.optionSubAccent, ft(600)]} numberOfLines={1}>Recommended: {anyRec.join(', ')}.</Text>
                             )}
                           </View>
                           <Text style={startModalStyles.optionChevron}>›</Text>
                         </TouchableOpacity>
+
+                        {/* From the routine — hidden entirely without an active routine
+                            (same rule as the ROUTINE section on the tab) */}
+                        {activeRoutine && (() => {
+                          const routineEnabled = isToday || !!weeklyNextRW;
+                          return (
+                        <>
+                        <View style={startModalStyles.sep} />
+                        <TouchableOpacity
+                          style={[startModalStyles.option, !routineEnabled && { opacity: 0.4 }]}
+                          activeOpacity={routineEnabled ? 0.8 : 1}
+                          onPress={!routineEnabled ? undefined : isToday
+                            ? () => { useSessionStore.getState().setPendingLogDate(null); close(() => router.push(`/(client)/routine/${activeRoutine.id}` as any)); }
+                            : () => guardPlan(weeklyNextRW!.id, weeklyNextRW!.category)}
+                        >
+                          <View style={startModalStyles.optionText}>
+                            <Text style={startModalStyles.optionLabel}>{isToday ? 'Log workout from your routine' : 'Plan workout from your routine'}</Text>
+                            {routineSub && (
+                              <Text style={[startModalStyles.optionSub, startModalStyles.optionSubAccent, ft(600)]} numberOfLines={1}>{routineSub}</Text>
+                            )}
+                          </View>
+                          <Text style={startModalStyles.optionChevron}>›</Text>
+                        </TouchableOpacity>
+                        </>
                           );
                         })()}
 
@@ -1802,93 +1930,73 @@ const sectionStyles = StyleSheet.create({
 // background — deliberately not a card (July 2026 restructure; the v4
 // ActiveRoutineCard it replaces lives at `2dc5f6c`). A client has at most one
 // active routine, so a card here was a "gallery of one" and the tab's fourth
-// dark slab; the routine is STATE, not a library item. Kept from v4: the accent
-// "Done – X · Next – Y" status line and the cycle ring (now the light variant).
-// New: the routine-detail PROGRAM ORDER strip row as the map — one category-
-// colored strip per workout, full opacity when done/next in this cycle, 0.4
-// pending (exact routine-detail semantics). Tap anywhere → routine detail; the
-// ⋯ quick-look sheet was dropped with the card (detail is one tap away).
-
-function ProgressRing({ size, current, total, visible, onDark }: { size: number; current: number; total: number; visible: boolean; onDark?: boolean }) {
-  const strokeWidth = 3;
-  const radius = (size - strokeWidth * 2) / 2;
-  const circumference = 2 * Math.PI * radius;
-  const progress = total > 0 ? Math.min(current / total, 1) : 0;
-  const dashOffset = circumference * (1 - progress);
-
-  if (!visible) return <View style={{ width: size, height: size }} />;
-
-  return (
-    <View style={{ width: size, height: size, alignItems: 'center', justifyContent: 'center' }}>
-      <Svg width={size} height={size} style={{ position: 'absolute' }}>
-        <SvgCircle cx={size / 2} cy={size / 2} r={radius} stroke={onDark ? 'rgba(255,255,255,0.18)' : 'rgba(36,172,136,0.2)'} strokeWidth={strokeWidth} fill="none" />
-        <SvgCircle
-          cx={size / 2} cy={size / 2} r={radius}
-          stroke={ACCENT}
-          strokeWidth={strokeWidth}
-          fill="none"
-          strokeDasharray={circumference}
-          strokeDashoffset={dashOffset}
-          strokeLinecap="round"
-          rotation="-90"
-          origin={`${size / 2}, ${size / 2}`}
-        />
-      </Svg>
-      <Text style={{ fontSize: size * 0.2, fontWeight: '700', color: onDark ? '#fff' : HEADER, lineHeight: size * 0.24 }}>
-        {current}/{total}
-      </Text>
-    </View>
-  );
-}
+// dark slab; the routine is STATE, not a library item. Iteration 4 (July 24):
+// the marks are WEEKLY, not cycle-based — Vitek: the cycle's "earliest not-done"
+// arrow existed to catch up on skipped workouts, but it could suggest Full Body
+// right after Full Body. New rules: ✓ = done this week (Mon–Sun) · → = "start
+// with this one", ONLY on the first workout (program order) that was missed
+// LAST week and isn't done yet this week (doneThisWeek/missedLastWeek computed
+// in lib/clientTraining; a routine/workout created this week is never "missed",
+// so week 1 shows no arrow) · ⋯ = not done, nothing urgent. No arrow at all in
+// a clean week. The cycle ring + "Done – X · Next – Y" line are gone (revert
+// ref `1debc48`); the cards/routine detail still speak the old cycle language
+// until the routine-cards sweep. Anatomy = the routine-detail/RoutineCard
+// PROGRAM-ORDER rows (strips + inline labelCell row, "the system should match")
+// with the CATEGORY as label per Vitek's spec, not the workout name. Tap
+// anywhere → routine detail; the ⋯ quick-look sheet was dropped with the card
+// (detail is one tap away).
 
 function RoutineReadout({ routine, onPress }: { routine: RoutineRow; onPress: () => void }) {
-  const total = routine.routineTotal;
-  const ringCurrent = routine.cycleJustCompleted ? total : routine.cycleDoneCount;
   const sorted = [...routine.workouts].sort((a, b) => a.orderIndex - b.orderIndex);
-  const doneNames = routine.cycleJustCompleted ? [] : sorted.filter(w => w.isDoneInCycle).map(w => w.name);
-  const nextName = sorted.find(w => w.id === routine.nextUpWorkoutId)?.name ?? null;
-  const statusLine = total === 0 ? 'No workouts'
-    : routine.cycleJustCompleted ? `Cycle complete · Next – ${nextName ?? '—'}`
-    : [doneNames.length > 0 ? `Done – ${doneNames.join(', ')}` : null, nextName ? `Next – ${nextName}` : null]
-        .filter(Boolean).join(' · ');
+  const startHereId = sorted.find(w => w.missedLastWeek && !w.doneThisWeek)?.id ?? null;
 
   return (
     <TouchableOpacity style={roStyles.wrap} onPress={onPress} activeOpacity={0.7}>
-      <View style={roStyles.topRow}>
-        <View style={roStyles.topLeft}>
-          <Text style={[roStyles.name, fd(700)]} numberOfLines={1}>{routine.name}</Text>
-          <Text style={[roStyles.status, ft(600)]} numberOfLines={1}>{statusLine}</Text>
-        </View>
-        <ProgressRing size={48} current={ringCurrent} total={total || 1} visible={total > 0} />
-      </View>
-      {total > 0 && (
-        <View style={roStyles.stripsRow}>
-          {sorted.map(w => {
-            const lit = routine.cycleJustCompleted || w.isDoneInCycle || w.id === routine.nextUpWorkoutId;
-            return (
-              <View
-                key={w.id}
-                style={[roStyles.strip, {
-                  backgroundColor: (w.category ? CATEGORY_COLORS[w.category as WorkoutCategory]?.border : undefined) ?? '#888',
-                  opacity: lit ? 1 : 0.4,
-                }]}
-              />
-            );
-          })}
-        </View>
+      <Text style={[roStyles.name, fd(700)]} numberOfLines={1}>{routine.name}</Text>
+      {routine.routineTotal > 0 && (
+        <>
+          <View style={roStyles.stripsRow}>
+            {sorted.map(w => {
+              const lit = w.doneThisWeek || w.id === startHereId;
+              return (
+                <View
+                  key={w.id}
+                  style={[roStyles.strip, {
+                    backgroundColor: (w.category ? CATEGORY_COLORS[w.category as WorkoutCategory]?.border : undefined) ?? '#888',
+                    opacity: lit ? 1 : 0.4,
+                  }]}
+                />
+              );
+            })}
+          </View>
+          <View style={roStyles.labelsRow}>
+            {sorted.map(w => {
+              const mark = w.doneThisWeek ? '✓' : w.id === startHereId ? '→' : '⋯';
+              return (
+                <View key={w.id} style={roStyles.labelCell}>
+                  <Text style={roStyles.labelText} numberOfLines={1}>{w.category ?? '—'}</Text>
+                  <Text style={[roStyles.statusChar, { color: mark === '⋯' ? '#ccc' : ACCENT }]}>
+                    {mark}
+                  </Text>
+                </View>
+              );
+            })}
+          </View>
+        </>
       )}
     </TouchableOpacity>
   );
 }
 
 const roStyles = StyleSheet.create({
-  wrap:      { marginHorizontal: 16 },
-  topRow:    { flexDirection: 'row', alignItems: 'center', gap: 14 },
-  topLeft:   { flex: 1 },
-  name:      { fontSize: 16, fontWeight: '700', color: TEXT },
-  status:    { fontSize: 12, color: ACCENT, marginTop: 3 },
-  stripsRow: { flexDirection: 'row', gap: 5, marginTop: 12 },
-  strip:     { flex: 1, height: 4, borderRadius: 2 },
+  wrap:       { marginHorizontal: 16 },
+  name:       { fontSize: 16, fontWeight: '700', color: TEXT },
+  stripsRow:  { flexDirection: 'row', gap: 4, marginTop: 10, marginBottom: 6 },
+  strip:      { flex: 1, height: 4, borderRadius: 2 },
+  labelsRow:  { flexDirection: 'row', gap: 4 },
+  labelCell:  { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 3 },
+  labelText:  { fontSize: 10, flexShrink: 1, color: '#666' },
+  statusChar: { fontSize: 10, fontWeight: '600' },
 });
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
@@ -1964,6 +2072,10 @@ const startModalStyles = StyleSheet.create({
   card:          { backgroundColor: CARD, borderRadius: 16, padding: 20, width: '100%', shadowColor: '#000', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.15, shadowRadius: 20, elevation: 10 },
   title:         { fontSize: 16, fontWeight: '700', color: TEXT, marginBottom: 2 },
   subtitle:      { fontSize: 13, fontWeight: '600', color: ACCENT, marginBottom: 14 },
+  restHint:      { fontSize: 12, color: '#f5a623', lineHeight: 17, marginTop: -8, marginBottom: 12 },
+  warnMsg:        { fontSize: 13, color: '#555', lineHeight: 19, marginTop: 2, marginBottom: 18 },
+  warnPrimaryBtn: { backgroundColor: ACCENT, borderRadius: 100, paddingVertical: 13, alignItems: 'center' },
+  warnPrimaryText: { fontSize: 15, fontWeight: '700', color: '#fff' },
   emptyPlan:     { fontSize: 13, color: MUTED, textAlign: 'center', paddingVertical: 20 },
   planRow:       { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 8 },
   planThumb:     { width: 44, height: 44, borderRadius: 8, overflow: 'hidden', backgroundColor: '#2a5448' },
@@ -1973,6 +2085,7 @@ const startModalStyles = StyleSheet.create({
   optionText:    { flex: 1 },
   optionLabel:   { fontSize: 15, fontWeight: '600', color: TEXT },
   optionSub:     { fontSize: 12, color: MUTED, marginTop: 1 },
+  optionSubAccent: { color: ACCENT },
   optionChevron: { fontSize: 20, color: MUTED },
   sep:           { height: 1, backgroundColor: BORDER, marginHorizontal: -4 },
   cancel:        { marginTop: 16, alignItems: 'center' },

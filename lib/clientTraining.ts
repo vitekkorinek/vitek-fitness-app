@@ -1,7 +1,8 @@
 import { supabase } from './supabase';
+import { isMuscleRestCategory, shiftDateStr } from './muscleRest';
 import type { Routine, Workout } from '@/types/database';
 
-export type WorkoutWithLastDate = Workout & { lastSessionDate: string | null; isDoneInCycle?: boolean };
+export type WorkoutWithLastDate = Workout & { lastSessionDate: string | null; isDoneInCycle?: boolean; doneThisWeek?: boolean; missedLastWeek?: boolean };
 export type ClosedRoutineRow = Pick<Routine, 'id' | 'name' | 'auto_name' | 'closed_at'>;
 
 export interface ClientTrainingData {
@@ -24,6 +25,9 @@ export interface ClientTrainingData {
   monthlySessionCount: number;
   daysSinceLastSession: number | null;
   totalSessionsCount: number;
+  /** Muscle categories trained today/yesterday (completed sessions, deduped
+   *  category+date) — feeds the Training-tab + modal's 48h rest hint. */
+  recentMuscleWork: { date: string; category: string }[];
 }
 
 export async function fetchClientTraining(clientId: string): Promise<ClientTrainingData> {
@@ -77,6 +81,24 @@ export async function fetchClientTraining(clientId: string): Promise<ClientTrain
   // Total sessions count (completed)
   const totalSessionsCount = completedSessions.length;
 
+  // Muscle categories trained today/yesterday (48h rest hint — see interface)
+  const mid = new Date();
+  mid.setHours(0, 0, 0, 0);
+  const todayLocal = `${mid.getFullYear()}-${String(mid.getMonth() + 1).padStart(2, '0')}-${String(mid.getDate()).padStart(2, '0')}`;
+  const yesterdayLocal = shiftDateStr(todayLocal, -1);
+  const seenMuscleWork = new Set<string>();
+  const recentMuscleWork: { date: string; category: string }[] = [];
+  completedSessions.forEach((s: any) => {
+    const cat = s.workouts?.category as string | null | undefined;
+    if ((s.date === todayLocal || s.date === yesterdayLocal) && cat && isMuscleRestCategory(cat)) {
+      const key = `${s.date}:${cat}`;
+      if (!seenMuscleWork.has(key)) {
+        seenMuscleWork.add(key);
+        recentMuscleWork.push({ date: s.date, category: cat });
+      }
+    }
+  });
+
   // Routine workouts + cycle-aware next up computation
   let routineWorkouts: WorkoutWithLastDate[] = [];
   let nextUpWorkout: WorkoutWithLastDate | null = null;
@@ -120,6 +142,35 @@ export async function fetchClientTraining(clientId: string): Promise<ClientTrain
     cycleDoneCount = cycleDone.size;
 
     routineWorkouts.forEach(w => { w.isDoneInCycle = cycleDone.has(w.id); });
+
+    // Weekly done/missed flags (July 2026 RoutineReadout rules; weeks run Mon–Sun).
+    // doneThisWeek: a completed session for this workout dated in the current week.
+    // missedLastWeek: no completed session last week although the workout (and the
+    // routine) already existed before this week began — the Training-tab readout
+    // arrows the FIRST such not-yet-done workout as the one to start with. A routine
+    // or workout created this week can't be "missed", so week 1 never shows arrows.
+    const todayMid = new Date();
+    todayMid.setHours(0, 0, 0, 0);
+    const thisMonday = new Date(todayMid);
+    thisMonday.setDate(thisMonday.getDate() - ((thisMonday.getDay() + 6) % 7));
+    const lastMonday = new Date(thisMonday);
+    lastMonday.setDate(lastMonday.getDate() - 7);
+    const dateStr = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    const thisMondayStr = dateStr(thisMonday);
+    const lastMondayStr = dateStr(lastMonday);
+
+    const doneThisWeekIds = new Set<string>();
+    const doneLastWeekIds = new Set<string>();
+    for (const s of completedSessions) {
+      if (!s.workout_id) continue;
+      if (s.date >= thisMondayStr) doneThisWeekIds.add(s.workout_id);
+      else if (s.date >= lastMondayStr) doneLastWeekIds.add(s.workout_id);
+    }
+    const routineExistedLastWeek = activeRoutineData.created_at < thisMondayStr;
+    routineWorkouts.forEach(w => {
+      w.doneThisWeek = doneThisWeekIds.has(w.id);
+      w.missedLastWeek = routineExistedLastWeek && w.created_at < thisMondayStr && !doneLastWeekIds.has(w.id);
+    });
 
     // Next up: first workout by order_index not done in current cycle
     const sortedByOrder = [...routineWorkouts].sort((a, b) => a.order_index - b.order_index);
@@ -171,5 +222,6 @@ export async function fetchClientTraining(clientId: string): Promise<ClientTrain
     monthlySessionCount,
     daysSinceLastSession,
     totalSessionsCount,
+    recentMuscleWork,
   };
 }

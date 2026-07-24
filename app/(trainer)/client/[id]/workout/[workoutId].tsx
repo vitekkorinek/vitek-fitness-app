@@ -419,7 +419,12 @@ function computeStats(points: GraphPoint[]): { bestThis: StatPoint; lowestThis: 
 // wash that read as milky plastic. Only a WHISPER of white scrim is layered on
 // so our dark text stays legible without killing the transparency.
 // Knob: SCRIM_OPACITY — raise for more legibility/frost, lower for more glass.
-const GLASS_SCRIM_OPACITY = 0.14;
+// 0.14 → 0.22 → 0.30 July 24 2026: the client 48h muscle-rest confirm renders
+// right over the preview's bright green Start button and the dark message text
+// went muddy through the glass (Vitek: "hard to read"; 0.22 still not enough).
+// 0.30 stays translucent, nowhere near the rejected 0.5 milky wash. Kept
+// mirrored in both files.
+const GLASS_SCRIM_OPACITY = 0.30;
 function GlassPanel({ style, children }: { style?: any; children: React.ReactNode }) {
   const textScrim = (
     <View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: `rgba(255,255,255,${GLASS_SCRIM_OPACITY})` }]} />
@@ -7118,14 +7123,14 @@ const styles = StyleSheet.create({
   confirmBoxShadow: { borderRadius: 38, shadowColor: '#000', shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.22, shadowRadius: 28, elevation: 12 },
   confirmBox: { borderRadius: 38, overflow: 'hidden', padding: 24, alignItems: 'center', gap: 14 },
   confirmTitle: { fontSize: 16, fontWeight: '700', color: TEXT, textAlign: 'center' },
-  confirmMessage: { fontSize: 14, color: '#33413b', fontWeight: '500', textAlign: 'center', lineHeight: 20, marginTop: -4 },
+  confirmMessage: { fontSize: 14, color: '#1f2823', fontWeight: '600', textAlign: 'center', lineHeight: 20, marginTop: -4 },
   confirmPrimaryBtn: { backgroundColor: ACCENT, borderRadius: 100, paddingVertical: 14, alignSelf: 'stretch', alignItems: 'center' },
   confirmPrimaryBtnText: { color: '#fff', fontSize: 15, fontWeight: '700' },
   confirmSecondaryBtn: { backgroundColor: '#c8c8c2', borderRadius: 100, paddingVertical: 14, alignSelf: 'stretch', alignItems: 'center', borderWidth: 1, borderColor: 'rgba(0,0,0,0.08)' },
   confirmSecondaryBtnText: { color: TEXT, fontSize: 15, fontWeight: '600' },
   confirmDangerBtn: { backgroundColor: '#e85d4a', borderRadius: 100, paddingVertical: 14, alignSelf: 'stretch', alignItems: 'center' },
   confirmDangerBtnText: { color: '#fff', fontSize: 15, fontWeight: '700' },
-  confirmCancelText: { fontSize: 14, color: MUTED },
+  confirmCancelText: { fontSize: 14, fontWeight: '600', color: '#414b45' },
 
   pendingDoneToast: { position: 'absolute', left: 16, right: 16, backgroundColor: 'rgba(26,26,26,0.88)', borderRadius: 12, paddingHorizontal: 16, paddingVertical: 10, zIndex: 100 },
   pendingDoneToastText: { color: '#fff', fontSize: 13, lineHeight: 18, textAlign: 'center' },

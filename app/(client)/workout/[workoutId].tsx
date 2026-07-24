@@ -98,6 +98,7 @@ import * as ImagePicker from 'expo-image-picker';
 
 import { supabase } from '@/lib/supabase';
 import { loadSessionDraft, saveSessionDraft, clearSessionDraft, mergeDraftIntoExercises } from '@/lib/sessionDraft';
+import { fetchMuscleRestConflict, recommendedCategories, shiftDateStr, type MuscleRestConflict } from '@/lib/muscleRest';
 import { CATEGORY_COLORS, WorkoutCategory } from '@/lib/workoutCategories';
 import {
   flushPendingUpdates,
@@ -431,7 +432,13 @@ function computeStats(points: GraphPoint[]): { bestThis: StatPoint; lowestThis: 
 // wash that read as milky plastic. Only a WHISPER of white scrim is layered on
 // so our dark text stays legible without killing the transparency.
 // Knob: SCRIM_OPACITY — raise for more legibility/frost, lower for more glass.
-const GLASS_SCRIM_OPACITY = 0.14;
+// 0.14 → 0.22 → 0.30 July 24 2026: the 48h muscle-rest confirm renders right
+// over the preview's bright green Start button and the dark message text went
+// muddy through the glass (Vitek: "hard to read"; 0.22 still not enough —
+// "mmm"). 0.30 stays translucent, nowhere near the rejected 0.5 milky wash.
+// Kept mirrored in both files. If even this fails on device, the fallback is
+// a brand-dark glass confirm + white text (not built).
+const GLASS_SCRIM_OPACITY = 0.30;
 function GlassPanel({ style, children }: { style?: any; children: React.ReactNode }) {
   const textScrim = (
     <View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: `rgba(255,255,255,${GLASS_SCRIM_OPACITY})` }]} />
@@ -650,16 +657,18 @@ export default function TrainerWorkoutSessionScreen() {
   // Start pressed → fire the real session underneath + run the landing→live lock.
   const startFromPreview = () => {
     if (previewPhaseRef.current === 'live') return;
-    previewPhaseRef.current = 'live';
-    setPreviewPhase('live');
-    startSession(workoutId!);
-    createInProgressSessionRef.current();
-    Animated.parallel([
-      Animated.spring(previewY, { toValue: 0, useNativeDriver: false, tension: 55, friction: 10 }),
-      Animated.timing(previewLock, { toValue: 1, duration: 430, useNativeDriver: false }),
-    ]).start();
-    // TODO: Haptics.impactAsync on lock (expo-haptics not installed)
-    setTimeout(() => setPreviewClosed(true), 520);
+    guardStart(() => {
+      previewPhaseRef.current = 'live';
+      setPreviewPhase('live');
+      startSession(workoutId!);
+      createInProgressSessionRef.current();
+      Animated.parallel([
+        Animated.spring(previewY, { toValue: 0, useNativeDriver: false, tension: 55, friction: 10 }),
+        Animated.timing(previewLock, { toValue: 1, duration: 430, useNativeDriver: false }),
+      ]).start();
+      // TODO: Haptics.impactAsync on lock (expo-haptics not installed)
+      setTimeout(() => setPreviewClosed(true), 520);
+    });
   };
   const previewPan = useRef(
     PanResponder.create({
@@ -793,6 +802,40 @@ export default function TrainerWorkoutSessionScreen() {
   const saveSessionRef = useRef<() => Promise<void>>(async () => {});
   // True when the current workout IS a stretch session (stretching category)
   const isStretchSessionRef = useRef(false);
+
+  // ── 48h same-muscle rest guard (July 2026, Vitek) ──────────────────────────
+  // muscleRestConflictRef is preloaded in load() (lib/muscleRest): the most
+  // recent completed session within a day of the log date whose category shares
+  // a muscle group with this workout. Every fresh-start path funnels its final
+  // start through guardStart — a warn-only gate ("Start anyway" proceeds, never
+  // a hard block). Deliberately NOT wired into the Exercise-Detail bridge start
+  // (registerStartSession) — the confirm modal would open BEHIND that screen
+  // and read as a dead START button.
+  const muscleRestConflictRef = useRef<MuscleRestConflict | null>(null);
+  const guardStart = (proceed: () => void | Promise<void>) => {
+    const c = muscleRestConflictRef.current;
+    if (!c) { void proceed(); return; }
+    const today = new Date().toISOString().split('T')[0];
+    const when = c.date === today ? 'today'
+      : c.date === shiftDateStr(today, -1) ? 'yesterday'
+      : `on ${Number(c.date.slice(8, 10))}.${Number(c.date.slice(5, 7))}.`;
+    // Primary = the COACHED action (Vitek: the warning should redirect, not just
+    // abort — and the big green button should be the recommended choice). It
+    // POPS back to where this workout was picked (gallery list / Training tab /
+    // routine detail) — an earlier router.replace deep into the train tab's
+    // nested stack corrupted navigation on device (blank Do Mode remounts + a
+    // back loop between gallery and workout; July 24). "Start anyway" is the
+    // gray secondary pill; tap-outside quietly stays on the preview (no
+    // explicit Cancel row).
+    setConfirmModal({
+      title: 'Same muscles trained recently',
+      message: `You trained ${c.category}${c.workoutName ? ` — ${c.workoutName}` : ''} ${when}. The same muscle group needs at least 48 hours of rest — better to train something else today.\n\nRecommended: ${recommendedCategories(c.trainedCategories).join(', ')}.`,
+      actions: [
+        { text: 'Pick a different workout', primary: true, onPress: () => router.back() },
+        { text: 'Start anyway', onPress: proceed },
+      ],
+    });
+  };
 
   const [isEditMode, setIsEditMode] = useState(false);
   const isEditModeRef = useRef(false);
@@ -985,6 +1028,15 @@ export default function TrainerWorkoutSessionScreen() {
       // a different workout that was left open.
       const resumedStart = draft?.startedAt ?? new Date((liveSess as any).created_at).getTime();
       resumeSession(workoutId, resumedStart);
+    }
+
+    // ── 48h same-muscle rest check — preload the conflict for guardStart ──────
+    // Awaited so the autoStart path can't race past it (it fires the moment
+    // loading flips false). Skipped when a session is already open (nothing to
+    // warn about), on locked previews (can't start), and for stretch workouts.
+    if (categoryVal && !isStretchSessionRef.current && !isPreviewLocked && !liveSessionId && !resumeSessionId) {
+      const restRefDate = logDatePending ?? new Date().toISOString().split('T')[0];
+      muscleRestConflictRef.current = await fetchMuscleRestConflict(clientId, categoryVal, restRefDate).catch(() => null);
     }
     // The draft only belongs to a session that is still open — never replay an old
     // one over a fresh start.
@@ -1504,8 +1556,10 @@ export default function TrainerWorkoutSessionScreen() {
     introAutoStarted.current = true;
     timerPromptShown.current = true;
     setPastSession(null);
-    startSession(workoutId!);
-    createInProgressSessionRef.current();
+    guardStart(() => {
+      startSession(workoutId!);
+      createInProgressSessionRef.current();
+    });
   }, [autoStart, loading]);
 
   // Auto-resume a suspended session when navigated back via the session indicator
@@ -1859,8 +1913,10 @@ export default function TrainerWorkoutSessionScreen() {
       actions: [{ text: 'Start', primary: true, onPress: async () => {
         timerPromptShown.current = true;
         setSoftPromptDismissed(true);
-        startSession(workoutId!);
-        await createInProgressSession();
+        guardStart(async () => {
+          startSession(workoutId!);
+          await createInProgressSession();
+        });
       }}],
       cancelText: 'Not yet',
       onCancel: () => setSoftPromptDismissed(true),
@@ -2694,8 +2750,10 @@ export default function TrainerWorkoutSessionScreen() {
           { text: 'Most recent weights', onPress: async () => {
             setPastSession(null);
             timerPromptShown.current = true;
-            startSession(workoutId!);
-            await createInProgressSession();
+            guardStart(async () => {
+              startSession(workoutId!);
+              await createInProgressSession();
+            });
           }},
           { text: 'Weights from this session', primary: true, onPress: async () => {
             const weightMap = new Map<string, Map<number, string>>();
@@ -2711,8 +2769,10 @@ export default function TrainerWorkoutSessionScreen() {
             }));
             setPastSession(null);
             timerPromptShown.current = true;
-            startSession(workoutId!);
-            await createInProgressSession();
+            guardStart(async () => {
+              startSession(workoutId!);
+              await createInProgressSession();
+            });
           }},
         ],
         cancelText: 'Cancel',
@@ -2724,16 +2784,20 @@ export default function TrainerWorkoutSessionScreen() {
         actions: [
           { text: 'Start session', primary: true, onPress: () => {
             timerPromptShown.current = true;
-            startSession(workoutId!);
-            createInProgressSession();
+            guardStart(() => {
+              startSession(workoutId!);
+              createInProgressSession();
+            });
           }},
         ],
         cancelText: 'Keep viewing',
       });
     } else {
       timerPromptShown.current = true;
-      startSession(workoutId!);
-      createInProgressSession();
+      guardStart(() => {
+        startSession(workoutId!);
+        createInProgressSession();
+      });
     }
   };
 
@@ -4112,14 +4176,16 @@ export default function TrainerWorkoutSessionScreen() {
             <TouchableOpacity
               style={styles.hardBlockStartBtn}
               activeOpacity={0.85}
-              onPress={async () => {
+              onPress={() => {
                 const blocked = hardBlockModal;
                 setHardBlockModal(null);
                 timerPromptShown.current = true;
-                startSession(workoutId!);
-                await createInProgressSession();
-                if (blocked?.action === 'photo') pickAndUploadPhoto(blocked.exIdx);
-                else if (blocked?.action === 'markDone') markDone(blocked.exIdx);
+                guardStart(async () => {
+                  startSession(workoutId!);
+                  await createInProgressSession();
+                  if (blocked?.action === 'photo') pickAndUploadPhoto(blocked.exIdx);
+                  else if (blocked?.action === 'markDone') markDone(blocked.exIdx);
+                });
               }}
             >
               <Text style={styles.hardBlockStartText}>Start workout</Text>
@@ -7297,14 +7363,14 @@ const styles = StyleSheet.create({
   confirmBoxShadow: { borderRadius: 38, shadowColor: '#000', shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.22, shadowRadius: 28, elevation: 12 },
   confirmBox: { borderRadius: 38, overflow: 'hidden', padding: 24, alignItems: 'center', gap: 14 },
   confirmTitle: { fontSize: 16, fontWeight: '700', color: TEXT, textAlign: 'center' },
-  confirmMessage: { fontSize: 14, color: '#33413b', fontWeight: '500', textAlign: 'center', lineHeight: 20, marginTop: -4 },
+  confirmMessage: { fontSize: 14, color: '#1f2823', fontWeight: '600', textAlign: 'center', lineHeight: 20, marginTop: -4 },
   confirmPrimaryBtn: { backgroundColor: ACCENT, borderRadius: 100, paddingVertical: 14, alignSelf: 'stretch', alignItems: 'center' },
   confirmPrimaryBtnText: { color: '#fff', fontSize: 15, fontWeight: '700' },
   confirmSecondaryBtn: { backgroundColor: '#c8c8c2', borderRadius: 100, paddingVertical: 14, alignSelf: 'stretch', alignItems: 'center', borderWidth: 1, borderColor: 'rgba(0,0,0,0.08)' },
   confirmSecondaryBtnText: { color: TEXT, fontSize: 15, fontWeight: '600' },
   confirmDangerBtn: { backgroundColor: '#e85d4a', borderRadius: 100, paddingVertical: 14, alignSelf: 'stretch', alignItems: 'center' },
   confirmDangerBtnText: { color: '#fff', fontSize: 15, fontWeight: '700' },
-  confirmCancelText: { fontSize: 14, color: MUTED },
+  confirmCancelText: { fontSize: 14, fontWeight: '600', color: '#414b45' },
 
   pendingDoneToast: { position: 'absolute', left: 16, right: 16, backgroundColor: 'rgba(26,26,26,0.88)', borderRadius: 12, paddingHorizontal: 16, paddingVertical: 10, zIndex: 100 },
   pendingDoneToastText: { color: '#fff', fontSize: 13, lineHeight: 18, textAlign: 'center' },
