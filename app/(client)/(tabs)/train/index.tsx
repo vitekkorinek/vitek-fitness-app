@@ -1953,7 +1953,7 @@ const sectionStyles = StyleSheet.create({
 // ref `1debc48`); the cards/routine detail still speak the old cycle language
 // until the routine-cards sweep. Anatomy = the routine-detail/RoutineCard
 // PROGRAM-ORDER rows (strips + inline labelCell row, "the system should match")
-// with the CATEGORY as label per Vitek's spec, not the workout name. Tap
+// with the WORKOUT NAME as label (July 25 — Vitek switched from category). Tap
 // anywhere → routine detail; the ⋯ quick-look sheet was dropped with the card
 // (detail is one tap away).
 
@@ -1985,7 +1985,7 @@ function RoutineReadout({ routine, onPress }: { routine: RoutineRow; onPress: ()
               const mark = w.doneThisWeek ? '✓' : w.id === startHereId ? '→' : '⋯';
               return (
                 <View key={w.id} style={roStyles.labelCell}>
-                  <Text style={roStyles.labelText} numberOfLines={1}>{w.category ?? '—'}</Text>
+                  <Text style={roStyles.labelText} numberOfLines={1}>{w.name || '—'}</Text>
                   <Text style={[roStyles.statusChar, { color: mark === '⋯' ? '#ccc' : ACCENT }]}>
                     {mark}
                   </Text>
