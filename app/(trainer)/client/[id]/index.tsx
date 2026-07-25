@@ -1544,18 +1544,15 @@ function TrainingTab({
                 >
                   <View style={[sectionStyles.wCard, galleryFooterDark && darkCardStyles.bg]}>
                     <WorkoutPaperCover category={c.category} workoutId={c.id} size="mini" />
-                    {/* Compact footer: name left, right column = ⋯ with the done-date
-                        under it (matches the client gallery mini). */}
+                    {/* Compact one-line footer: name · last-done date · ⋯ (matches client) */}
                     <View style={sectionStyles.wBody}>
                       <Text style={[sectionStyles.wName, { flex: 1 }, galleryFooterDark && darkCardStyles.textOnDark, fd(700)]} numberOfLines={1}>{c.name}</Text>
-                      <View style={sectionStyles.wRight}>
-                        <TouchableOpacity style={sectionStyles.wFooterMenuBtn} hitSlop={8} activeOpacity={0.6} onPress={() => setActiveMenu({ id: c.id, name: c.name, category: c.category })}>
-                          <SymbolView name="ellipsis" size={16} tintColor={galleryFooterDark ? DARK_MUTED_ICON : '#bbb'} />
-                        </TouchableOpacity>
-                        <Text style={[sectionStyles.wStatus, ft(600), { color: c.lastDoneDate ? ACCENT : galleryFooterDark ? 'rgba(255,255,255,0.5)' : '#999' }]} numberOfLines={1}>
-                          {c.lastDoneDate ? `Done ${fmtShortDate(c.lastDoneDate)}` : 'Never done'}
-                        </Text>
-                      </View>
+                      <Text style={[sectionStyles.wStatus, ft(600), { color: c.lastDoneDate ? ACCENT : galleryFooterDark ? 'rgba(255,255,255,0.5)' : '#999' }]} numberOfLines={1}>
+                        {c.lastDoneDate ? fmtShortDate(c.lastDoneDate) : '—'}
+                      </Text>
+                      <TouchableOpacity style={sectionStyles.wFooterMenuBtn} hitSlop={8} activeOpacity={0.6} onPress={() => setActiveMenu({ id: c.id, name: c.name, category: c.category })}>
+                        <SymbolView name="ellipsis" size={16} tintColor={galleryFooterDark ? DARK_MUTED_ICON : '#bbb'} />
+                      </TouchableOpacity>
                     </View>
                   </View>
                 </TouchableOpacity>
@@ -2563,17 +2560,16 @@ const sectionStyles = StyleSheet.create({
 
   // Card-style-aware gallery mini (matches the client Training-tab gallery): white base
   // + light lift shadow; darkCardStyles.bg flips the frame for the 'light' style.
-  wCardOuter:     { width: 212, height: 120, borderRadius: 14, backgroundColor: '#fff', shadowColor: '#000', shadowOffset: { width: 0, height: 5 }, shadowOpacity: 0.08, shadowRadius: 12, elevation: 4 },
+  wCardOuter:     { width: 212, height: 112, borderRadius: 14, backgroundColor: '#fff', shadowColor: '#000', shadowOffset: { width: 0, height: 5 }, shadowOpacity: 0.08, shadowRadius: 12, elevation: 4 },
   wCard:          { flex: 1, borderRadius: 14, overflow: 'hidden', backgroundColor: '#fff' },
   wName:          { fontSize: 15, fontWeight: '700', color: '#1a1a1a' },
   wMenuBtn:       { position: 'absolute', top: 7, right: 7, width: 26, height: 26, borderRadius: 13, backgroundColor: 'rgba(0,0,0,0.5)', alignItems: 'center', justifyContent: 'center' },
   wBody:          { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 12, paddingVertical: 4 },
-  wRight:         { alignItems: 'flex-end' },
   wFooterMenuBtn: { paddingHorizontal: 2, paddingBottom: 1 },
   wSub:           { fontSize: 11, fontWeight: '400', color: '#999' },
   wStatus:        { fontSize: 11, fontWeight: '600' },
 
-  seeAllCard:     { width: 80, height: 120, borderRadius: 14, backgroundColor: 'rgba(36,172,136,0.08)', borderWidth: 1.5, borderStyle: 'dashed', borderColor: 'rgba(36,172,136,0.3)', alignItems: 'center', justifyContent: 'center', gap: 6 },
+  seeAllCard:     { width: 80, height: 112, borderRadius: 14, backgroundColor: 'rgba(36,172,136,0.08)', borderWidth: 1.5, borderStyle: 'dashed', borderColor: 'rgba(36,172,136,0.3)', alignItems: 'center', justifyContent: 'center', gap: 6 },
   seeAllArrow:    { fontSize: 18, color: '#24ac88' },
   seeAllCardText: { fontSize: 11, color: '#24ac88', fontWeight: '600', textAlign: 'center' },
 
