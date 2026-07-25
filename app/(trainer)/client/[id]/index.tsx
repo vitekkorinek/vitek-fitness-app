@@ -1568,7 +1568,11 @@ function TrainingTab({
           {/* Recent Activity — plain list of the last 3 sessions, most recent first
               (Vitek's July 25 call: no cover card; name left, date right, chevron
               jumps the week strip to that session's day). */}
-          <SectionHeader title="RECENT ACTIVITY" style={{ marginTop: 20 }} />
+          <View style={[sectionStyles.headerRow, { paddingHorizontal: 0 }]}>
+            <View style={sectionStyles.headerLeft}>
+              <Text style={[sectionStyles.headerLabel, { marginLeft: 0 }]}>Recent activity</Text>
+            </View>
+          </View>
           {recentSessions.length === 0 ? (
             <EmptyCard text="No sessions logged yet" />
           ) : (
@@ -1801,19 +1805,22 @@ function TrainerNoteWidget({
   const handleSave = () => { onSave(draft); setEditing(false); };
 
   return (
-    <View style={noteStyles.card}>
-      <View style={noteStyles.header}>
-        <Text style={noteStyles.label}>TRAINER NOTE</Text>
+    <>
+      <View style={[sectionStyles.headerRow, { paddingHorizontal: 0 }]}>
+        <View style={sectionStyles.headerLeft}>
+          <Text style={[sectionStyles.headerLabel, { marginLeft: 0 }]}>Trainer note</Text>
+        </View>
         {editing ? (
           <TouchableOpacity onPress={handleSave} disabled={saving} hitSlop={8}>
             <Text style={noteStyles.editLink}>{saving ? '…' : 'Save'}</Text>
           </TouchableOpacity>
-        ) : (
+        ) : note ? (
           <TouchableOpacity onPress={startEdit} hitSlop={8}>
             <Text style={noteStyles.editLink}>Edit</Text>
           </TouchableOpacity>
-        )}
+        ) : null}
       </View>
+      <View style={noteStyles.card}>
       {editing ? (
         <TextInput
           style={noteStyles.noteInput}
@@ -1833,7 +1840,8 @@ function TrainerNoteWidget({
           <Text style={noteStyles.addNote}>+ Add note</Text>
         </TouchableOpacity>
       )}
-    </View>
+      </View>
+    </>
   );
 }
 
@@ -4717,11 +4725,9 @@ const tileStyles = StyleSheet.create({
 const noteStyles = StyleSheet.create({
   card: {
     backgroundColor: CARD, borderRadius: 14,
-    padding: 16, marginTop: 16, marginBottom: 8,
+    padding: 16, marginBottom: 8,
     shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 6, elevation: 2,
   },
-  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 },
-  label: { fontSize: 10, fontWeight: '700', color: MUTED, letterSpacing: 0.8, textTransform: 'uppercase' },
   editLink: { fontSize: 13, fontWeight: '600', color: ACCENT },
   noteText: { fontSize: 14, color: TEXT, fontStyle: 'italic', lineHeight: 20 },
   addNote: { fontSize: 14, color: MUTED, fontStyle: 'italic' },
