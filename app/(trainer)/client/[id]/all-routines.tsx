@@ -18,6 +18,7 @@ import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { SymbolView } from 'expo-symbols';
 import Svg, { Circle as SvgCircle } from 'react-native-svg';
 import { LinearGradient } from 'expo-linear-gradient';
+import { DARK_CARD_GRADIENT } from '@/components/WorkoutPaperCover';
 import { supabase } from '@/lib/supabase';
 import { BottomSheet } from '@/components/BottomSheet';
 import { CATEGORY_COLORS } from '@/lib/workoutCategories';
@@ -25,9 +26,11 @@ import type { WorkoutCategory } from '@/lib/workoutCategories';
 
 type RoutineWorkoutItem = {
   id: string;
+  name: string;
   category: string | null;
   orderIndex: number;
-  isDoneInCycle: boolean;
+  doneThisWeek: boolean;
+  missedLastWeek: boolean;
   lastSessionDate: string | null;
 };
 
@@ -39,9 +42,7 @@ type RoutineRow = {
   closedAt: string | null;
   lastSessionDate: string | null;
   workouts: RoutineWorkoutItem[];
-  nextUpWorkoutId: string | null;
-  cycleDoneCount: number;
-  cycleJustCompleted: boolean;
+  weeklyDoneCount: number;
   routineTotal: number;
 };
 
@@ -67,7 +68,7 @@ async function fetchAllRoutines(clientId: string): Promise<RoutineRow[]> {
 
   const { data: wRows } = await supabase
     .from('workouts')
-    .select('id, routine_id, category, order_index')
+    .select('id, routine_id, name, category, order_index, created_at')
     .in('routine_id', routineIds)
     .order('order_index');
 
@@ -76,21 +77,12 @@ async function fetchAllRoutines(clientId: string): Promise<RoutineRow[]> {
       id: r.id, name: r.name, isActive: r.status === 'active',
       createdAt: r.created_at, closedAt: r.closed_at ?? null,
       lastSessionDate: null, workouts: [],
-      nextUpWorkoutId: null, cycleDoneCount: 0, cycleJustCompleted: false, routineTotal: 0,
+      weeklyDoneCount: 0, routineTotal: 0,
     }));
   }
 
   const wIds = (wRows as any[]).map((w: any) => w.id);
 
-  const workoutToRoutine = new Map<string, string>();
-  (wRows as any[]).forEach((w: any) => workoutToRoutine.set(w.id, w.routine_id));
-
-  const routineTotalMap = new Map<string, number>();
-  (wRows as any[]).forEach((w: any) => {
-    routineTotalMap.set(w.routine_id, (routineTotalMap.get(w.routine_id) ?? 0) + 1);
-  });
-
-  // Fetch completed sessions ascending for cycle-aware detection
   const { data: sessions } = await supabase
     .from('sessions')
     .select('workout_id, date, created_at')
@@ -100,48 +92,48 @@ async function fetchAllRoutines(clientId: string): Promise<RoutineRow[]> {
     .order('date', { ascending: true })
     .order('created_at', { ascending: true });
 
-  type CycleState = { done: Set<string>; hasCycled: boolean };
-  const cycleState = new Map<string, CycleState>();
-  routineIds.forEach(rid => cycleState.set(rid, { done: new Set(), hasCycled: false }));
+  // Weekly done/missed flags (same rules as the client Training-tab RoutineReadout;
+  // weeks run Mon–Sun; a routine/workout created this week is never "missed").
+  const todayMid = new Date();
+  todayMid.setHours(0, 0, 0, 0);
+  const thisMonday = new Date(todayMid);
+  thisMonday.setDate(thisMonday.getDate() - ((thisMonday.getDay() + 6) % 7));
+  const lastMonday = new Date(thisMonday);
+  lastMonday.setDate(lastMonday.getDate() - 7);
+  const dStr = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  const thisMondayStr = dStr(thisMonday);
+  const lastMondayStr = dStr(lastMonday);
 
   const lastDateMap = new Map<string, string>();
-
+  const doneThisWeekIds = new Set<string>();
+  const doneLastWeekIds = new Set<string>();
   (sessions ?? []).forEach((s: any) => {
-    const routineId = workoutToRoutine.get(s.workout_id);
-    if (!routineId) return;
+    if (!s.workout_id) return;
     lastDateMap.set(s.workout_id, s.date);
-    const state = cycleState.get(routineId)!;
-    state.done.add(s.workout_id);
-    if (state.done.size === (routineTotalMap.get(routineId) ?? 0)) {
-      state.done = new Set();
-      state.hasCycled = true;
-    }
+    if (s.date >= thisMondayStr) doneThisWeekIds.add(s.workout_id);
+    else if (s.date >= lastMondayStr) doneLastWeekIds.add(s.workout_id);
   });
+
+  const routineCreatedAt = new Map<string, string>();
+  (rRows as any[]).forEach(r => routineCreatedAt.set(r.id, r.created_at));
 
   const workoutsByRoutine = new Map<string, RoutineWorkoutItem[]>();
   (wRows as any[]).forEach((w: any) => {
     if (!workoutsByRoutine.has(w.routine_id)) workoutsByRoutine.set(w.routine_id, []);
+    const routineExistedLastWeek = (routineCreatedAt.get(w.routine_id) ?? '') < thisMondayStr;
     workoutsByRoutine.get(w.routine_id)!.push({
       id: w.id,
+      name: w.name ?? '',
       category: w.category ?? null,
       orderIndex: w.order_index,
-      isDoneInCycle: false,
+      doneThisWeek: doneThisWeekIds.has(w.id),
+      missedLastWeek: routineExistedLastWeek && w.created_at < thisMondayStr && !doneLastWeekIds.has(w.id),
       lastSessionDate: lastDateMap.get(w.id) ?? null,
     });
   });
 
   return (rRows as any[]).map(r => {
     const rWorkouts = workoutsByRoutine.get(r.id) ?? [];
-    const state = cycleState.get(r.id) ?? { done: new Set<string>(), hasCycled: false };
-    const cycleJustCompleted = state.hasCycled && state.done.size === 0;
-    const cycleDoneCount = state.done.size;
-
-    rWorkouts.forEach(w => { w.isDoneInCycle = state.done.has(w.id); });
-
-    const sortedByOrder = [...rWorkouts].sort((a, b) => a.orderIndex - b.orderIndex);
-    const nextUp = cycleJustCompleted
-      ? sortedByOrder[0] ?? null
-      : sortedByOrder.find(w => !state.done.has(w.id)) ?? null;
 
     const lastDate = rWorkouts.reduce<string | null>((best, w) => {
       if (!w.lastSessionDate) return best;
@@ -157,9 +149,7 @@ async function fetchAllRoutines(clientId: string): Promise<RoutineRow[]> {
       closedAt: r.closed_at ?? null,
       lastSessionDate: lastDate,
       workouts: rWorkouts,
-      nextUpWorkoutId: nextUp?.id ?? null,
-      cycleDoneCount,
-      cycleJustCompleted,
+      weeklyDoneCount: rWorkouts.filter(w => w.doneThisWeek).length,
       routineTotal: rWorkouts.length,
     };
   });
@@ -419,7 +409,7 @@ export default function AllRoutinesScreen() {
 // ─── ProgressRing ─────────────────────────────────────────────────────────────
 
 function ProgressRing({ size, current, total, visible }: { size: number; current: number; total: number; visible: boolean }) {
-  const strokeWidth = 2.5;
+  const strokeWidth = 3;
   const radius = (size - strokeWidth * 2) / 2;
   const circumference = 2 * Math.PI * radius;
   const progress = total > 0 ? Math.min(current / total, 1) : 0;
@@ -430,7 +420,7 @@ function ProgressRing({ size, current, total, visible }: { size: number; current
   return (
     <View style={{ width: size, height: size, alignItems: 'center', justifyContent: 'center' }}>
       <Svg width={size} height={size} style={{ position: 'absolute' }}>
-        <SvgCircle cx={size / 2} cy={size / 2} r={radius} stroke="rgba(36,172,136,0.2)" strokeWidth={strokeWidth} fill="none" />
+        <SvgCircle cx={size / 2} cy={size / 2} r={radius} stroke="rgba(255,255,255,0.22)" strokeWidth={strokeWidth} fill="none" />
         <SvgCircle
           cx={size / 2} cy={size / 2} r={radius}
           stroke={ACCENT}
@@ -443,7 +433,7 @@ function ProgressRing({ size, current, total, visible }: { size: number; current
           origin={`${size / 2}, ${size / 2}`}
         />
       </Svg>
-      <Text style={{ fontSize: size * 0.18, fontWeight: '700', color: HEADER, lineHeight: size * 0.22 }}>
+      <Text style={{ fontSize: size * 0.2, fontWeight: '700', color: '#fff', lineHeight: size * 0.24 }}>
         {current}/{total}
       </Text>
     </View>
@@ -465,10 +455,14 @@ function RoutineCard({
   onMenuPress: () => void;
 }) {
   const total = routine.routineTotal;
-  const { cycleDoneCount, cycleJustCompleted } = routine;
-  const ringCurrent = cycleJustCompleted ? total : cycleDoneCount;
-  const completedPct = total > 0 ? Math.round((ringCurrent / total) * 100) : 0;
+  const { weeklyDoneCount } = routine;
   const period = formatRoutinePeriod(routine.createdAt, routine.closedAt);
+  // "Start with this one" arrow — first workout in program order missed last week
+  // and not yet done this week (weekly rules, same as the client cards).
+  const sortedByOrder = [...routine.workouts].sort((a, b) => a.orderIndex - b.orderIndex);
+  const startHereId = routine.isActive
+    ? sortedByOrder.find(w => w.missedLastWeek && !w.doneThisWeek)?.id ?? null
+    : null;
 
   if (isRenaming) {
     return (
@@ -494,65 +488,55 @@ function RoutineCard({
 
   return (
     <TouchableOpacity onPress={onPress} activeOpacity={0.85} style={rcStyles.shadow}>
-      <LinearGradient colors={['#ffffff', '#f0eee9']} start={{ x: 1, y: 0 }} end={{ x: 0, y: 1 }} style={rcStyles.card}>
-        <View style={rcStyles.topRow}>
+      {/* Dark top (ring + routine name/subtitle on the workout cards' DARK_CARD_GRADIENT)
+          + white footer holding the program-order strips and name/mark labels
+          (weekly ✓/→/⋯ system) — mirrors the client My Routines card. */}
+      <View style={rcStyles.card}>
+        <LinearGradient colors={DARK_CARD_GRADIENT} start={{ x: 0.5, y: 0 }} end={{ x: 0.5, y: 1 }} style={rcStyles.topRow}>
           <ProgressRing
             size={48}
-            current={ringCurrent}
+            current={weeklyDoneCount}
             total={total || 1}
             visible={routine.isActive && total > 0}
           />
           <View style={rcStyles.textBlock}>
             <Text style={rcStyles.routineName} numberOfLines={1}>{routine.name}</Text>
-            <Text style={rcStyles.routineSubtitle}>
+            <Text style={rcStyles.routineSubtitle} numberOfLines={1}>
               {routine.isActive && total > 0
-                ? `${total} workout${total !== 1 ? 's' : ''} · ${completedPct}% complete`
+                ? `${total} workout${total !== 1 ? 's' : ''} · ${weeklyDoneCount} done this week`
                 : routine.isActive ? 'No workouts' : period}
             </Text>
           </View>
-          {routine.isActive ? (
-            <View style={rcStyles.activeBadge}>
-              <Text style={rcStyles.activeBadgeText}>Active</Text>
+        </LinearGradient>
+
+        {routine.workouts.length > 0 && (
+          <View style={rcStyles.footer}>
+            <View style={rcStyles.stripsRow}>
+              {sortedByOrder.map(w => {
+                const stripColor = w.category ? (CATEGORY_COLORS[w.category as WorkoutCategory]?.border ?? '#888') : '#888';
+                return <View key={w.id} style={[rcStyles.strip, { backgroundColor: stripColor }]} />;
+              })}
             </View>
-          ) : (
-            <Text style={rcStyles.closedLabel}>Closed</Text>
-          )}
-          <TouchableOpacity onPress={onMenuPress} hitSlop={8} style={rcStyles.menuBtn} activeOpacity={0.5}>
-            <SymbolView name="ellipsis" size={16} tintColor="#444" />
-          </TouchableOpacity>
-        </View>
-
-        {routine.workouts.length > 0 && (
-          <View style={rcStyles.stripsRow}>
-            {routine.workouts.map(w => {
-              const stripColor = w.category ? (CATEGORY_COLORS[w.category as WorkoutCategory]?.border ?? '#888') : '#888';
-              const isNext = !cycleJustCompleted && routine.nextUpWorkoutId === w.id;
-              const isDone = cycleJustCompleted || w.isDoneInCycle;
-              return (
-                <View key={w.id} style={[rcStyles.strip, { backgroundColor: stripColor, opacity: (isDone || isNext) ? 1 : 0.4 }]} />
-              );
-            })}
+            <View style={rcStyles.labelsRow}>
+              {sortedByOrder.map(w => {
+                const mark = w.doneThisWeek ? '✓' : w.id === startHereId ? '→' : '⋯';
+                return (
+                  <View key={w.id} style={rcStyles.labelCell}>
+                    <Text style={rcStyles.labelText} numberOfLines={1}>{w.name || '—'}</Text>
+                    {routine.isActive && (
+                      <Text style={[rcStyles.statusChar, { color: mark === '⋯' ? '#ccc' : ACCENT }]}>{mark}</Text>
+                    )}
+                  </View>
+                );
+              })}
+            </View>
           </View>
         )}
 
-        {routine.workouts.length > 0 && (
-          <View style={rcStyles.labelsRow}>
-            {routine.workouts.map(w => {
-              const isNext = !cycleJustCompleted && routine.nextUpWorkoutId === w.id;
-              const isDone = cycleJustCompleted || w.isDoneInCycle;
-              const statusChar = isNext ? '→' : isDone ? '✓' : '—';
-              const statusColor = isNext ? ACCENT : isDone ? ACCENT : '#ccc';
-              const label = (w.category ?? '').length > 8 ? (w.category ?? '').slice(0, 7) + '…' : (w.category ?? '—');
-              return (
-                <View key={w.id} style={rcStyles.labelCell}>
-                  <Text style={rcStyles.labelText} numberOfLines={1}>{label}</Text>
-                  <Text style={[rcStyles.statusChar, { color: statusColor }]}>{statusChar}</Text>
-                </View>
-              );
-            })}
-          </View>
-        )}
-      </LinearGradient>
+        <TouchableOpacity onPress={onMenuPress} hitSlop={8} style={rcStyles.menuBtn} activeOpacity={0.5}>
+          <SymbolView name="ellipsis" size={13} tintColor="rgba(255,255,255,0.65)" />
+        </TouchableOpacity>
+      </View>
     </TouchableOpacity>
   );
 }
@@ -657,25 +641,21 @@ const styles = StyleSheet.create({
 const rcStyles = StyleSheet.create({
   shadow: {
     borderRadius: 16, marginBottom: 0,
-    shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.07, shadowRadius: 10, elevation: 3,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 5 }, shadowOpacity: 0.08, shadowRadius: 12, elevation: 4,
   },
-  // Dark-green outline (July 2026): the routine card's identity next to the dark cover
-  // cards — deliberate brand border, exempt from the app-wide borderless rule.
-  card: { borderRadius: 16, overflow: 'hidden', padding: 14, paddingHorizontal: 14, borderWidth: 1.5, borderColor: HEADER },
-  topRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 12 },
+  card: { borderRadius: 16, overflow: 'hidden', backgroundColor: '#fff' },
+  topRow: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14 },
   textBlock: { flex: 1, gap: 4 },
-  routineName: { fontSize: 15, fontWeight: '600', color: '#1a1a1a' },
-  routineSubtitle: { fontSize: 11, color: '#999' },
-  activeBadge: { backgroundColor: '#E1F5EE', borderRadius: 100, paddingHorizontal: 8, paddingVertical: 3 },
-  activeBadgeText: { fontSize: 10, fontWeight: '600', color: ACCENT },
-  closedLabel: { fontSize: 11, color: '#999' },
-  menuBtn: { padding: 4 },
+  routineName: { fontSize: 15, fontWeight: '600', color: '#fff' },
+  routineSubtitle: { fontSize: 11, color: 'rgba(255,255,255,0.6)' },
+  menuBtn: { position: 'absolute', top: 8, right: 8, padding: 6 },
+  footer: { backgroundColor: '#fff', paddingHorizontal: 14, paddingTop: 8, paddingBottom: 7 },
   stripsRow: { flexDirection: 'row', gap: 4, marginBottom: 6 },
   strip: { flex: 1, height: 4, borderRadius: 2 },
   labelsRow: { flexDirection: 'row', gap: 4 },
   labelCell: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 3 },
-  labelText: { fontSize: 8, flexShrink: 1, color: '#999' },
-  statusChar: { fontSize: 9, fontWeight: '600' },
+  labelText: { fontSize: 10, flexShrink: 1, color: '#666' },
+  statusChar: { fontSize: 10, fontWeight: '600' },
   renameRow: {
     flexDirection: 'row', alignItems: 'center',
     backgroundColor: CARD, borderRadius: 16,
