@@ -1504,8 +1504,10 @@ function TrainingTab({
           {/* Full-bleed wrapper — cancels the tab's 16px content padding so the WORKOUTS
               gallery reaches the screen edge (each section re-adds its own 16px insets). */}
           <View style={sectionStyles.fullBleed}>
-          {/* ── ROUTINES section FIRST (mirrors the client Training tab's order) ── */}
-          <View style={sectionStyles.headerRow}>
+          {/* ── ROUTINES section FIRST (mirrors the client Training tab's order) ──
+              Extra paddingTop only here: the week-strip zone above gets more separation
+              than the section-to-section rhythm, so it reads as its own unit. */}
+          <View style={[sectionStyles.headerRow, { paddingTop: 42 }]}>
             <View style={sectionStyles.headerLeft}>
               <Text style={[sectionStyles.headerLabel, { marginLeft: 0 }]}>Routines</Text>
             </View>
@@ -2177,7 +2179,7 @@ function WeekStripCard({
 
       {/* Day-contextual add affordance — single green + circle (matches client). Opens the Add Session modal. */}
       <TouchableOpacity style={wsStyles.addCircle} onPress={() => setNoSessModal(true)} activeOpacity={0.85}>
-        <SymbolView name="plus" size={18} tintColor="#fff" weight="semibold" />
+        <SymbolView name="plus" size={16} tintColor={ACCENT} weight="semibold" />
       </TouchableOpacity>
 
       {/* Add session modal */}
@@ -4749,11 +4751,12 @@ const hlStyles = StyleSheet.create({
   change: { fontSize: 13, fontWeight: '600', flexShrink: 0 },
 });
 
-// ─── Week strip styles (matches client side exactly) ─────────────────────────
+// ─── Week strip styles (client anatomy, but HEAVIER since July 25 — bigger day
+//     numbers/pills/dots + ghost add circle; client not yet matched) ───────────
 
 const wsStyles = StyleSheet.create({
-  strip:       { marginTop: 4, paddingBottom: 8 },
-  headerRow:   { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 },
+  strip:       { marginTop: 4, paddingBottom: 12 },
+  headerRow:   { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 18 },
   headerActions: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   todayBtn:    { width: 18, height: 18, borderRadius: 9, backgroundColor: ACCENT, alignItems: 'center', justifyContent: 'center' },
   todayBtnText: { fontSize: 9, fontWeight: '700', color: '#fff', lineHeight: 18 },
@@ -4762,16 +4765,18 @@ const wsStyles = StyleSheet.create({
   daysArrow:     { width: 14, alignItems: 'center', justifyContent: 'center' },
   daysArrowText: { fontSize: 18, color: '#ccc', lineHeight: 28 },
   daysRow:     { flex: 1, flexDirection: 'row' },
-  dayCol:      { flex: 1, alignItems: 'center', gap: 3 },
-  dayPill:     { alignItems: 'center', gap: 1, paddingTop: 5, paddingBottom: 6, paddingHorizontal: 10, borderRadius: 16 },
+  dayCol:      { flex: 1, alignItems: 'center', gap: 5 },
+  dayPill:     { alignItems: 'center', gap: 2, paddingTop: 7, paddingBottom: 8, paddingHorizontal: 11, borderRadius: 18 },
   dayPillSel:  { backgroundColor: ACCENT },
-  dayLabel:    { fontSize: 9, color: 'rgba(36,78,67,0.5)', textTransform: 'uppercase', fontWeight: '600' },
-  dayNum:      { fontSize: 17, fontWeight: '600', color: TEXT },
-  dot:           { width: 5, height: 5, borderRadius: 2.5 },
+  dayLabel:    { fontSize: 10, color: 'rgba(36,78,67,0.55)', textTransform: 'uppercase', fontWeight: '600', letterSpacing: 0.3 },
+  dayNum:      { fontSize: 19, fontWeight: '700', color: TEXT },
+  dot:           { width: 6, height: 6, borderRadius: 3 },
   dotCompleted:  { backgroundColor: ACCENT },
   dotScheduled:  { backgroundColor: 'transparent', borderWidth: 1.5, borderColor: ACCENT },
 
-  addCircle:   { width: 40, height: 40, borderRadius: 20, alignSelf: 'center', marginTop: 12, backgroundColor: ACCENT, alignItems: 'center', justifyContent: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.12, shadowRadius: 6, elevation: 3 },
+  // Ghost style (July 25) — the filled ACCENT disc was the screen's third green focal
+  // point in a vertical line (selected pill → + → routine strip) and read "busy".
+  addCircle:   { width: 34, height: 34, borderRadius: 17, alignSelf: 'center', marginTop: 12, backgroundColor: 'rgba(36,172,136,0.12)', alignItems: 'center', justifyContent: 'center' },
 
   // Card-style-aware (white base + light lift shadow; darkCardStyles.bg appended for
   // the 'light' style's dark footer) — matches the client week-strip session cards.
