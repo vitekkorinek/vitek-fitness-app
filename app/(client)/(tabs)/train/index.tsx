@@ -1993,7 +1993,7 @@ function RoutineReadout({ routine, onPress }: { routine: RoutineRow; onPress: ()
 }
 
 const roStyles = StyleSheet.create({
-  wrap:       { marginHorizontal: 16 },
+  wrap:       { marginHorizontal: 16, marginBottom: 12 },
   name:       { fontSize: 16, fontWeight: '700', color: TEXT },
   stripsRow:  { flexDirection: 'row', gap: 4, marginTop: 10, marginBottom: 6 },
   strip:      { flex: 1, height: 4, borderRadius: 2 },
