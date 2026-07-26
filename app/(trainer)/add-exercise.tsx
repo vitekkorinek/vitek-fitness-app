@@ -14,7 +14,7 @@ import {
   Image,
   Dimensions,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { LightHeader, HeaderIcon, HEADER_ICON, useHeaderHeight } from '@/components/LightHeader';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SymbolView } from 'expo-symbols';
 import { launchImageLibrary } from 'react-native-image-picker';
@@ -64,6 +64,7 @@ type VideoItem = { videoUrl: string; thumbnailUri: string | null };
 type PhotoItem = { displayUri: string; localUri: string | null };
 
 export default function AddExerciseScreen() {
+  const headerH = useHeaderHeight();
   const { exerciseId } = useLocalSearchParams<{ exerciseId?: string }>();
   const router = useRouter();
   const { profile } = useAuth();
@@ -280,24 +281,13 @@ export default function AddExerciseScreen() {
 
   return (
     <View style={styles.root}>
-      <StatusBar barStyle="light-content" />
-
-      <SafeAreaView style={styles.headerSafe} edges={['top']}>
-        <View style={styles.headerBar}>
-          <TouchableOpacity onPress={() => router.back()} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-            <SymbolView name="chevron.left" size={20} tintColor="#ffffff" />
-          </TouchableOpacity>
-          <Text style={styles.headerTitle}>
-            {isEdit ? t.library.addExercise.editTitle : t.library.addExercise.title}
-          </Text>
-          <VFIcon size={24} color="#ffffff" />
-        </View>
-      </SafeAreaView>
+      <StatusBar barStyle="dark-content" />
 
       <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
         <ScrollView
           style={styles.flex}
-          contentContainerStyle={styles.formContent}
+          contentContainerStyle={[styles.formContent, { paddingTop: headerH + 20 }]}
+          scrollIndicatorInsets={{ top: headerH }}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
           scrollEnabled={!scrollLocked}
@@ -561,6 +551,18 @@ export default function AddExerciseScreen() {
           )}
         </ScrollView>
       </KeyboardAvoidingView>
+
+      {/* Glass header — rendered last so it overlays the form. Carried the old
+          dark-green SafeAreaView bar until July 26. */}
+      <LightHeader
+        left={
+          <HeaderIcon onPress={() => router.back()}>
+            <SymbolView name="chevron.left" size={24} tintColor={HEADER_ICON} weight="semibold" />
+          </HeaderIcon>
+        }
+        title={isEdit ? t.library.addExercise.editTitle : t.library.addExercise.title}
+        right={<VFIcon size={26} color={HEADER_ICON} />}
+      />
     </View>
   );
 }
@@ -580,15 +582,9 @@ const ACCENT = '#24ac88';
 const TEXT   = '#1a1a1a';
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: HEADER },
+  root: { flex: 1, backgroundColor: BG },
   loadingRoot: { flex: 1, backgroundColor: BG, alignItems: 'center', justifyContent: 'center' },
   flex: { flex: 1 },
-  headerSafe: { backgroundColor: HEADER },
-  headerBar: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: 20, paddingVertical: 12,
-  },
-  headerTitle: { color: '#fff', fontSize: 17, fontWeight: '600' },
 
   formContent: {
     backgroundColor: BG, paddingHorizontal: 16, paddingTop: 20, paddingBottom: 48, flexGrow: 1,

@@ -17,6 +17,7 @@ import {
   Share,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { LightHeader, HeaderIcon, HEADER_ICON, useHeaderHeight } from '@/components/LightHeader';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SymbolView } from 'expo-symbols';
 import { File, Paths } from 'expo-file-system';
@@ -321,6 +322,7 @@ function buildInvoiceHtml(params: {
 // ─── Screen ───────────────────────────────────────────────────────────────────
 
 export default function InvoiceScreen() {
+  const headerH = useHeaderHeight();
   const { invoiceId } = useLocalSearchParams<{ invoiceId: string }>();
   const isNew = invoiceId === 'new';
   const router = useRouter();
@@ -641,9 +643,9 @@ export default function InvoiceScreen() {
 
   if (loading) {
     return (
-      <View style={{ flex: 1, backgroundColor: HEADER, alignItems: 'center', justifyContent: 'center' }}>
-        <StatusBar barStyle="light-content" backgroundColor={HEADER} />
-        <ActivityIndicator color="#fff" size="large" />
+      <View style={{ flex: 1, backgroundColor: BG, alignItems: 'center', justifyContent: 'center' }}>
+        <StatusBar barStyle="dark-content" />
+        <ActivityIndicator color={ACCENT} size="large" />
       </View>
     );
   }
@@ -654,35 +656,13 @@ export default function InvoiceScreen() {
 
   return (
     <View style={s.root}>
-      <StatusBar barStyle="light-content" backgroundColor={HEADER} />
-
-      {/* Header */}
-      <SafeAreaView style={s.headerSafe} edges={['top']}>
-        <View style={s.headerBar}>
-          <TouchableOpacity onPress={() => router.back()} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-            <SymbolView name="chevron.left" size={20} tintColor="#ffffff" />
-          </TouchableOpacity>
-          <Text style={s.headerTitle} numberOfLines={1}>
-            {isNew ? t.invoice.newTitle : t.invoice.editTitle(invoiceNumber)}
-          </Text>
-          <View style={s.headerRight}>
-            {(saving || generatingPdf) ? (
-              <ActivityIndicator color="#fff" size="small" />
-            ) : pdfUrl ? (
-              <TouchableOpacity onPress={preparePreview} hitSlop={8}>
-                <SymbolView name="square.and.arrow.up" size={20} tintColor="#ffffff" />
-              </TouchableOpacity>
-            ) : (
-              <View style={{ width: 24 }} />
-            )}
-          </View>
-        </View>
-      </SafeAreaView>
+      <StatusBar barStyle="dark-content" />
 
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <ScrollView
           style={s.scroll}
-          contentContainerStyle={[s.scrollContent, { paddingBottom: insets.bottom + 120 }]}
+          contentContainerStyle={[s.scrollContent, { paddingTop: headerH + 16, paddingBottom: insets.bottom + 120 }]}
+          scrollIndicatorInsets={{ top: headerH }}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
@@ -960,6 +940,29 @@ export default function InvoiceScreen() {
           )}
         </BottomSheet>
       )}
+
+      {/* Glass header — rendered last so it overlays the form. Carried the old
+          dark-green SafeAreaView bar until July 26. The share glyph keeps its three
+          states (spinner while saving/generating, share once a PDF exists, nothing
+          before that). NOTE: the print-preview facsimile below (`pvSt`) keeps its own
+          dark bar on purpose — it mirrors the printed PDF, not the app chrome. */}
+      <LightHeader
+        left={
+          <HeaderIcon onPress={() => router.back()}>
+            <SymbolView name="chevron.left" size={24} tintColor={HEADER_ICON} weight="semibold" />
+          </HeaderIcon>
+        }
+        title={isNew ? t.invoice.newTitle : t.invoice.editTitle(invoiceNumber)}
+        right={
+          (saving || generatingPdf) ? (
+            <ActivityIndicator color={HEADER_ICON} size="small" />
+          ) : pdfUrl ? (
+            <HeaderIcon onPress={preparePreview}>
+              <SymbolView name="square.and.arrow.up" size={21} tintColor={HEADER_ICON} weight="semibold" />
+            </HeaderIcon>
+          ) : undefined
+        }
+      />
     </View>
   );
 }
@@ -1316,14 +1319,7 @@ function InvoicePreviewModal({
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
 const s = StyleSheet.create({
-  root: { flex: 1, backgroundColor: HEADER },
-  headerSafe: { backgroundColor: HEADER },
-  headerBar: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: 16, paddingVertical: 12,
-  },
-  headerTitle: { flex: 1, textAlign: 'center', color: '#fff', fontSize: 17, fontWeight: '700', marginHorizontal: 8 },
-  headerRight: { width: 24, alignItems: 'center' },
+  root: { flex: 1, backgroundColor: BG },
 
   scroll: { flex: 1, backgroundColor: BG },
   scrollContent: { padding: 16, gap: 0 },

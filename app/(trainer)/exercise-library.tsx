@@ -11,7 +11,7 @@ import {
   ActivityIndicator,
   RefreshControl,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { LightHeader, HeaderIcon, HEADER_ICON, useHeaderHeight } from '@/components/LightHeader';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { SymbolView } from 'expo-symbols';
 import { supabase } from '@/lib/supabase';
@@ -29,6 +29,7 @@ import type { Exercise } from '@/types/database';
 type SortMode = 'az' | 'recent';
 
 export default function ExerciseLibraryScreen() {
+  const headerH = useHeaderHeight();
   const router = useRouter();
 
   const [exercises, setExercises] = useState<Exercise[]>([]);
@@ -110,22 +111,11 @@ export default function ExerciseLibraryScreen() {
 
   return (
     <View style={styles.root}>
-      <StatusBar barStyle="light-content" />
+      <StatusBar barStyle="dark-content" />
 
-      <SafeAreaView style={styles.headerSafe} edges={['top']}>
-        <View style={styles.headerBar}>
-          <TouchableOpacity
-            onPress={() => router.back()}
-            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-          >
-            <SymbolView name="chevron.left" size={20} tintColor="#ffffff" />
-          </TouchableOpacity>
-          <Text style={styles.headerTitle}>Add Exercise</Text>
-          <View style={{ width: 32 }} />
-        </View>
-      </SafeAreaView>
-
-      <View style={styles.content}>
+      {/* The search + filter row is FIXED (only the list below it scrolls), so the
+          content block is pushed clear of the glass header rather than sliding under it. */}
+      <View style={[styles.content, { paddingTop: headerH }]}>
         {/* Search */}
         <View style={styles.searchBar}>
           <SymbolView name="magnifyingglass" size={14} tintColor="#aaa" />
@@ -240,6 +230,17 @@ export default function ExerciseLibraryScreen() {
         onToggle={toggleEquip}
         onClose={() => setEquipSheetOpen(false)}
       />
+
+      {/* Glass header — rendered last so it overlays the content. Carried the old
+          dark-green SafeAreaView bar until July 26. */}
+      <LightHeader
+        left={
+          <HeaderIcon onPress={() => router.back()}>
+            <SymbolView name="chevron.left" size={24} tintColor={HEADER_ICON} weight="semibold" />
+          </HeaderIcon>
+        }
+        title="Add Exercise"
+      />
     </View>
   );
 }
@@ -319,13 +320,7 @@ const TEXT   = '#1a1a1a';
 const MUTED  = '#999';
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: HEADER },
-  headerSafe: { backgroundColor: HEADER },
-  headerBar: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: 20, paddingVertical: 12,
-  },
-  headerTitle: { color: '#fff', fontSize: 17, fontWeight: '600' },
+  root: { flex: 1, backgroundColor: BG },
 
   content: { flex: 1, backgroundColor: BG },
 

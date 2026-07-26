@@ -4,7 +4,7 @@ import {
   TextInput, FlatList, ActivityIndicator,
   Modal, Pressable,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { LightHeader, HeaderIcon, HEADER_ICON, useHeaderHeight } from '@/components/LightHeader';
 import { useRouter } from 'expo-router';
 import { SymbolView } from 'expo-symbols';
 import { supabase } from '@/lib/supabase';
@@ -48,6 +48,7 @@ const STATUS_OPTIONS: { key: StatusFilter; label: string }[] = [
 ];
 
 export default function AllInvoicesScreen() {
+  const headerH = useHeaderHeight();
   const router = useRouter();
   const { profile } = useAuth();
 
@@ -97,24 +98,9 @@ export default function AllInvoicesScreen() {
 
   return (
     <View style={styles.root}>
-      <SafeAreaView style={styles.headerSafe} edges={['top']}>
-        <View style={styles.headerBar}>
-          <TouchableOpacity onPress={() => router.back()} hitSlop={8}>
-            <SymbolView name="chevron.left" size={20} tintColor="#fff" />
-          </TouchableOpacity>
-          <Text style={styles.headerTitle}>All Invoices</Text>
-          <TouchableOpacity
-            style={styles.newBtn}
-            onPress={() => router.push('/(trainer)/invoice/new' as any)}
-            hitSlop={6}
-            activeOpacity={0.75}
-          >
-            <Text style={styles.newBtnText}>＋</Text>
-          </TouchableOpacity>
-        </View>
-      </SafeAreaView>
-
-      <View style={styles.searchBar}>
+      {/* The search bar is FIXED (only the list scrolls), so it is pushed clear of the
+          glass header rather than sliding under it. */}
+      <View style={[styles.searchBar, { marginTop: headerH + 14 }]}>
         <SymbolView name="magnifyingglass" size={14} tintColor="#aaa" />
         <TextInput
           style={styles.searchInput}
@@ -235,20 +221,28 @@ export default function AllInvoicesScreen() {
           )}
         </BottomSheet>
       )}
+
+      {/* Glass header — rendered last so it overlays the content. Carried the old
+          dark-green SafeAreaView bar until July 26. */}
+      <LightHeader
+        left={
+          <HeaderIcon onPress={() => router.back()}>
+            <SymbolView name="chevron.left" size={24} tintColor={HEADER_ICON} weight="semibold" />
+          </HeaderIcon>
+        }
+        title="All Invoices"
+        right={
+          <HeaderIcon onPress={() => router.push('/(trainer)/invoice/new' as any)}>
+            <SymbolView name="plus" size={22} tintColor={HEADER_ICON} weight="semibold" />
+          </HeaderIcon>
+        }
+      />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: BG },
-  headerSafe: { backgroundColor: HEADER },
-  headerBar: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: 20, paddingVertical: 12,
-  },
-  headerTitle: { color: '#fff', fontSize: 17, fontWeight: '700' },
-  newBtn: { padding: 8, alignItems: 'center', justifyContent: 'center' },
-  newBtnText: { color: '#fff', fontSize: 24, lineHeight: 26, fontWeight: '300' },
 
   searchBar: {
     flexDirection: 'row', alignItems: 'center', gap: 8,

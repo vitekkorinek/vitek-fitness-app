@@ -11,7 +11,7 @@ import {
   Alert,
   Image,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { LightHeader, HeaderIcon, HEADER_ICON, useHeaderHeight } from '@/components/LightHeader';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SymbolView } from 'expo-symbols';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -135,6 +135,7 @@ async function copyWorkoutToRoutine(
 }
 
 export default function WorkoutPickerScreen() {
+  const headerH = useHeaderHeight();
   const { clientId, routineId } = useLocalSearchParams<{ clientId: string; routineId: string }>();
   const router = useRouter();
   const { profile } = useAuth();
@@ -170,19 +171,7 @@ export default function WorkoutPickerScreen() {
 
   return (
     <View style={styles.root}>
-      <StatusBar barStyle="light-content" />
-      <SafeAreaView style={styles.headerSafe} edges={['top']}>
-        <View style={styles.headerBar}>
-          <TouchableOpacity
-            onPress={() => router.back()}
-            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-          >
-            <SymbolView name="chevron.left" size={20} tintColor="#ffffff" />
-          </TouchableOpacity>
-          <Text style={styles.headerTitle}>Workout Library</Text>
-          <View style={{ width: 28 }} />
-        </View>
-      </SafeAreaView>
+      <StatusBar barStyle="dark-content" />
 
       {loading ? (
         <View style={styles.loaderWrap}>
@@ -191,7 +180,8 @@ export default function WorkoutPickerScreen() {
       ) : (
         <ScrollView
           style={styles.scroll}
-          contentContainerStyle={styles.content}
+          contentContainerStyle={[styles.content, { paddingTop: headerH + 16 }]}
+          scrollIndicatorInsets={{ top: headerH }}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
         >
@@ -228,6 +218,17 @@ export default function WorkoutPickerScreen() {
           )}
         </ScrollView>
       )}
+
+      {/* Glass header — rendered last so it overlays the scrolling content. Carried the
+          old dark-green SafeAreaView bar until July 26. */}
+      <LightHeader
+        left={
+          <HeaderIcon onPress={() => router.back()}>
+            <SymbolView name="chevron.left" size={24} tintColor={HEADER_ICON} weight="semibold" />
+          </HeaderIcon>
+        }
+        title="Workout Library"
+      />
     </View>
   );
 }
@@ -282,13 +283,7 @@ const CATEGORY_GRADIENTS: Record<string, [string, string]> = {
 const GRADIENT_DEFAULT: [string, string] = ['#2a2a2a', '#444444'];
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: HEADER },
-  headerSafe: { backgroundColor: HEADER },
-  headerBar: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: 20, paddingVertical: 12,
-  },
-  headerTitle: { color: '#fff', fontSize: 17, fontWeight: '600' },
+  root: { flex: 1, backgroundColor: BG },
   loaderWrap: { flex: 1, backgroundColor: BG, alignItems: 'center', justifyContent: 'center' },
   scroll: { flex: 1, backgroundColor: BG },
   content: { padding: 16, paddingBottom: 48 },

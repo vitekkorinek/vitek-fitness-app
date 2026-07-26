@@ -12,7 +12,7 @@ import {
   ActivityIndicator,
   Alert,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { LightHeader, HeaderIcon, HEADER_ICON, useHeaderHeight } from '@/components/LightHeader';
 import { useRouter } from 'expo-router';
 import { SymbolView } from 'expo-symbols';
 import { supabaseAdmin } from '@/lib/supabase-admin';
@@ -20,6 +20,7 @@ import { VFIcon } from '@/components/VFIcon';
 import t from '@/i18n/en';
 
 export default function AddClientScreen() {
+  const headerH = useHeaderHeight();
   const router = useRouter();
 
   const [name, setName] = useState('');
@@ -91,21 +92,7 @@ export default function AddClientScreen() {
 
   return (
     <View style={styles.root}>
-      <StatusBar barStyle="light-content" backgroundColor="#244e43" />
-
-      {/* Header */}
-      <SafeAreaView style={styles.headerSafe} edges={['top']}>
-        <View style={styles.headerBar}>
-          <TouchableOpacity
-            onPress={() => router.back()}
-            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-          >
-            <SymbolView name="chevron.left" size={20} tintColor="#ffffff" />
-          </TouchableOpacity>
-          <Text style={styles.headerTitle}>{t.addClient.title}</Text>
-          <VFIcon size={24} color="#ffffff" />
-        </View>
-      </SafeAreaView>
+      <StatusBar barStyle="dark-content" />
 
       {/* Form */}
       <KeyboardAvoidingView
@@ -114,7 +101,8 @@ export default function AddClientScreen() {
       >
         <ScrollView
           style={styles.flex}
-          contentContainerStyle={styles.formContent}
+          contentContainerStyle={[styles.formContent, { paddingTop: headerH + 20 }]}
+          scrollIndicatorInsets={{ top: headerH }}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
@@ -216,26 +204,25 @@ export default function AddClientScreen() {
           </TouchableOpacity>
         </ScrollView>
       </KeyboardAvoidingView>
+
+      {/* Glass header — rendered last so it overlays the form. Carried the old
+          dark-green SafeAreaView bar until July 26. */}
+      <LightHeader
+        left={
+          <HeaderIcon onPress={() => router.back()}>
+            <SymbolView name="chevron.left" size={24} tintColor={HEADER_ICON} weight="semibold" />
+          </HeaderIcon>
+        }
+        title={t.addClient.title}
+        right={<VFIcon size={26} color={HEADER_ICON} />}
+      />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: '#244e43' },
+  root: { flex: 1, backgroundColor: '#faf9f7' },
   flex: { flex: 1 },
-  headerSafe: { backgroundColor: '#244e43' },
-  headerBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 20,
-    paddingVertical: 12,
-  },
-  headerTitle: {
-    color: '#ffffff',
-    fontSize: 17,
-    fontWeight: '600',
-  },
 
   formContent: {
     backgroundColor: '#faf9f7',
