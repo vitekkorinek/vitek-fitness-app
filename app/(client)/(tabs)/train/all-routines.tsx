@@ -6,6 +6,7 @@ import {
   TouchableOpacity,
   TextInput,
   StyleSheet,
+  ViewStyle,
   StatusBar,
   ActivityIndicator,
   RefreshControl,
@@ -19,7 +20,8 @@ import { VFIcon } from '@/components/VFIcon';
 import { BottomSheet } from '@/components/BottomSheet';
 import Svg, { Circle as SvgCircle } from 'react-native-svg';
 import { LinearGradient } from 'expo-linear-gradient';
-import { DARK_CARD_GRADIENT } from '@/components/WorkoutPaperCover';
+import { DARK_CARD_GRADIENT, DARK_CARD_FOOTER } from '@/components/WorkoutPaperCover';
+import { useCoverDark, useFooterDark } from '@/lib/cardVariant';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/context/AuthContext';
 import { CATEGORY_COLORS } from '@/lib/workoutCategories';
@@ -328,7 +330,7 @@ export default function AllRoutinesScreen() {
 
 // ─── ProgressRing ─────────────────────────────────────────────────────────────
 
-function ProgressRing({ size, current, total, visible }: { size: number; current: number; total: number; visible: boolean }) {
+function ProgressRing({ size, current, total, visible, onDark = true }: { size: number; current: number; total: number; visible: boolean; onDark?: boolean }) {
   const strokeWidth = 3;
   const radius = (size - strokeWidth * 2) / 2;
   const circumference = 2 * Math.PI * radius;
@@ -340,7 +342,7 @@ function ProgressRing({ size, current, total, visible }: { size: number; current
   return (
     <View style={{ width: size, height: size, alignItems: 'center', justifyContent: 'center' }}>
       <Svg width={size} height={size} style={{ position: 'absolute' }}>
-        <SvgCircle cx={size / 2} cy={size / 2} r={radius} stroke="rgba(255,255,255,0.22)" strokeWidth={strokeWidth} fill="none" />
+        <SvgCircle cx={size / 2} cy={size / 2} r={radius} stroke={onDark ? 'rgba(255,255,255,0.22)' : 'rgba(0,0,0,0.10)'} strokeWidth={strokeWidth} fill="none" />
         <SvgCircle
           cx={size / 2} cy={size / 2} r={radius}
           stroke={ACCENT}
@@ -353,10 +355,26 @@ function ProgressRing({ size, current, total, visible }: { size: number; current
           origin={`${size / 2}, ${size / 2}`}
         />
       </Svg>
-      <Text style={{ fontSize: size * 0.2, fontWeight: '700', color: '#fff', lineHeight: size * 0.24 }}>
+      <Text style={{ fontSize: size * 0.2, fontWeight: '700', color: onDark ? '#fff' : '#1a1a1a', lineHeight: size * 0.24 }}>
         {current}/{total}
       </Text>
     </View>
+  );
+}
+
+// ─── TopBackground ────────────────────────────────────────────────────────────
+// The routine card's cover ground: the workout cards' gradient when the style's cover is
+// dark, a plain white box when it is light. Same two-branch shape as WorkoutPaperCover's
+// ground, kept local because a routine card's cover is a text row rather than an
+// exercise list + silhouette.
+function TopBackground({ coverDark, style, children }: { coverDark: boolean; style: ViewStyle; children: React.ReactNode }) {
+  // Light covers stay FLAT white — see the note by DARK_CARD_GRADIENT in
+  // WorkoutPaperCover for why a light gradient was tried here and dropped.
+  if (!coverDark) return <View style={[style, rcStyles.topRowLight]}>{children}</View>;
+  return (
+    <LinearGradient colors={DARK_CARD_GRADIENT} start={{ x: 0.5, y: 0 }} end={{ x: 0.5, y: 1 }} style={style}>
+      {children}
+    </LinearGradient>
   );
 }
 
@@ -366,6 +384,11 @@ function RoutineCard({ routine, onPress, onQuickLook }: { routine: RoutineRow; o
   const total = routine.routineTotal;
   const { weeklyDoneCount } = routine;
   const period = formatRoutinePeriod(routine.createdAt, routine.closedAt);
+  // Workout card style — routine cards joined the system on July 26 (they were the last
+  // surface outside it). The gradient row is this card's COVER and the strips row is its
+  // FOOTER, so the same two independent flags drive it as every workout card.
+  const coverDark = useCoverDark();
+  const footerDark = useFooterDark();
   // "Start with this one" arrow — first workout in program order missed last week
   // and not yet done this week (weekly rules, same as the Training-tab readout).
   const sortedByOrder = [...routine.workouts].sort((a, b) => a.orderIndex - b.orderIndex);
@@ -375,29 +398,33 @@ function RoutineCard({ routine, onPress, onQuickLook }: { routine: RoutineRow; o
 
   return (
     <TouchableOpacity onPress={onPress} activeOpacity={0.85} style={rcStyles.shadow}>
-      {/* Dark top (ring + routine name/subtitle + Active badge on the workout cards'
-          DARK_CARD_GRADIENT) + white footer holding the program-order strips and
-          name/mark labels (weekly \u2713/\u2192/\u22ef system). */}
-      <View style={rcStyles.card}>
-        <LinearGradient colors={DARK_CARD_GRADIENT} start={{ x: 0.5, y: 0 }} end={{ x: 0.5, y: 1 }} style={rcStyles.topRow}>
+      {/* Cover row (ring + routine name/subtitle) over a footer holding the
+          program-order strips and name/mark labels (weekly \u2713/\u2192/\u22ef system).
+          Which of the two is dark follows the "Workout card style" setting. */}
+      <View style={[rcStyles.card, footerDark && rcStyles.cardDarkBg]}>
+        {/* The card's "cover": gradient when the style says the cover is dark, plain
+            white otherwise. Everything inside keys off coverDark, exactly like the
+            texts that sit on a WorkoutPaperCover. */}
+        <TopBackground coverDark={coverDark} style={rcStyles.topRow}>
           <ProgressRing
             size={48}
             current={weeklyDoneCount}
             total={total || 1}
             visible={routine.isActive && total > 0}
+            onDark={coverDark}
           />
           <View style={rcStyles.textBlock}>
-            <Text style={rcStyles.routineName} numberOfLines={1}>{routine.name}</Text>
-            <Text style={rcStyles.routineSubtitle} numberOfLines={1}>
+            <Text style={[rcStyles.routineName, !coverDark && rcStyles.routineNameOnLight]} numberOfLines={1}>{routine.name}</Text>
+            <Text style={[rcStyles.routineSubtitle, !coverDark && rcStyles.routineSubtitleOnLight]} numberOfLines={1}>
               {routine.isActive && total > 0
                 ? `${total} workout${total !== 1 ? 's' : ''} \u00b7 ${weeklyDoneCount} done this week`
                 : routine.isActive ? 'No workouts' : period}
             </Text>
           </View>
-        </LinearGradient>
+        </TopBackground>
 
         {routine.workouts.length > 0 && (
-          <View style={rcStyles.footer}>
+          <View style={[rcStyles.footer, footerDark && rcStyles.footerDark]}>
             <View style={rcStyles.stripsRow}>
               {sortedByOrder.map(w => {
                 const stripColor = w.category ? (CATEGORY_COLORS[w.category as WorkoutCategory]?.border ?? '#888') : '#888';
@@ -409,9 +436,9 @@ function RoutineCard({ routine, onPress, onQuickLook }: { routine: RoutineRow; o
                 const mark = w.doneThisWeek ? '\u2713' : w.id === startHereId ? '\u2192' : '\u22ef';
                 return (
                   <View key={w.id} style={rcStyles.labelCell}>
-                    <Text style={rcStyles.labelText} numberOfLines={1}>{w.name || '\u2014'}</Text>
+                    <Text style={[rcStyles.labelText, footerDark && rcStyles.labelTextOnDark]} numberOfLines={1}>{w.name || '\u2014'}</Text>
                     {routine.isActive && (
-                      <Text style={[rcStyles.statusChar, { color: mark === '\u22ef' ? '#ccc' : ACCENT }]}>{mark}</Text>
+                      <Text style={[rcStyles.statusChar, { color: mark === '\u22ef' ? (footerDark ? 'rgba(255,255,255,0.35)' : '#ccc') : ACCENT }]}>{mark}</Text>
                     )}
                   </View>
                 );
@@ -422,7 +449,7 @@ function RoutineCard({ routine, onPress, onQuickLook }: { routine: RoutineRow; o
 
         {onQuickLook && (
           <TouchableOpacity style={rcStyles.menuBtn} onPress={onQuickLook} hitSlop={8} activeOpacity={0.6}>
-            <SymbolView name="ellipsis" size={13} tintColor="rgba(255,255,255,0.65)" />
+            <SymbolView name="ellipsis" size={13} tintColor={coverDark ? 'rgba(255,255,255,0.65)' : '#bbb'} />
           </TouchableOpacity>
         )}
       </View>
@@ -476,10 +503,18 @@ const rcStyles = StyleSheet.create({
     shadowColor: '#000', shadowOffset: { width: 0, height: 5 }, shadowOpacity: 0.08, shadowRadius: 12, elevation: 4,
   },
   card: { borderRadius: 16, overflow: 'hidden', backgroundColor: '#fff' },
+  // Dark overrides, applied per the "Workout card style" setting. The base styles are
+  // the 'dark' anatomy (dark cover + white footer) because that is the default.
+  cardDarkBg: { backgroundColor: DARK_CARD_FOOTER },
   topRow: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14 },
+  topRowLight: { backgroundColor: '#fff' },
   textBlock: { flex: 1, gap: 4 },
   routineName: { fontSize: 15, fontWeight: '600', color: '#fff' },
+  routineNameOnLight: { color: '#1a1a1a' },
   routineSubtitle: { fontSize: 11, color: 'rgba(255,255,255,0.6)' },
+  routineSubtitleOnLight: { color: '#999' },
+  footerDark: { backgroundColor: 'transparent' },
+  labelTextOnDark: { color: 'rgba(255,255,255,0.6)' },
   footer: { backgroundColor: '#fff', paddingHorizontal: 14, paddingTop: 8, paddingBottom: 7 },
   stripsRow: { flexDirection: 'row', gap: 4, marginBottom: 6 },
   strip: { flex: 1, height: 4, borderRadius: 2 },

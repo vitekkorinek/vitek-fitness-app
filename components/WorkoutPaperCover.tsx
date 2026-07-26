@@ -154,6 +154,15 @@ export default function WorkoutPaperCover({
 // WHITE cover matches the dark cover's register elsewhere in the app).
 export const DARK_CARD_GRADIENT: [string, string, string] = ['#244e43', '#1a3830', '#112820'];
 export const DARK_CARD_FOOTER = '#112820';
+// ⚠️ Light covers are FLAT WHITE — do not give them a gradient. Tried July 26 as a
+// mirror of the dark card's and dropped the same day: the dark gradient works because
+// two things agree — darker toward the bottom is how light falls, AND its last stop is
+// the footer colour, so it bridges a real seam. The light version can have neither. To
+// meet a white footer it must END on white, which puts the tint at the TOP (shaded
+// above, bright below — backwards, and it reads as a smudge), and it lands that tint
+// behind the exercise list while leaving clean white where there is no content. On the
+// 'white' style there is no seam to bridge at all, since cover and footer are both
+// white. Vitek's verdict matched the earlier routine-card wash: "dirty".
 // The app-wide text colour (TEXT in every screen's local constants) — the light covers'
 // exercise list uses it so the card isn't carrying its own private grey.
 const TEXT_INK = '#1a1a1a';
