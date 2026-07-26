@@ -874,9 +874,19 @@ export default function TrainTabScreen() {
               sessionDetails={sessionDetails}
               onStartSession={() => setStartModalOpen(true)}
               onOpenSession={(id, opts) => {
-                let url = `/(client)/workout/session-intro?workoutId=${id}`;
-                if (opts?.date) url += `&sessionDate=${opts.date}`;
-                if (opts?.planned) url += '&planned=1';
+                // Straight into the merged Do Mode preview — the separate session-intro
+                // screen is gone (July 26 2026). Three shapes:
+                //  - planned, day still ahead → the preview LOCKED (review, can't start)
+                //  - planned & due / launcher → the normal startable preview
+                //  - completed session        → view-only preview ("Start session today"
+                //                               when it's a past day, review-only today)
+                const base = `/(client)/workout/${id}`;
+                let url = base;
+                if (opts?.planned) {
+                  if (opts.date && opts.date > todayStr) url = `${base}?previewLocked=1&plannedDate=${opts.date}`;
+                } else if (opts?.date) {
+                  url = `${base}?viewOnly=1&viewMode=finished&sessionDate=${opts.date}`;
+                }
                 router.push(url as any);
               }}
               screenWidth={sw}
@@ -946,7 +956,7 @@ export default function TrainTabScreen() {
                 key={c.id}
                 style={[sectionStyles.wCardOuter, galleryFooterDark && darkCardStyles.outerBg]}
                 activeOpacity={0.85}
-                onPress={() => router.push(`/(client)/workout/session-intro?workoutId=${c.id}` as any)}
+                onPress={() => router.push(`/(client)/workout/${c.id}` as any)}
               >
                 <View style={[sectionStyles.wCard, galleryFooterDark && darkCardStyles.inner]}>
                   <WorkoutPaperCover category={c.category} exerciseNames={c.exerciseNames} size="mini" />

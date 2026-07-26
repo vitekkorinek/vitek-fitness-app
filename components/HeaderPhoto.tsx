@@ -9,7 +9,7 @@
 //   • HeaderPhotoPositioner — draggable framer used in the exercise builder
 // ─────────────────────────────────────────────────────────────────────────
 import { useEffect, useRef, useState } from 'react';
-import { View, Image, Text, PanResponder, StyleSheet, ViewStyle } from 'react-native';
+import { View, Image, Text, PanResponder, StyleSheet, ViewStyle, Animated } from 'react-native';
 import { SymbolView } from 'expo-symbols';
 import { LinearGradient } from 'expo-linear-gradient';
 
@@ -72,6 +72,72 @@ export function HeaderPhoto({
     <View style={[{ width: boxW, height: boxH, overflow: 'hidden' }, style]}>
       <Image source={{ uri }} style={{ position: 'absolute', width: dispW, height: dispH, left: translateX, top: translateY }} />
     </View>
+  );
+}
+
+/**
+ * AnimatedHeaderPhoto — the same focal cover crop as `HeaderPhoto`, but for a box whose
+ * HEIGHT is an Animated.Value (the client Do Mode preview backdrop, which shrinks from
+ * full screen into the banner as the panel is dragged up).
+ *
+ * Why not just `resizeMode="cover"`: cover crops from the CENTRE, so a shrinking box
+ * eats the photo from both edges and lands on a different crop than the banner's — which
+ * ignores the trainer's `header_focus_y` framing entirely. Here the geometry is the
+ * identical `coverFocal()` maths, evaluated at the ends of the height range and driven by
+ * interpolation, so at the banner height the crop is EXACTLY what the framer previewed.
+ *
+ * The interpolation is exact, not an approximation: within each cover regime every value
+ * is linear in box height, and the regimes meet at `boxW / aspect` — passed as a middle
+ * interpolation point whenever it falls inside the range.
+ */
+export function AnimatedHeaderPhoto({
+  uri,
+  focusY,
+  boxW,
+  minH,
+  maxH,
+  animH,
+  bleed = 0,
+}: {
+  uri: string;
+  focusY: number;
+  boxW: number;
+  minH: number;
+  maxH: number;
+  animH: Animated.AnimatedInterpolation<number> | Animated.Value;
+  /**
+   * Extra height the photo should fill BELOW the box — for the caller's overshoot behind
+   * a rounded panel edge. It ramps from 0 at `minH` to `bleed` at `maxH`: at `minH` the
+   * crop has to match `HeaderPhoto` exactly (that is the frame the trainer set, and the
+   * hand-off crossfade happens there), while at `maxH` the box is a full screen, cover has
+   * no vertical overflow and `focusY` is therefore meaningless — so growing the image
+   * there costs nothing. Where the ramp can't reach, the caller's own backing shows.
+   */
+  bleed?: number;
+}) {
+  const aspect = useImageAspect(uri);
+  if (!aspect) {
+    return <Image source={{ uri }} style={StyleSheet.absoluteFill} resizeMode="cover" />;
+  }
+  const range = Math.max(1, maxH - minH);
+  const effH = (h: number) => h + bleed * ((h - minH) / range);
+  // Box height where cover switches from width- to height-driven, solved through effH.
+  const kink = (boxW / aspect + (bleed * minH) / range) / (1 + bleed / range);
+  const heights = kink > minH && kink < maxH ? [minH, kink, maxH] : [minH, maxH];
+  const geom = heights.map(h => coverFocal(boxW, effH(h), aspect, 1, focusY));
+  const at = (pick: (g: ReturnType<typeof coverFocal>) => number) =>
+    animH.interpolate({ inputRange: heights, outputRange: geom.map(pick), extrapolate: 'clamp' });
+  return (
+    <Animated.Image
+      source={{ uri }}
+      style={{
+        position: 'absolute',
+        width: at(g => g.dispW),
+        height: at(g => g.dispH),
+        left: at(g => g.translateX),
+        top: at(g => g.translateY),
+      }}
+    />
   );
 }
 

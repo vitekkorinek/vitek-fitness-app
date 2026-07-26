@@ -50,7 +50,7 @@ const BodyView = BodyHighlighter as unknown as React.ComponentType<any>;
  * (The trial-era 'paper' and 'ghost' variants were deleted at lock-in.)
  */
 
-type BodyCfg = { side: 'front' | 'back'; slugs: { slug: Slug; intensity: number }[]; yFocus: number; zoom?: number };
+export type BodyCfg = { side: 'front' | 'back'; slugs: { slug: Slug; intensity: number }[]; yFocus: number; zoom?: number };
 // Per-category crop override, applied on variant='brand' (the card covers). The base
 // `body` values are shared with the Do Mode banner, so they're left untouched; `paperCrop`
 // (name is historical, from the retired paper covers) gives each category its own framing
@@ -203,10 +203,20 @@ export function categoryHasCover(category?: string | null): boolean {
 export default function CategoryCover({
   category,
   variant = 'color',
+  body: bodyOverride,
   style,
 }: {
   category?: string | null;
   variant?: 'color' | 'soft' | 'muted' | 'brand' | 'brandBright' | 'ink' | 'inkDeep';
+  /**
+   * Draw THESE muscles instead of the category's own set — used by the Do Mode banner,
+   * which lights up the active EXERCISE's muscles when that exercise has no photo/video
+   * (build it with exerciseBodyCfg() in lib/muscleSilhouette.ts). The gradient still
+   * comes from the category, so the header keeps its category identity; with no/unknown
+   * category the neutral dark-green fallback wash is used. `paperCrop` is skipped for an
+   * override — its framing is tuned per category, not per muscle.
+   */
+  body?: BodyCfg;
   watermarkSize?: number; // accepted for back-compat; sizing is now measured from the box
   style?: ViewStyle;
 }) {
@@ -282,13 +292,14 @@ export default function CategoryCover({
   // On `brand`, paperCrop overrides zoom/yFocus/xAnchor so each category is framed
   // differently; every other variant keeps the shared `body` framing untouched.
   let bodyNode: React.ReactNode = null;
-  if (cfg?.body && box.h > 0) {
-    const b = cfg.body;
+  const bodyCfg = bodyOverride ?? cfg?.body;
+  if (bodyCfg && box.h > 0) {
+    const b = bodyCfg;
     // brand/ink: explicit fill for EVERY part (see ALL_SLUGS) — lit muscles keep their
     // intensity colour, everything else gets the quiet body tint.
     const litFill = new Map(b.slugs.map(sl => [sl.slug, hl[Math.min(sl.intensity, 2) - 1]]));
     const brandData = ALL_SLUGS.map(slug => ({ slug, styles: { fill: litFill.get(slug) ?? bodyFill } }));
-    const crop = isCard ? cfg.paperCrop : undefined;
+    const crop = isCard && !bodyOverride ? cfg?.paperCrop : undefined;
     const scale = (box.h * (crop?.zoom ?? b.zoom ?? 2.3)) / 400;
     const bodyH = 400 * scale;
     const bodyW = 200 * scale;

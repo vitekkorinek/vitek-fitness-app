@@ -61,7 +61,7 @@
 //   </View>
 // END SUPERSET_V1_BACKUP
 
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -83,6 +83,7 @@ import {
   FlatList,
   Vibration,
   PanResponder,
+  Easing,
 } from 'react-native';
 import Svg, { Circle, Line as SvgLine, Polyline as SvgPolyline, Text as SvgLabel, Path as SvgPath } from 'react-native-svg';
 import DraggableFlatList from 'react-native-draggable-flatlist';
@@ -122,7 +123,8 @@ import type { Workout } from '@/types/database';
 import en from '@/i18n/en';
 import MuscleThumb from '@/components/MuscleThumb';
 import CategoryCover, { categoryHasCover } from '@/components/CategoryCover';
-import { HeaderPhoto } from '@/components/HeaderPhoto';
+import { exerciseBodyCfg } from '@/lib/muscleSilhouette';
+import { HeaderPhoto, AnimatedHeaderPhoto } from '@/components/HeaderPhoto';
 import { fd } from '@/lib/appType';
 
 // PROTOTYPE (July 2026): a real photo pulled from the Push workout's exercises,
@@ -510,6 +512,133 @@ function useSheetDismissGesture(onClose: () => void) {
   return { translateY, panHandlers: panResponder.panHandlers, dismiss };
 }
 
+// ─── PreviewBackdrop ────────────────────────────────────────────────────────────
+// The merged preview's backdrop: a slideshow that crossfades through the session's
+// exercises — each one's photo, or its muscle silhouette when it has none — inside a
+// box whose height follows the sliding panel.
+//
+// ⚠️ IT OWNS ITS OWN TICKING STATE, and must keep owning it. The slide index and the two
+// crossfade layers used to be `useState` in the screen component, so every 2-second tick
+// (and every layer swap) re-rendered ~7000 lines of Do Mode JSX — the exercise list
+// included — while a JS-driven animation was running. That is what made the photo swaps
+// hitch. Here a tick re-renders this subtree only. Keep `slides` memoised in the parent
+// so React.memo actually holds.
+type PreviewSlide = {
+  photo: string | null;
+  focusY: number;
+  muscleGroups: string[];
+  secondaryMuscleGroups: string[];
+};
+
+const PreviewBackdrop = memo(function PreviewBackdrop({
+  slides,
+  category,
+  boxH,
+  animH,
+  boxW,
+  minH,
+  maxH,
+  bleed,
+  paused,
+}: {
+  slides: PreviewSlide[];
+  category?: string | null;
+  boxH: Animated.AnimatedInterpolation<number> | Animated.AnimatedAddition<number>;
+  animH: Animated.AnimatedInterpolation<number>;
+  boxW: number;
+  minH: number;
+  maxH: number;
+  bleed: number;
+  paused: boolean;
+}) {
+  const [idx, setIdx] = useState(0);
+  const [layer1, setLayer1] = useState<number | null>(slides.length > 0 ? 0 : null);
+  const [layer2, setLayer2] = useState<number | null>(slides.length > 0 ? 0 : null);
+  const op = useRef(new Animated.Value(0)).current;
+  const layer2Top = useRef(false);
+  const fading = useRef(false);
+
+  // Warm the cache so a crossfade is never waiting on a download/decode — the other
+  // half of the hitching (the first pass through the slideshow used to fade in an
+  // image that had not arrived yet).
+  useEffect(() => {
+    slides.forEach(s => { if (s.photo) void Image.prefetch(s.photo).catch(() => {}); });
+  }, [slides]);
+
+  useEffect(() => {
+    if (layer1 == null && slides.length > 0) { setLayer1(0); setLayer2(0); }
+  }, [slides.length]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (paused || slides.length <= 1) return;
+    const id = setInterval(() => setIdx(i => (i + 1) % slides.length), 2600);
+    return () => clearInterval(id);
+  }, [paused, slides.length]);
+
+  // Alternating layers — only the INVISIBLE layer's slide ever changes, so a visible
+  // image is never swapped under the user.
+  useEffect(() => {
+    const visible = layer2Top.current ? layer2 : layer1;
+    if (idx === visible || fading.current) return;
+    fading.current = true;
+    if (!layer2Top.current) {
+      op.setValue(0); setLayer2(idx);
+      Animated.timing(op, { toValue: 1, duration: 700, easing: Easing.inOut(Easing.quad), useNativeDriver: false })
+        .start(() => { layer2Top.current = true; fading.current = false; });
+    } else {
+      setLayer1(idx);
+      Animated.timing(op, { toValue: 0, duration: 700, easing: Easing.inOut(Easing.quad), useNativeDriver: false })
+        .start(() => { layer2Top.current = false; fading.current = false; });
+    }
+  }, [idx]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const renderSlide = (i: number | null) => {
+    if (i == null) return null;
+    const s = slides[i];
+    if (!s) return null;
+    // Photos shrink through the SAME focal crop the banner uses (header_focus_y), so the
+    // frame the trainer set in the exercise builder is what lands in the header — plain
+    // `resizeMode="cover"` crops from the centre and drifts off that framing as the box
+    // shrinks (Vitek: "it cuts the picture off and … doesn't match my setting").
+    if (s.photo) {
+      return (
+        <AnimatedHeaderPhoto
+          uri={s.photo}
+          focusY={s.focusY}
+          boxW={boxW}
+          minH={minH}
+          maxH={maxH}
+          animH={animH}
+          bleed={bleed}
+        />
+      );
+    }
+    // zoom 1.15 — nearly the whole figure, this box is a full screen (the banner's
+    // default 2.3 would crop it down to a single body part).
+    const body = exerciseBodyCfg(s.muscleGroups, s.secondaryMuscleGroups, 1.15);
+    if (!body && !categoryHasCover(category)) return null;
+    return <CategoryCover category={category} variant="color" body={body ?? undefined} />;
+  };
+
+  return (
+    <Animated.View
+      style={{ position: 'absolute', top: 0, left: 0, right: 0, height: boxH, overflow: 'hidden' }}
+      pointerEvents="none"
+    >
+      <LinearGradient colors={['#2d6b5a', '#244e43', '#1a3832']} style={StyleSheet.absoluteFill} />
+      {/* Backing for the bleed strip behind the panel's rounded corners. A photo whose
+          framing leaves nothing below the crop (focusY at the very bottom, or a landscape
+          shot at review) can't fill it — this makes what shows there read as the panel's
+          shadow instead of a green wedge. */}
+      <View style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: bleed + 8, backgroundColor: '#12100f' }} />
+      {layer1 != null ? <View style={StyleSheet.absoluteFill}>{renderSlide(layer1)}</View> : null}
+      {layer2 != null ? <Animated.View style={[StyleSheet.absoluteFill, { opacity: op }]}>{renderSlide(layer2)}</Animated.View> : null}
+      <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.30)' }]} />
+      <LinearGradient colors={['rgba(0,0,0,0.55)', 'transparent']} style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 220 }} />
+    </Animated.View>
+  );
+});
+
 // ─── Screen ─────────────────────────────────────────────────────────────────────
 
 export default function TrainerWorkoutSessionScreen() {
@@ -523,20 +652,42 @@ export default function TrainerWorkoutSessionScreen() {
   // The real Do Mode list lives inside a sliding panel that starts at bannerH and
   // is pushed DOWN to a bottom peek while previewing, then slides up on Start.
   const PREVIEW_HANDLE_CONTENT = 112;                          // grip + hint + Start button block
-  const PREVIEW_LANDING_GAP = 30;                             // white below Start while parked (just clears the home indicator; first card stays hidden via the header spacer)
+  const PREVIEW_LANDING_GAP = 12;                             // white below Start while parked (30 showed too much panel on device, July 26 — this is THE knob for the parked peek height)
   const PREVIEW_REVIEW_GAP = 12;                              // tight gap below Start once raised
   const PREVIEW_PEEK = PREVIEW_HANDLE_CONTENT + PREVIEW_LANDING_GAP; // visible sliver while parked (no card)
   const PREVIEW_PARK = SCREEN_HEIGHT - PREVIEW_PEEK - HEADER_MAX; // panel translateY when parked
+  const PREVIEW_CORNER_BLEED = 40;                            // backdrop overshoot behind the panel's rounded top corners
 
-  const { workoutId, autoStart, resumeSessionId, resumeStartedAt, viewOnly, viewMode, previewLocked, plannedDate } = useLocalSearchParams<{ workoutId: string; autoStart?: string; resumeSessionId?: string; resumeStartedAt?: string; viewOnly?: string; viewMode?: string; previewLocked?: string; plannedDate?: string }>();
+  const { workoutId, autoStart, resumeSessionId, resumeStartedAt, viewOnly, viewMode, previewLocked, plannedDate, sessionDate } = useLocalSearchParams<{ workoutId: string; autoStart?: string; resumeSessionId?: string; resumeStartedAt?: string; viewOnly?: string; viewMode?: string; previewLocked?: string; plannedDate?: string; sessionDate?: string }>();
   // previewLocked=1 → a FUTURE planned session: show the merged preview (read-only, review
   // its exercises) but with NO start affordance — it isn't its day yet.
   const isPreviewLocked = previewLocked === '1';
-  const isViewOnly = viewOnly === '1';
-  // View-only is always read-only (never startable — Start is only ever the "Start session
-  // today" button on the pre-session screen). Header pill: a completed session shows a
-  // non-clickable "mm:ss · FINISHED" pill; every other view shows no pill.
+  const isViewParam = viewOnly === '1';
+  // Pressing Start inside a view-only preview turns THIS mount into a real session (so it
+  // plays the normal lock animation instead of re-navigating, which flipped straight to
+  // the locked panel). Everything gated on `isViewOnly` — read-only cards, the FINISHED
+  // pill, draft persistence — flips with it.
+  const [viewOnlyStarted, setViewOnlyStarted] = useState(false);
+  const isViewOnly = isViewParam && !viewOnlyStarted;
+  // load() skips adopting an open in_progress row while view-only; remember it so a start
+  // from here continues that row instead of inserting a second one.
+  const viewOnlyLiveSessionRef = useRef<string | null>(null);
+  // Header pill: a completed session shows a non-clickable "mm:ss · FINISHED" pill; every
+  // other view shows no pill.
   const showFinishedPill = isViewOnly && viewMode === 'finished';
+  // `sessionDate` = the day of the COMPLETED session being reviewed (week-strip tap on a
+  // done session). Since July 26 2026 those open this screen's merged preview too — the
+  // separate session-intro screen is gone, so this is the only pre-session look there is.
+  // Local (not UTC) today, matching the week strip's YYYY-MM-DD day keys.
+  const localTodayStr = (() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  })();
+  // Based on the PARAM, not the live flag — these label the entry, so they must not
+  // change under the fading Start button when a review is turned into a real session.
+  const isCompletedView = isViewParam && !!sessionDate;
+  // A past session can be repeated today; one completed TODAY is review-only.
+  const canRepeatViewed = isCompletedView && (sessionDate as string) < localTodayStr;
   const isFreeSession = workoutId === 'free';
   const router = useRouter();
   const { startedAt, start: startSession, resume: resumeSession, finish: finishSession, suspendSession, clearSuspendedSession } = useSessionStore();
@@ -580,12 +731,8 @@ export default function TrainerWorkoutSessionScreen() {
   const previewYVal = useRef(PREVIEW_PARK);
   const previewDragBase = useRef(PREVIEW_PARK);
   const previewLock = useRef(new Animated.Value(0)).current;
-  const [slideIdx, setSlideIdx] = useState(0);
-  const [pLayer1, setPLayer1] = useState<string | null>(null);
-  const [pLayer2, setPLayer2] = useState<string | null>(null);
-  const pLayer2Op = useRef(new Animated.Value(0)).current;
-  const pLayer2Top = useRef(false);
-  const pFading = useRef(false);
+  // The backdrop slideshow lives entirely inside <PreviewBackdrop> — see the ⚠️ there
+  // for why its ticking state must NOT sit in this component.
   useEffect(() => {
     const id = previewY.addListener(({ value }) => { previewYVal.current = value; });
     return () => previewY.removeListener(id);
@@ -609,41 +756,42 @@ export default function TrainerWorkoutSessionScreen() {
   // Ref indirection so the keyboard listener (mounted once) always calls the latest impl.
   const scrollFocusedInputAboveKeyboardRef = useRef<(kbTopScreenY: number) => void>(() => {});
 
-  const previewPhotoFor = (i: number) =>
-    exercises[i]?.extraPhotoUrls?.[0] ?? exercises[i]?.thumbnailUrl ?? workout?.cover_image_url ?? null;
-
-  // Seed the crossfade layers once exercises load.
-  useEffect(() => {
-    if (pLayer1 == null && exercises.length > 0) {
-      const p = previewPhotoFor(0);
-      setPLayer1(p); setPLayer2(p);
-    }
-  }, [exercises.length]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Slideshow — advance while previewing (stops once live).
-  useEffect(() => {
-    if (previewInitRef.current !== true || previewPhase === 'live') return;
-    const n = exercises.length;
-    if (n <= 1) return;
-    const id = setInterval(() => setSlideIdx(i => (i + 1) % n), 2000);
-    return () => clearInterval(id);
-  }, [previewPhase, exercises.length]);
-
-  // Crossfade backdrop — alternating layers (only the invisible layer's src changes).
-  useEffect(() => {
-    if (previewInitRef.current !== true) return;
-    const uri = previewPhotoFor(slideIdx);
-    const visible = pLayer2Top.current ? pLayer2 : pLayer1;
-    if (!uri || uri === visible || pFading.current) return;
-    pFading.current = true;
-    if (!pLayer2Top.current) {
-      pLayer2Op.setValue(0); setPLayer2(uri);
-      Animated.timing(pLayer2Op, { toValue: 1, duration: 450, useNativeDriver: false }).start(() => { pLayer2Top.current = true; pFading.current = false; });
-    } else {
-      setPLayer1(uri);
-      Animated.timing(pLayer2Op, { toValue: 0, duration: 450, useNativeDriver: false }).start(() => { pLayer2Top.current = false; pFading.current = false; });
-    }
-  }, [slideIdx]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Backdrop height = exactly the strip left above the panel (panel top = HEADER_MAX +
+  // previewY). So dragging the panel up SHRINKS the photo/silhouette box instead of just
+  // covering it, and at review (previewY 0) the box IS the banner box. Clamped because
+  // the snap springs can overshoot past either end.
+  // useMemo'd: `interpolate`/`add` mint a NEW animated node on every call, so building
+  // them inline would hand <PreviewBackdrop> fresh props each render and defeat its memo.
+  const previewBackdropH = useMemo(
+    () => previewY.interpolate({
+      inputRange: [0, PREVIEW_PARK],
+      outputRange: [HEADER_MAX, HEADER_MAX + PREVIEW_PARK],
+      extrapolate: 'clamp',
+    }),
+    [previewY, PREVIEW_PARK, HEADER_MAX],
+  );
+  // ⚠️ The CLIP box runs a little PAST the panel's top edge. The panel's rounded top
+  // corners are cut out of a white sheet — they only read as rounded if the photo shows
+  // THROUGH them, which it did for free while the backdrop was full-screen. Ending the
+  // backdrop exactly at the panel top puts the page background in those cutouts and the
+  // panel goes visually square. The photo's own geometry still uses previewBackdropH, so
+  // the extra strip is just more of the same image, hidden behind the panel.
+  const previewBackdropBoxH = useMemo(
+    () => Animated.add(previewBackdropH, PREVIEW_CORNER_BLEED),
+    [previewBackdropH, PREVIEW_CORNER_BLEED],
+  );
+  // Memoised so <PreviewBackdrop>'s React.memo holds — otherwise every render of this
+  // screen would hand it a new array and defeat the whole point of isolating it.
+  const previewSlides = useMemo<PreviewSlide[]>(
+    () => exercises.map(ex => ({
+      // The exercise's own media only — no workout-cover fallback (same rule as the banner).
+      photo: ex.extraPhotoUrls?.[0] ?? ex.thumbnailUrl ?? null,
+      focusY: ex.headerFocusY ?? 0.5,
+      muscleGroups: ex.muscleGroups,
+      secondaryMuscleGroups: ex.secondaryMuscleGroups,
+    })),
+    [exercises],
+  );
 
   // NOTE: everything in the preview uses the JS driver (useNativeDriver:false). The
   // panel view mixes a translate (previewY) with JS-only props (previewLock → height,
@@ -658,6 +806,18 @@ export default function TrainerWorkoutSessionScreen() {
   const startFromPreview = () => {
     if (previewPhaseRef.current === 'live') return;
     guardStart(() => {
+      // Repeating a session you were only REVIEWING: drop view-only here (not by
+      // re-navigating with autoStart, which skipped the lock animation), adopting the
+      // in_progress row load() left alone so no duplicate session is inserted.
+      if (isViewParam) {
+        const adopt = viewOnlyLiveSessionRef.current;
+        if (adopt) {
+          activeSessionIdRef.current = adopt;
+          setActiveSessionId(adopt);
+          setBridgeActiveSessionId(adopt);
+        }
+        setViewOnlyStarted(true);
+      }
       previewPhaseRef.current = 'live';
       setPreviewPhase('live');
       startSession(workoutId!);
@@ -1028,6 +1188,7 @@ export default function TrainerWorkoutSessionScreen() {
       ? new Date((liveSess as any).created_at).toDateString() === new Date().toDateString()
       : false;
     const liveSessionId = !isViewOnly && !logDatePending && liveIsToday ? (liveSess as any).id as string : null;
+    if (isViewOnly && !logDatePending && liveIsToday) viewOnlyLiveSessionRef.current = (liveSess as any).id as string;
     if (liveSessionId && !resumeSessionId) {
       activeSessionIdRef.current = liveSessionId;
       setActiveSessionId(liveSessionId);
@@ -3283,7 +3444,14 @@ export default function TrainerWorkoutSessionScreen() {
   const bannerH = HEADER_MAX; // same height as the old header
   const activeHeaderEx = exercises.find(e => e.workoutExerciseId === activeHeaderId) ?? exercises[0] ?? null;
   const activeHeaderIdx = activeHeaderEx ? exercises.findIndex(e => e.workoutExerciseId === activeHeaderEx.workoutExerciseId) : -1;
-  const bannerPhoto = activeHeaderEx?.extraPhotoUrls?.[0] ?? activeHeaderEx?.thumbnailUrl ?? workout?.cover_image_url ?? null;
+  // Photo/video-thumbnail of the ACTIVE EXERCISE only. The workout's cover photo is
+  // deliberately NOT a fallback here (Vitek, July 2026): the banner describes the
+  // exercise you're in, and a random workout cover says nothing about it. With no media
+  // we draw that exercise's own muscles as a silhouette instead (bannerBody below).
+  const bannerPhoto = activeHeaderEx?.extraPhotoUrls?.[0] ?? activeHeaderEx?.thumbnailUrl ?? null;
+  const bannerBody = activeHeaderEx
+    ? exerciseBodyCfg(activeHeaderEx.muscleGroups, activeHeaderEx.secondaryMuscleGroups)
+    : null;
   const bannerTitle = activeHeaderEx?.exerciseName ?? (isFreeSession ? freeSessionName : workout?.name) ?? '—';
   const bannerSessionLabel = isFreeSession
     ? new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
@@ -3298,12 +3466,14 @@ export default function TrainerWorkoutSessionScreen() {
   if (previewInitRef.current === undefined && workout) {
     previewInitRef.current =
       MERGED_PREVIEW &&
-      !isFreeSession && !isViewOnly && !pastSession && !autoStart && !resumeSessionId &&
+      !isFreeSession && !pastSession && !autoStart && !resumeSessionId &&
       !startedAt &&
       exercises.length > 0;
   }
   // usePanel: this session shows the real Do Mode list inside the sliding
-  // preview panel (any-category launcher taps, captured once by previewInitRef).
+  // preview panel — launcher taps, planned sessions AND view-only reviews of a
+  // completed one (July 26 2026: the old session-intro screen is deleted, so this
+  // panel is the ONE pre-session look; `isViewOnly` used to disqualify it).
   const usePanel = showFixedHeader && previewInitRef.current === true;
   const showPreviewChrome = usePanel && !previewClosed;
   const previewReadOnly = usePanel && previewPhase !== 'live';
@@ -3334,7 +3504,19 @@ export default function TrainerWorkoutSessionScreen() {
   const previewNotedCount = usePanel
     ? exercises.filter(ex => ex.trainerNotes.some(n => !n.isDeleted) || ex.clientNote.some(n => !n.isDeleted)).length
     : 0;
-  const previewMetaText = `Session ${sessionCount + 1} · ${new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}`;
+  // Overline + meta say WHICH session this is — the three cases the deleted session-intro
+  // screen used to label ("Today's session" / "Planned session" / "Past session").
+  const fmtPreviewDate = (d: string) => new Date(d).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+  const previewTopLabel = isPreviewLocked
+    ? 'PLANNED SESSION'
+    : canRepeatViewed
+    ? 'PAST SESSION'
+    : "TODAY'S SESSION";
+  const previewMetaText = isCompletedView
+    ? `Done · ${fmtPreviewDate(sessionDate as string)}`
+    : isPreviewLocked && plannedDate
+    ? `Planned · ${fmtPreviewDate(plannedDate)}`
+    : `Session ${sessionCount + 1} · ${new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}`;
 
   // The timer / START / FINISH control — shared by the old nav bar and the new banner.
   const timerControl = isEditMode ? (
@@ -3381,13 +3563,17 @@ export default function TrainerWorkoutSessionScreen() {
 
       {/* ── Merged preview backdrop — full-screen slideshow behind the sliding panel */}
       {showPreviewChrome && (
-        <View style={StyleSheet.absoluteFill} pointerEvents="none">
-          {pLayer1 ? <Image source={{ uri: pLayer1 }} style={StyleSheet.absoluteFill} resizeMode="cover" /> : null}
-          {pLayer2 ? <Animated.Image source={{ uri: pLayer2 }} style={[StyleSheet.absoluteFill, { opacity: pLayer2Op }]} resizeMode="cover" /> : null}
-          {!pLayer1 && !pLayer2 && <LinearGradient colors={['#2d6b5a', '#244e43', '#1a3832']} style={StyleSheet.absoluteFill} />}
-          <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.30)' }]} />
-          <LinearGradient colors={['rgba(0,0,0,0.55)', 'transparent']} style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 220 }} />
-        </View>
+        <PreviewBackdrop
+          slides={previewSlides}
+          category={workout?.category}
+          boxH={previewBackdropBoxH}
+          animH={previewBackdropH}
+          boxW={SCREEN_W}
+          minH={HEADER_MAX}
+          maxH={HEADER_MAX + PREVIEW_PARK}
+          bleed={PREVIEW_CORNER_BLEED}
+          paused={previewPhase === 'live'}
+        />
       )}
 
       {/* ── Static nav bar (old scroll-away header) — only when NOT using the fixed banner */}
@@ -3488,6 +3674,9 @@ export default function TrainerWorkoutSessionScreen() {
           >
             {bannerPhoto ? (
               <HeaderPhoto uri={bannerPhoto} focusY={activeHeaderEx?.headerFocusY ?? 0.5} boxW={SCREEN_W} boxH={bannerH} />
+            ) : bannerBody ? (
+              // No media for this exercise → its OWN muscles, lit on the category wash.
+              <CategoryCover category={workout?.category} variant="color" body={bannerBody} />
             ) : categoryHasCover(workout?.category) ? (
               <CategoryCover category={workout?.category} variant="color" watermarkSize={150} />
             ) : (
@@ -3553,10 +3742,19 @@ export default function TrainerWorkoutSessionScreen() {
                   {plannedDate ? `Planned for ${new Date(plannedDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}` : 'Planned'}
                 </Text>
               </View>
+            ) : isViewParam && !canRepeatViewed ? (
+              // Completed TODAY (or a view opened without a date, e.g. from the session
+              // details sheet) — nothing to start here, it's a review.
+              <View style={styles.previewPlannedPill}>
+                <SymbolView name={isCompletedView ? 'checkmark.circle.fill' : 'eye'} size={15} tintColor="#999" />
+                <Text style={styles.previewPlannedText}>
+                  {isCompletedView ? `Completed · ${fmtPreviewDate(sessionDate as string)}` : 'View only'}
+                </Text>
+              </View>
             ) : (
               <TouchableOpacity style={styles.previewStartBtn} onPress={startFromPreview} activeOpacity={0.85}>
                 <SymbolView name="play.fill" size={15} tintColor="#fff" />
-                <Text style={styles.previewStartText}>Start session</Text>
+                <Text style={styles.previewStartText}>{canRepeatViewed ? 'Start session today' : 'Start session'}</Text>
               </TouchableOpacity>
             )}
           </Animated.View>
@@ -3965,7 +4163,7 @@ export default function TrainerWorkoutSessionScreen() {
           </View>
 
           <View style={[styles.previewTitleBlock, { top: insets.top + 60 }]} pointerEvents="box-none">
-            <Text style={styles.previewTodayLabel}>TODAY'S SESSION</Text>
+            <Text style={styles.previewTodayLabel}>{previewTopLabel}</Text>
             <Text style={styles.previewWorkoutName} numberOfLines={2}>{workout?.name ?? ''}</Text>
             <Text style={styles.previewMeta}>{previewMetaText}</Text>
             {(previewSessionNote || previewNotedCount > 0) && (

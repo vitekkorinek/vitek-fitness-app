@@ -205,7 +205,7 @@ export default function ClientRoutineDetailScreen() {
                   <WorkoutItem
                     workout={startHere}
                     isDone={false}
-                    onPress={() => router.push(`/(client)/workout/session-intro?workoutId=${startHere.id}` as any)}
+                    onPress={() => router.push(`/(client)/workout/${startHere.id}` as any)}
                     onQuickLook={() => setQuickLookWorkout({ id: startHere.id, name: startHere.name })}
                   />
                 </>
@@ -215,7 +215,7 @@ export default function ClientRoutineDetailScreen() {
                   key={w.id}
                   workout={w}
                   isDone={false}
-                  onPress={() => router.push(`/(client)/workout/session-intro?workoutId=${w.id}` as any)}
+                  onPress={() => router.push(`/(client)/workout/${w.id}` as any)}
                   onQuickLook={() => setQuickLookWorkout({ id: w.id, name: w.name })}
                 />
               ))}
@@ -227,7 +227,7 @@ export default function ClientRoutineDetailScreen() {
                       key={w.id}
                       workout={w}
                       isDone={true}
-                      onPress={() => router.push(`/(client)/workout/session-intro?workoutId=${w.id}` as any)}
+                      onPress={() => router.push(`/(client)/workout/${w.id}` as any)}
                       onQuickLook={() => setQuickLookWorkout({ id: w.id, name: w.name })}
                     />
                   ))}

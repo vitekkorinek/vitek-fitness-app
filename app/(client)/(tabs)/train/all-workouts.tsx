@@ -324,7 +324,7 @@ export default function AllWorkoutsScreen() {
             const restList = workouts.filter(w => w.thisWeekCount === 0);
             const makeOnPress = (w: WorkoutRow) => () => {
               if (w.status === 'completed') { setDonePromptWorkout(w); }
-              else { router.push(`/(client)/workout/session-intro?workoutId=${w.id}` as any); }
+              else { router.push(`/(client)/workout/${w.id}` as any); }
             };
             return (
               // Dark cards need more air between them than the old white ones did.
@@ -353,7 +353,7 @@ export default function AllWorkoutsScreen() {
               <Text style={donePromptStyles.body}>{donePromptWorkout.name}</Text>
               <TouchableOpacity
                 style={donePromptStyles.primaryBtn}
-                onPress={() => { setDonePromptWorkout(null); router.push(`/(client)/workout/session-intro?workoutId=${donePromptWorkout.id}` as any); }}
+                onPress={() => { setDonePromptWorkout(null); router.push(`/(client)/workout/${donePromptWorkout.id}` as any); }}
                 activeOpacity={0.8}
               >
                 <Text style={donePromptStyles.primaryBtnText}>Open for this session</Text>

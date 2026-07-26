@@ -122,6 +122,7 @@ import en from '@/i18n/en';
 import MuscleThumb from '@/components/MuscleThumb';
 import { BottomSheet } from '@/components/BottomSheet';
 import CategoryCover, { categoryHasCover } from '@/components/CategoryCover';
+import { exerciseBodyCfg } from '@/lib/muscleSilhouette';
 import { HeaderPhoto } from '@/components/HeaderPhoto';
 import { fd } from '@/lib/appType';
 
@@ -3110,7 +3111,14 @@ export default function TrainerWorkoutSessionScreen() {
   const bannerH = HEADER_MAX; // same height as the old header
   const activeHeaderEx = exercises.find(e => e.workoutExerciseId === activeHeaderId) ?? exercises[0] ?? null;
   const activeHeaderIdx = activeHeaderEx ? exercises.findIndex(e => e.workoutExerciseId === activeHeaderEx.workoutExerciseId) : -1;
-  const bannerPhoto = activeHeaderEx?.extraPhotoUrls?.[0] ?? activeHeaderEx?.thumbnailUrl ?? workout?.cover_image_url ?? null;
+  // Photo/video-thumbnail of the ACTIVE EXERCISE only. The workout's cover photo is
+  // deliberately NOT a fallback here (Vitek, July 2026): the banner describes the
+  // exercise you're in, and a random workout cover says nothing about it. With no media
+  // we draw that exercise's own muscles as a silhouette instead (bannerBody below).
+  const bannerPhoto = activeHeaderEx?.extraPhotoUrls?.[0] ?? activeHeaderEx?.thumbnailUrl ?? null;
+  const bannerBody = activeHeaderEx
+    ? exerciseBodyCfg(activeHeaderEx.muscleGroups, activeHeaderEx.secondaryMuscleGroups)
+    : null;
   const bannerTitle = activeHeaderEx?.exerciseName ?? (isFreeSession ? freeSessionName : workout?.name) ?? '—';
   const bannerSessionLabel = isFreeSession
     ? new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
@@ -3218,6 +3226,9 @@ export default function TrainerWorkoutSessionScreen() {
           >
             {bannerPhoto ? (
               <HeaderPhoto uri={bannerPhoto} focusY={activeHeaderEx?.headerFocusY ?? 0.5} boxW={SCREEN_W} boxH={bannerH} />
+            ) : bannerBody ? (
+              // No media for this exercise → its OWN muscles, lit on the category wash.
+              <CategoryCover category={workout?.category} variant="color" body={bannerBody} />
             ) : categoryHasCover(workout?.category) ? (
               <CategoryCover category={workout?.category} variant="color" watermarkSize={150} />
             ) : (

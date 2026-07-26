@@ -2152,9 +2152,11 @@ Dark green header "Training". Tab background: **`#faf9f7`**. Scroll order: gauge
 
 ---
 
-#### Session Intro screen ✅ (`app/(client)/workout/session-intro.tsx`) — CLIENT ONLY
+#### ⛔ Session Intro screen — DELETED (July 26 2026)
 
-Shown between a **client** workout-card tap and Do Mode — a cinematic full-screen preview. **Client-only:** the trainer version was removed (July 2026); trainer taps go straight to Do Mode. It is **always shown** (never skipped) — with no exercise `thumbnail_url`s it falls back to a dark-green gradient + faint dumbbell.
+**This screen no longer exists** (`app/(client)/workout/session-intro.tsx` removed). Vitek's call: there is one pre-session look — the **merged preview panel** inside client Do Mode — and it now covers every entry, including reviewing a past session and previewing a future planned one. Every caller navigates straight to `/(client)/workout/<id>`; the params that shape the panel (`previewLocked`/`plannedDate`, `viewOnly`/`viewMode`/`sessionDate`) are listed in **CLAUDE-domode.md**. The rest of this section is kept only as a record of what the screen used to do.
+
+~~Shown between a **client** workout-card tap and Do Mode~~ — a cinematic full-screen preview. **Client-only:** the trainer version was removed (July 2026); trainer taps go straight to Do Mode. It is **always shown** (never skipped) — with no exercise `thumbnail_url`s it falls back to a dark-green gradient + faint dumbbell.
 
 **Route:** `/(client)/workout/session-intro?workoutId=<id>` (static route — takes priority over the dynamic `[workoutId]` route).
 
