@@ -782,7 +782,9 @@ function WorkoutItem({
   const footerDark = useFooterDark();
   const gradColors = (CATEGORY_GRADIENTS[workout.category ?? ''] ?? GRADIENT_DEFAULT) as [string, string];
   const catColors = workout.category ? CATEGORY_COLORS[workout.category as WorkoutCategory] : null;
-  const lastDoneText = workout.lastSessionDate ? relativeTime(workout.lastSessionDate) : 'Not yet done';
+  // '—' rather than "Not yet done": the one-line footer shows the date as a bare
+  // ACCENT value, matching the gallery minis and My Workouts.
+  const lastDoneText = workout.lastSessionDate ? relativeTime(workout.lastSessionDate) : '—';
 
   if (isRenaming) {
     return (
@@ -809,20 +811,31 @@ function WorkoutItem({
   return (
     <TouchableOpacity style={[coverCardStyles.card, footerDark && coverCardStyles.cardDarkBg]} onPress={onPress} activeOpacity={0.92}>
       <View style={[coverCardStyles.cardInner, footerDark && coverCardStyles.cardDarkBg]}>
-        <WorkoutPaperCover category={workout.category} exerciseNames={workout.exerciseNames} />
-        {/* Name demoted from the cover to the footer — the exercises are the content now. */}
-        <View style={coverCardStyles.footer}>
-          <View style={coverCardStyles.footerLeft}>
-            <View style={coverCardStyles.nameRow}>
-              <Text style={[coverCardStyles.itemName, footerDark && coverCardStyles.textOnDark, fd(700)]} numberOfLines={1}>{workout.name}</Text>
-              {isDone && (
-                <View style={coverCardStyles.doneBadge}>
-                  <SymbolView name="checkmark" size={9} tintColor="#fff" />
-                </View>
-              )}
+        <WorkoutPaperCover
+          category={workout.category}
+          exerciseNames={workout.exerciseNames}
+          size="strip" // same 84 cover as every other workout card since July 26
+        >
+          {/* Cycle-done check sits on the COVER's top-right — the footer is one line now
+              and the badge was the widest thing competing with the name for it. */}
+          {isDone && (
+            <View style={coverCardStyles.doneBadge}>
+              <SymbolView name="checkmark" size={9} tintColor="#fff" />
             </View>
-            <Text style={[coverCardStyles.footerSub, footerDark && coverCardStyles.subOnDark, ft(400)]} numberOfLines={1}>{lastDoneText}</Text>
-          </View>
+          )}
+        </WorkoutPaperCover>
+        {/* Footer — ONE line (name · last-done in ACCENT · ⋯), so the card matches the
+            ~112 height every other workout card uses. */}
+        <View style={coverCardStyles.footer}>
+          <Text style={[coverCardStyles.itemName, footerDark && coverCardStyles.textOnDark, fd(700)]} numberOfLines={1}>{workout.name}</Text>
+          <Text
+            style={[coverCardStyles.footerDate, ft(600),
+              { color: workout.lastSessionDate ? ACCENT : footerDark ? 'rgba(255,255,255,0.5)' : '#999' }]}
+            numberOfLines={1}
+          >
+            {lastDoneText}
+          </Text>
+          <View style={coverCardStyles.footerSpacer} />
           <TouchableOpacity style={coverCardStyles.footerMenuBtn} onPress={onMenuPress} hitSlop={8} activeOpacity={0.5}>
             <SymbolView name="ellipsis" size={16} tintColor={footerDark ? 'rgba(255,255,255,0.65)' : '#bbb'} />
           </TouchableOpacity>
@@ -1032,17 +1045,27 @@ const coverCardStyles = StyleSheet.create({
   cardDarkBg: { backgroundColor: DARK_CARD_FOOTER },
   cardInner: { borderRadius: 14, overflow: 'hidden', backgroundColor: '#fff' },
   menuBtn: { position: 'absolute', top: 9, right: 10 },
-  footer: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 6, gap: 8, backgroundColor: 'transparent' },
-  footerLeft: { flex: 1 },
+  // paddingVertical 4 — the app-wide cover-card footer, so these land at ~112 like the
+  // gallery minis and the My Workouts cards.
+  footer: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 4, gap: 8, backgroundColor: 'transparent' },
+  // Spacer rather than flex:1 on the name, so the date stays glued to the name it
+  // describes and the ⋯ sits alone at the right edge.
+  footerSpacer: { flex: 1, minWidth: 8 },
+  footerDate: { fontSize: 12 },
   footerSub: { fontSize: 11, color: '#999' },
   subOnDark: { color: 'rgba(255,255,255,0.6)' },
-  footerMenuBtn: { padding: 4 },
-  nameRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  // paddingHorizontal only — matching the gallery mini's wFooterMenuBtn. With
+  // `padding: 4` the button was 24pt tall (16pt glyph + 8), which made IT the
+  // tallest thing in the footer row instead of the 15px name (~20pt), so these
+  // cards sat 4pt taller than the minis and the week-strip cards. Touch area is
+  // unaffected — the hitSlop on the button is what actually carries it.
+  footerMenuBtn: { paddingHorizontal: 2 },
   itemName: { fontSize: 15, fontWeight: '700', color: '#1a1a1a', flexShrink: 1 },
   textOnDark: { color: '#fff' },
   itemSub: { fontSize: 10, color: 'rgba(255,255,255,0.65)' },
   doneBadge: {
-    width: 16, height: 16, borderRadius: 8,
+    position: 'absolute', top: 8, right: 8,
+    width: 18, height: 18, borderRadius: 9,
     backgroundColor: ACCENT, flexShrink: 0,
     alignItems: 'center', justifyContent: 'center',
   },

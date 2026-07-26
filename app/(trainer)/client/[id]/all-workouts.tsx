@@ -751,7 +751,12 @@ const coverCardStyles = StyleSheet.create({
   footerSpacer: { flex: 1, minWidth: 8 },
   footerDate:   { fontSize: 12 },
   footerSource: { fontSize: 11, color: '#999', flexShrink: 1 },
-  footerMenuBtn: { padding: 4 },
+  // paddingHorizontal only — matching the gallery mini's wFooterMenuBtn. With
+  // `padding: 4` the button was 24pt tall (16pt glyph + 8), which made IT the
+  // tallest thing in the footer row instead of the 15px name (~20pt), so these
+  // cards sat 4pt taller than the minis and the week-strip cards. Touch area is
+  // unaffected — the hitSlop on the button is what actually carries it.
+  footerMenuBtn: { paddingHorizontal: 2 },
   itemName: { fontSize: 15, fontWeight: '700', color: '#1a1a1a', flexShrink: 1 },
   checkBadge: {
     position: 'absolute', top: 8, right: 8,
