@@ -25,7 +25,7 @@ import { TrainerLogoButton } from '@/components/TrainerLogoButton';
 import { useTabBarHeight } from '@/components/FloatingTabBar';
 import { SymbolView } from 'expo-symbols';
 import { BottomSheet } from '@/components/BottomSheet';
-import { useCardVariant, type CoverCardVariant } from '@/lib/cardVariant';
+import { useCardVariant, CARD_VARIANTS, isCoverDark, isFooterDark, type CoverCardVariant } from '@/lib/cardVariant';
 import { DARK_CARD_FOOTER, DARK_CARD_GRADIENT } from '@/components/WorkoutPaperCover';
 import { nameInitial } from '@/lib/utils';
 import t from '@/i18n/en';
@@ -479,7 +479,7 @@ export default function AccountScreen() {
           <View style={styles.card}>
             <BizRow
               label={t.account.workoutCardStyle}
-              value={cardVariant === 'dark' ? t.account.cardStyleDark : t.account.cardStyleLight}
+              value={CARD_STYLE_LABELS[cardVariant]}
               onPress={() => setCardStyleOpen(true)}
             />
           </View>
@@ -691,26 +691,28 @@ export default function AccountScreen() {
             <View style={{ paddingHorizontal: 20, paddingBottom: 4, gap: 12, alignItems: 'stretch' }}>
               <Text style={[modalStyles.title, { textAlign: 'center' }]}>{t.account.workoutCardStyle}</Text>
               <Text style={cardStyleSt.sub}>{t.account.workoutCardStyleSub}</Text>
-              {([
-                ['dark', t.account.cardStyleDark],
-                ['light', t.account.cardStyleLight],
-              ] as [CoverCardVariant, string][]).map(([v, label]) => (
+              {CARD_VARIANTS.map(v => (
                 <TouchableOpacity
                   key={v}
                   style={[cardStyleSt.option, cardVariant === v && cardStyleSt.optionActive]}
                   onPress={() => { setCardVariant(v); close(); }}
                   activeOpacity={0.85}
                 >
-                  {/* Miniature of the card anatomy — footer is always the OPPOSITE of
-                      the cover: dark cover + white footer, or white cover + dark footer. */}
+                  {/* Miniature of the card anatomy: cover on top, footer strip below,
+                      each dark or light per the style. The seamless styles ('white',
+                      'green') would otherwise be a blank box, so they get a name bar in
+                      the footer to show where it is and what colour the title runs. */}
                   <View style={cardStyleSt.swatch}>
-                    <View style={[cardStyleSt.swatchCover, v === 'light' && cardStyleSt.swatchCoverLight]}>
-                      <View style={[cardStyleSt.swatchLine, { width: 22 }, v === 'light' && cardStyleSt.swatchLineLight]} />
-                      <View style={[cardStyleSt.swatchLine, { width: 15 }, v === 'light' && cardStyleSt.swatchLineLight]} />
+                    <View style={[cardStyleSt.swatchCover, !isCoverDark(v) && cardStyleSt.swatchCoverLight]}>
+                      <View style={[cardStyleSt.swatchLine, { width: 22 }, v === 'light' && cardStyleSt.swatchLineLight, v === 'white' && cardStyleSt.swatchLineGreen]} />
+                      <View style={[cardStyleSt.swatchLine, { width: 15 }, v === 'light' && cardStyleSt.swatchLineLight, v === 'white' && cardStyleSt.swatchLineGreen]} />
                     </View>
-                    <View style={[cardStyleSt.swatchFooter, v === 'dark' && cardStyleSt.swatchFooterLight]} />
+                    <View style={[cardStyleSt.swatchFooter, !isFooterDark(v) && cardStyleSt.swatchFooterLight]}>
+                      {v === 'white' && <View style={cardStyleSt.swatchName} />}
+                      {v === 'green' && <View style={[cardStyleSt.swatchName, cardStyleSt.swatchNameOnDark]} />}
+                    </View>
                   </View>
-                  <Text style={[cardStyleSt.optionLabel, cardVariant === v && cardStyleSt.optionLabelActive]}>{label}</Text>
+                  <Text style={[cardStyleSt.optionLabel, cardVariant === v && cardStyleSt.optionLabelActive]}>{CARD_STYLE_LABELS[v]}</Text>
                   {cardVariant === v && <SymbolView name="checkmark" size={15} tintColor="#24ac88" weight="semibold" />}
                 </TouchableOpacity>
               ))}
@@ -927,8 +929,16 @@ const styles = StyleSheet.create({
   signOutText: { fontSize: 16, fontWeight: '600', color: '#e53935' },
 });
 
-// Workout card style picker — option rows with a miniature of the card anatomy
-// (footer strip always the opposite of the cover: dark/white or white/dark).
+// One label per style, used by BOTH the Appearance row's value and the sheet's options
+// (see the same map in the client Me tab).
+const CARD_STYLE_LABELS: Record<CoverCardVariant, string> = {
+  dark:  t.account.cardStyleDark,
+  light: t.account.cardStyleLight,
+  white: t.account.cardStyleWhite,
+  green: t.account.cardStyleGreen,
+};
+
+// Workout card style picker — option rows with a miniature of the card anatomy.
 // Mirrors cardStyleSt in the client Me tab.
 const cardStyleSt = StyleSheet.create({
   sub:    { fontSize: 12, color: '#999', textAlign: 'center', marginTop: -6, marginBottom: 2 },
@@ -949,8 +959,11 @@ const cardStyleSt = StyleSheet.create({
   swatchCoverLight: { backgroundColor: '#fff' },
   swatchLine:       { height: 3, borderRadius: 2, backgroundColor: 'rgba(255,255,255,0.55)' },
   swatchLineLight:  { backgroundColor: 'rgba(0,0,0,0.35)' },
-  swatchFooter:      { height: 12, backgroundColor: DARK_CARD_FOOTER },
+  swatchLineGreen:  { backgroundColor: 'rgba(36,78,67,0.75)' },
+  swatchFooter:      { height: 12, backgroundColor: DARK_CARD_FOOTER, justifyContent: 'center', paddingHorizontal: 6 },
   swatchFooterLight: { backgroundColor: '#fff' },
+  swatchName:        { width: 18, height: 3, borderRadius: 2, backgroundColor: 'rgba(0,0,0,0.72)' },
+  swatchNameOnDark:  { backgroundColor: 'rgba(255,255,255,0.85)' },
 });
 
 const modalStyles = StyleSheet.create({

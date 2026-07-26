@@ -34,6 +34,16 @@ const BodyView = BodyHighlighter as unknown as React.ComponentType<any>;
  *                   mechanism and per-category paperCrop framing as 'brand', just
  *                   mirrored for a light ground). Slightly quieter mix levels than
  *                   brand's, because dark marks on white read stronger than white on dark.
+ * variant='brandBright' → the same white ghost as 'brand', mixed STRONGER (the 'green'
+ *                   card style — dark cover AND dark footer). Same reasoning as
+ *                   'inkDeep' below, mirrored: with the footer no longer contrasting,
+ *                   the figure is what keeps the block from reading as a plain slab.
+ *                   Note this is a DELIBERATE exception to 'brand''s quiet brief — it
+ *                   only applies to the style the user picks for exactly that effect.
+ * variant='inkDeep' → the same green ink as 'ink', mixed STRONGER (the 'white' card
+ *                   style — white cover AND white footer). With no dark footer strip
+ *                   left to give the card structure, the figure has to carry more of it,
+ *                   so every level steps up roughly one notch. Same machinery otherwise.
  * variant='color' → bright same-hue gradient (the two Do Mode hero banners)
  * variant='soft'  → muted / earthier same-hue gradient (tiny legacy thumbnails)
  * variant='muted' → darker, calmer version (unused for now, kept for the Do Mode header)
@@ -182,20 +192,30 @@ export default function CategoryCover({
   style,
 }: {
   category?: string | null;
-  variant?: 'color' | 'soft' | 'muted' | 'brand' | 'ink';
+  variant?: 'color' | 'soft' | 'muted' | 'brand' | 'brandBright' | 'ink' | 'inkDeep';
   watermarkSize?: number; // accepted for back-compat; sizing is now measured from the box
   style?: ViewStyle;
 }) {
   const [box, setBox] = useState({ w: 0, h: 0 });
   const cfg = resolve(category);
-  const isBrand = variant === 'brand';
-  const isInk = variant === 'ink';
-  // Card variants (brand + ink) share the explicit-fill + paperCrop machinery; they only
-  // differ in which ground the figure is mixed into.
+  const isBrandBright = variant === 'brandBright';
+  const isBrand = variant === 'brand' || isBrandBright;
+  const isInkDeep = variant === 'inkDeep';
+  const isInk = variant === 'ink' || isInkDeep;
+  // Card variants (brand + ink/inkDeep) share the explicit-fill + paperCrop machinery;
+  // they only differ in which ground the figure is mixed into and how strongly.
   const isCard = isBrand || isInk;
   const BRAND_MID = '#1a3830';
   const INK_BASE = '#ffffff';
   const INK = '36,78,67'; // HEADER green as ink — ties the light figure to the brand story
+  // Ink mix levels: body / lit-1 / lit-2 / border. 'inkDeep' (the all-white card) steps
+  // each WELL up — with no dark footer the figure is the card's only weight, and the
+  // first pass (0.13/0.24/0.40/0.20) read too faint on device; the silhouette here is
+  // meant to be seen, not just found (the opposite of the 'brand' ghost's brief).
+  const inkL = isInkDeep ? [0.22, 0.38, 0.58, 0.32] : [0.07, 0.16, 0.28, 0.12];
+  // Same idea on the dark ground: 'brandBright' (the all-green card) lifts the white
+  // ghost well clear of the gradient, 'brand' keeps its deliberately quiet levels.
+  const brandL = isBrandBright ? [0.18, 0.34, 0.52, 0.26] : [0.09, 0.20, 0.33, 0.15];
   const grad = cfg
     ? (variant === 'muted' ? cfg.muted : variant === 'soft' ? cfg.soft : cfg.grad)
     : (['#2a5448', '#1f3f35', '#1a3832'] as [string, string, string]);
@@ -206,14 +226,14 @@ export default function CategoryCover({
   // value-steps read as embossed material, matching the home tiles; color read as an
   // anatomical picture. The figure should be found, not noticed.
   const bodyFill = isInk
-    ? mixHex(INK_BASE, INK, 0.07)
+    ? mixHex(INK_BASE, INK, inkL[0])
     : isBrand
-    ? mixHex(BRAND_MID, '255,255,255', 0.09)
+    ? mixHex(BRAND_MID, '255,255,255', brandL[0])
     : variant === 'muted' ? 'rgba(255,255,255,0.055)' : 'rgba(255,255,255,0.10)';
   const hl: [string, string] = isInk
-    ? [mixHex(INK_BASE, INK, 0.16), mixHex(INK_BASE, INK, 0.28)]
+    ? [mixHex(INK_BASE, INK, inkL[1]), mixHex(INK_BASE, INK, inkL[2])]
     : isBrand
-    ? [mixHex(BRAND_MID, '255,255,255', 0.20), mixHex(BRAND_MID, '255,255,255', 0.33)]
+    ? [mixHex(BRAND_MID, '255,255,255', brandL[1]), mixHex(BRAND_MID, '255,255,255', brandL[2])]
     : variant === 'muted'
       ? ['rgba(255,255,255,0.11)', 'rgba(255,255,255,0.19)']
       : ['rgba(255,255,255,0.24)', 'rgba(255,255,255,0.44)'];
@@ -255,7 +275,7 @@ export default function CategoryCover({
           background={bodyFill}
           {...(isCard ? {
             defaultFill: bodyFill,
-            border: isInk ? mixHex(INK_BASE, INK, 0.12) : mixHex(BRAND_MID, '255,255,255', 0.15),
+            border: isInk ? mixHex(INK_BASE, INK, inkL[3]) : mixHex(BRAND_MID, '255,255,255', brandL[3]),
           } : null)}
         />
       </View>

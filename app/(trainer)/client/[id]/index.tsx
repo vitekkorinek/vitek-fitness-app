@@ -36,7 +36,7 @@ import { mondayOf, addDaysStr } from '@/lib/weeklyGoal';
 import { CATEGORY_COLORS, STRETCHING_CATEGORIES } from '@/lib/workoutCategories';
 import type { WorkoutCategory } from '@/lib/workoutCategories';
 import WorkoutPaperCover, { ExerciseNamesProvider, DARK_CARD_FOOTER, DARK_CARD_GRADIENT } from '@/components/WorkoutPaperCover';
-import { useCardVariant } from '@/lib/cardVariant';
+import { useCoverDark, useFooterDark } from '@/lib/cardVariant';
 import { fetchExerciseNames } from '@/lib/exerciseNames';
 import { ft, fd } from '@/lib/appType';
 import t from '@/i18n/en';
@@ -714,7 +714,7 @@ function PlanWorkoutFlow({ clientId, initialDate, onClose, onDone }: {
   onDone: () => void;
 }) {
   // Workout card style (trainer Account → Appearance) — picker-card ground follows the cover.
-  const coverDark = useCardVariant(s => s.variant) === 'dark';
+  const coverDark = useCoverDark();
   const [planStep, setPlanStep] = useState<'pick' | 'schedule'>('pick');
   const [planWorkoutsForPicker, setPlanWorkoutsForPicker] = useState<{ id: string; name: string; category: string | null; cover_image_url: string | null; doneThisWeek: boolean }[]>([]);
   const [planLoadingWorkouts, setPlanLoadingWorkouts] = useState(true);
@@ -1016,10 +1016,10 @@ function TrainingTab({
 }) {
   const { profile } = useAuth();
   const isTrainer = profile?.role === 'trainer';
-  // Workout card style (trainer Account → Appearance): footer always the OPPOSITE of
-  // the cover — 'dark' = dark cover + WHITE footer, 'light' = white cover + DARK footer.
-  const galleryFooterDark = useCardVariant(s => s.variant) === 'light';
-  const coverDark = !galleryFooterDark;
+  // Workout card style — cover-dark and footer-dark are INDEPENDENT (the seamless
+  // 'white' / 'green' styles are light+light and dark+dark). See lib/cardVariant.ts.
+  const galleryFooterDark = useFooterDark();
+  const coverDark = useCoverDark();
   const { suspendedSession } = useSessionStore();
   const {
     activeRoutine,
@@ -1507,14 +1507,20 @@ function TrainingTab({
           {/* ── ROUTINES section FIRST (mirrors the client Training tab's order) ──
               Extra paddingTop only here: the week-strip zone above gets more separation
               than the section-to-section rhythm, so it reads as its own unit. */}
-          <View style={[sectionStyles.headerRow, { paddingTop: 42 }]}>
+          {/* The WHOLE header row is the tap target, not just the chevron — a 15px glyph
+              16px off the screen edge is a ~15pt target sitting where iOS's own edge
+              swipe wants the touch (mirrors the client Training tab). paddingTop 20 on
+              top of headerRow's marginTop 22 keeps this section's extra 42px gap. */}
+          <TouchableOpacity
+            style={[sectionStyles.headerRow, { paddingTop: 20 }]}
+            onPress={() => router.push(`/(trainer)/client/${clientId}/all-routines` as any)}
+            activeOpacity={0.7}
+          >
             <View style={sectionStyles.headerLeft}>
               <Text style={[sectionStyles.headerLabel, { marginLeft: 0 }]}>Routines</Text>
             </View>
-            <TouchableOpacity onPress={() => router.push(`/(trainer)/client/${clientId}/all-routines` as any)} hitSlop={8} activeOpacity={0.7}>
-              <SymbolView name="chevron.right" size={15} tintColor="#999" weight="semibold" />
-            </TouchableOpacity>
-          </View>
+            <SymbolView name="chevron.right" size={15} tintColor="#999" weight="semibold" />
+          </TouchableOpacity>
           {activeRoutineRow ? (
             <RoutineReadout
               routine={activeRoutineRow}
@@ -1525,14 +1531,16 @@ function TrainingTab({
           )}
 
           {/* ── WORKOUTS gallery — horizontal swipeable cover cards (mirrors client) ── */}
-          <View style={sectionStyles.headerRow}>
+          <TouchableOpacity
+            style={sectionStyles.headerRow}
+            onPress={() => router.push(`/(trainer)/client/${clientId}/all-workouts` as any)}
+            activeOpacity={0.7}
+          >
             <View style={sectionStyles.headerLeft}>
               <Text style={[sectionStyles.headerLabel, { marginLeft: 0 }]}>Workouts</Text>
             </View>
-            <TouchableOpacity onPress={() => router.push(`/(trainer)/client/${clientId}/all-workouts` as any)} hitSlop={8} activeOpacity={0.7}>
-              <SymbolView name="chevron.right" size={15} tintColor="#999" weight="semibold" />
-            </TouchableOpacity>
-          </View>
+            <SymbolView name="chevron.right" size={15} tintColor="#999" weight="semibold" />
+          </TouchableOpacity>
           {workoutCards.length === 0 ? (
             <Text style={sectionStyles.noRoutine}>No workouts yet</Text>
           ) : (
@@ -1990,7 +1998,7 @@ function WeekStripCard({
 }) {
   // Workout card style: the week-strip session cards follow the setting like every other
   // workout card since July 24 (the locked all-dark hero is gone on both sides).
-  const footerDark = useCardVariant(s => s.variant) === 'light';
+  const footerDark = useFooterDark();
   const weekOffsetRef = useRef(weekOffset);
   weekOffsetRef.current = weekOffset;
   const [noSessModal, setNoSessModal] = useState(false);
@@ -2563,7 +2571,11 @@ const DARK_MUTED_ICON = 'rgba(255,255,255,0.65)';
 
 const sectionStyles = StyleSheet.create({
   fullBleed:      { marginHorizontal: -16 },
-  headerRow:      { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingTop: 30, paddingBottom: 14 },
+  // The row IS the touch target on the sections that navigate. The 30px gap above the
+  // label is split marginTop 22 + paddingTop 8 so spacing is unchanged while the
+  // tappable area starts just above the text instead of 30px up in dead space;
+  // zIndex keeps it above anything a neighbouring section bleeds upward.
+  headerRow:      { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, marginTop: 22, paddingTop: 8, paddingBottom: 14, zIndex: 1 },
   headerLeft:     { flexDirection: 'row', alignItems: 'center' },
   headerLabel:    { fontSize: 12, fontWeight: '700', color: '#1a1a1a', textTransform: 'uppercase', letterSpacing: 0.5, marginLeft: 7 },
   hScroll:        { paddingHorizontal: 16, gap: 10 },
@@ -4062,7 +4074,7 @@ function WorkoutRow({
 }) {
   // Workout card style — overlay texts follow the COVER here (this is a cover-crop card
   // with no separate footer). Hook stays above the rename early-return.
-  const coverDark = useCardVariant(s => s.variant) === 'dark';
+  const coverDark = useCoverDark();
   const gradColors = (CATEGORY_GRADIENTS[workout.category ?? ''] ?? GRADIENT_DEFAULT) as [string, string];
   const lastDoneText = workout.lastSessionDate
     ? t.clientProfile.training.lastDone(relativeTime(workout.lastSessionDate))
@@ -4785,7 +4797,9 @@ const wsStyles = StyleSheet.create({
   checkBadge:  { position: 'absolute', top: 8, right: 8, width: 18, height: 18, borderRadius: 9, backgroundColor: ACCENT, alignItems: 'center', justifyContent: 'center' },
   checkMark:   { fontSize: 10, color: '#fff', fontWeight: '700', lineHeight: 14 },
 
-  sessionHighlights: { paddingHorizontal: 12, paddingVertical: 8, backgroundColor: 'transparent' },
+  // paddingVertical 4 — matches the client week-strip card's hlWrap and the gallery
+  // minis' wBody, so every cover card lands at the same ~112 height.
+  sessionHighlights: { paddingHorizontal: 12, paddingVertical: 4, backgroundColor: 'transparent' },
   hlSectionLabel:    { fontSize: 9, fontWeight: '700', color: MUTED, letterSpacing: 0.6, textTransform: 'uppercase', marginBottom: 8, textAlign: 'center' },
   hlStatsRow:    { flexDirection: 'row', alignItems: 'center', gap: 12 },
   sessFooterName: { flex: 1, fontSize: 15, fontWeight: '700', color: '#1a1a1a' },

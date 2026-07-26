@@ -3,7 +3,7 @@ import { View, Text, StyleSheet, ViewStyle } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import CategoryCover, { categoryHasCover } from '@/components/CategoryCover';
 import { CATEGORY_COLORS, WorkoutCategory } from '@/lib/workoutCategories';
-import { useCardVariant } from '@/lib/cardVariant';
+import { useCardVariant, isCoverDark } from '@/lib/cardVariant';
 import { ft } from '@/lib/appType';
 
 /**
@@ -32,16 +32,22 @@ import { ft } from '@/lib/appType';
 
 // ─── Workout card style (user setting, July 2026 — app-wide since July 24) ──────
 // A permanent preference — `useCardVariant` in lib/cardVariant.ts, set in the client
-// Me tab → Appearance and the trainer Account tab → Appearance. Both options contrast
-// cover against footer:
+// Me tab → Appearance and the trainer Account tab → Appearance. Four styles: two that
+// contrast cover against footer, two that are seamless (see the full table in
+// lib/cardVariant.ts):
 //   'dark'  — DARK cover (rendered here) + WHITE footer at the call site (default)
-//   'light' — WHITE cover (ink exercise list + ink silhouette) + DARK footer
+//   'light' — WHITE cover (ink list + ink silhouette) + DARK footer
+//   'white' — WHITE cover + WHITE footer: no contrast strip, so the cover carries the
+//             card — DEEP green silhouette ('inkDeep') + a HEADER-green exercise list,
+//             against the near-black workout name in the footer.
+//   'green' — DARK cover + DARK footer: one uninterrupted brand block, with a BRIGHTER
+//             silhouette ('brandBright') than the dark style's ghost.
 // The cover follows the setting HERE, unconditionally; every card paints its own frame
-// + footer the OPPOSITE of the cover (base white styles + dark overrides applied when
-// the variant is 'light') and keeps the base light lift shadow in both styles. Since
-// July 24 this covers EVERY workout cover card — trainer side and the week-strip
-// session cards included; no surface renders the old seamless all-dark card any more
-// (the 0.22 dark shadow spec has no cover-card users left).
+// + footer from `useFooterDark()` and keeps the base light lift shadow in all four.
+// Cover-side treatments at call sites (quiet-ink cover pills, overlay text on the
+// cover-crop cards) use `useCoverDark()` — cover-dark and footer-dark are independent
+// questions, and neither flag is the negation of the other. Since July 24 this covers
+// EVERY workout cover card — trainer side and the week-strip session cards included.
 
 // Cover heights per size. Fixed, never content-driven: a list where cards are different
 // heights reads as unsettled while scrolling, and the height conveys nothing useful.
@@ -74,7 +80,12 @@ export default function WorkoutPaperCover({
 }) {
   const ctxNames = React.useContext(ExerciseNamesContext);
   const variant = useCardVariant(s => s.variant);
-  const lightCover = variant === 'light';
+  // The two SEAMLESS styles have no contrasting footer strip, so their cover has to hold
+  // the card on its own: each pushes its silhouette a step further from the ground than
+  // the contrast style with the same cover colour.
+  const lightCover = !isCoverDark(variant);
+  const allWhite = variant === 'white';
+  const allGreen = variant === 'green';
   const catColors = category ? CATEGORY_COLORS[category as WorkoutCategory] : null;
   const names = (exerciseNames ?? (workoutId ? ctxNames?.get(workoutId) : null) ?? []).filter(Boolean);
   // Only categories with a CategoryCover config draw a silhouette — an uncategorised
@@ -87,11 +98,19 @@ export default function WorkoutPaperCover({
     : isMini ? 24
     : 44;
 
-  // One naturally-wrapping <Text>, whole names kept atomic — spaces INSIDE a name become
-  // NBSP so wraps land between names. Known caveat (seen on device, accepted): UAX-14
-  // LB12a still allows a break after a hyphen even before glue, so " - " inside a name
-  // can occasionally split across lines.
-  const list = names.map(n => n.replace(/ /g, ' ')).join(' · ');
+  // One naturally-wrapping <Text>, whole names kept ATOMIC so wraps only ever land
+  // BETWEEN names:
+  //   · spaces inside a name → NBSP (glue)
+  //   · hyphens inside a name → hyphen + WORD JOINER (U+2060), because UAX-14 allows a
+  //     break right after a hyphen even when glue follows. That break was the misalignment
+  //     Vitek caught on device: "Pull Down Cable - single arm" split after the "-", which
+  //     left the name's own NBSP at the START of the next line — and an NBSP is NOT
+  //     trimmed at a line start the way an ordinary space is, so lines 2+ sat one
+  //     space-width right of line 1. With names unbreakable, the only wrap points left
+  //     are the ordinary spaces after each separator.
+  //   · the "·" separator is glued to the name BEFORE it (leading NBSP) and followed by
+  //     an ordinary space, so a dot can never start a line either.
+  const list = names.map(n => n.replace(/ /g, ' ').replace(/-/g, '-⁠')).join(' · ');
 
   return (
     <View style={[s.cover, { height: PAPER_COVER_HEIGHT[size] }, style]}>
@@ -101,11 +120,16 @@ export default function WorkoutPaperCover({
       {lightCover
         ? <View style={[StyleSheet.absoluteFill, { backgroundColor: '#fff' }]} />
         : <LinearGradient colors={DARK_CARD_GRADIENT} start={{ x: 0.5, y: 0 }} end={{ x: 0.5, y: 1 }} style={StyleSheet.absoluteFill} />}
-      {hasWatermark && <CategoryCover category={category} variant={lightCover ? 'ink' : 'brand'} />}
+      {hasWatermark && (
+        <CategoryCover
+          category={category}
+          variant={allWhite ? 'inkDeep' : allGreen ? 'brandBright' : lightCover ? 'ink' : 'brand'}
+        />
+      )}
 
       {names.length > 0 && (
         <Text
-          style={[s.exText, lightCover && s.exTextInk, isMini && s.exTextMini, { marginRight: baseInset }, ft(500)]}
+          style={[s.exText, lightCover && s.exTextInk, allWhite && s.exTextGreen, isMini && s.exTextMini, { marginRight: baseInset }, ft(500)]}
           numberOfLines={PAPER_COVER_LINES[size]}
           pointerEvents="none"
         >
@@ -130,12 +154,19 @@ export default function WorkoutPaperCover({
 // WHITE cover matches the dark cover's register elsewhere in the app).
 export const DARK_CARD_GRADIENT: [string, string, string] = ['#244e43', '#1a3830', '#112820'];
 export const DARK_CARD_FOOTER = '#112820';
+// The brand header green, used as the all-white card's ink (list text + silhouette).
+const HEADER_GREEN = '#244e43';
 
 const s = StyleSheet.create({
   cover: { paddingTop: 10, paddingHorizontal: 12, overflow: 'hidden' },
   exText: { fontSize: 12, lineHeight: 17, color: 'rgba(255,255,255,0.93)' },
   // Light-cover twin: the list as quiet near-black ink — secondary content, not a title.
   exTextInk: { color: 'rgba(0,0,0,0.68)' },
+  // All-white card: the list in HEADER green instead of neutral ink, so the only
+  // near-black text on the card is the workout name in the footer. Full-strength green
+  // (the 0.88-alpha first pass read washed-out) — the card has no dark strip, so the
+  // list and the silhouette together carry all of its weight.
+  exTextGreen: { color: HEADER_GREEN },
   exTextMini: { fontSize: 11, lineHeight: 15 },
   catPill: {
     position: 'absolute', right: 12, bottom: 9,

@@ -502,6 +502,8 @@ const en = {
     workoutCardStyleSub: 'How your workout cards look',
     cardStyleDark: 'Dark',
     cardStyleLight: 'Light',
+    cardStyleWhite: 'White',
+    cardStyleGreen: 'Green',
     changePassword: 'Change password',
     changePasswordTitle: 'Change password',
     passwordUpdated: 'Password updated',
@@ -687,6 +689,8 @@ const en = {
     workoutCardStyleSub: 'How your workout cards look',
     cardStyleDark: 'Dark',
     cardStyleLight: 'Light',
+    cardStyleWhite: 'White',
+    cardStyleGreen: 'Green',
   },
 
   // Common

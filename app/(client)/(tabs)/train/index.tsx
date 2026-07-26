@@ -23,7 +23,7 @@ import { useTabBarHeight } from '@/components/FloatingTabBar';
 import { SessionDetailsSheet } from '@/components/SessionDetailsSheet';
 import CategoryCover, { categoryHasCover, WORKOUT_COVER_PHOTOS_ENABLED } from '@/components/CategoryCover';
 import WorkoutPaperCover, { DARK_CARD_FOOTER } from '@/components/WorkoutPaperCover';
-import { useCardVariant } from '@/lib/cardVariant';
+import { useFooterDark } from '@/lib/cardVariant';
 import { fetchExerciseNames } from '@/lib/exerciseNames';
 import { CATEGORY_COLORS } from '@/lib/workoutCategories';
 import type { WorkoutCategory } from '@/lib/workoutCategories';
@@ -54,9 +54,9 @@ const DARK_MUTED_ICON = 'rgba(255,255,255,0.65)';
 
 // Workout card style (setting in lib/cardVariant.ts — client Me → Appearance, trainer
 // Account → Appearance): since July 24 EVERY workout cover card follows it, the
-// week-strip session cards included (the locked all-dark "now" hero is gone). The
-// footer is always the OPPOSITE of the cover — 'dark' = dark cover + WHITE footer,
-// 'light' = white cover + DARK footer (the cover flips inside WorkoutPaperCover).
+// week-strip session cards included (the locked all-dark "now" hero is gone). Four
+// anatomies; cover-dark and footer-dark are independent flags (useCoverDark /
+// useFooterDark) because 'white' is light+light and 'green' is dark+dark.
 
 const MONTH_NAMES = [
   'January','February','March','April','May','June',
@@ -250,7 +250,7 @@ export default function TrainTabScreen() {
   const tabBarH = useTabBarHeight();
   // Gallery-mini footer paint — opposite of the cover: 'dark' style = white footer,
   // 'light' style = dark footer (see the card-style comment above darkCardStyles).
-  const galleryFooterDark = useCardVariant(s => s.variant) === 'light';
+  const galleryFooterDark = useFooterDark();
   const [training, setTraining]                 = useState<ClientTrainingData | null>(null);
   const [workoutCards, setWorkoutCards]         = useState<WorkoutCard[]>([]);
   const [loading, setLoading]                   = useState(true);
@@ -907,14 +907,21 @@ export default function TrainTabScreen() {
                  routine → the whole section disappears (no placeholder). ──────────── */}
           {activeRoutineRow && (
             <>
-              <View style={sectionStyles.headerRow}>
+              {/* The WHOLE header row is the tap target, not just the chevron: a 15px
+                  glyph 16px off the screen edge was a ~15pt target sitting where iOS's
+                  own edge-swipe wants the touch, so taps missed often enough to read as
+                  "not responsive". Label + chevron + the space between them now all
+                  open the gallery. */}
+              <TouchableOpacity
+                style={sectionStyles.headerRow}
+                onPress={() => router.push('/(client)/(tabs)/train/all-routines' as any)}
+                activeOpacity={0.7}
+              >
                 <View style={sectionStyles.headerLeft}>
                   <Text style={[sectionStyles.headerLabel, { marginLeft: 0 }, ft(700)]}>Routine</Text>
                 </View>
-                <TouchableOpacity onPress={() => router.push('/(client)/(tabs)/train/all-routines' as any)} hitSlop={8} activeOpacity={0.7}>
-                  <SymbolView name="chevron.right" size={15} tintColor="#999" weight="semibold" />
-                </TouchableOpacity>
-              </View>
+                <SymbolView name="chevron.right" size={15} tintColor="#999" weight="semibold" />
+              </TouchableOpacity>
               <RoutineReadout
                 routine={activeRoutineRow}
                 onPress={() => router.push(`/(client)/routine/${activeRoutineRow!.id}` as any)}
@@ -923,14 +930,16 @@ export default function TrainTabScreen() {
           )}
 
           {/* ── WORKOUTS section ───────────────────────────────────── */}
-          <View style={sectionStyles.headerRow}>
+          <TouchableOpacity
+            style={sectionStyles.headerRow}
+            onPress={() => router.push('/(client)/(tabs)/train/all-workouts' as any)}
+            activeOpacity={0.7}
+          >
             <View style={sectionStyles.headerLeft}>
               <Text style={[sectionStyles.headerLabel, { marginLeft: 0 }, ft(700)]}>Workouts</Text>
             </View>
-            <TouchableOpacity onPress={() => router.push('/(client)/(tabs)/train/all-workouts' as any)} hitSlop={8} activeOpacity={0.7}>
-              <SymbolView name="chevron.right" size={15} tintColor="#999" weight="semibold" />
-            </TouchableOpacity>
-          </View>
+            <SymbolView name="chevron.right" size={15} tintColor="#999" weight="semibold" />
+          </TouchableOpacity>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={sectionStyles.hScrollBleed} contentContainerStyle={sectionStyles.hScroll}>
             {workoutCards.map(c => (
               <TouchableOpacity
@@ -1556,10 +1565,10 @@ function WeeklyGaugeCard({
   const exceeded = weeklyCompleted > weeklyGoal;
   const [sessionsListOpen, setSessionsListOpen] = useState(false);
   // Workout card style: since July 24 the week-strip session cards follow the setting
-  // like every other workout card (footer OPPOSITE of the cover) — the locked all-dark
-  // "now" hero is gone; with every card sharing the contrast-footer anatomy, a seamless
-  // dark card read as inconsistency, not emphasis.
-  const footerDark = useCardVariant(s => s.variant) === 'light';
+  // like every other workout card — the locked all-dark "now" hero is gone; a card that
+  // was seamless while every other card contrasted read as inconsistency, not emphasis.
+  // (A seamless card is now a style the USER picks, applied to every card at once.)
+  const footerDark = useFooterDark();
   // Completed sessions only — planned/scheduled never count toward the gauge.
   const completedSessions = weekSessions.filter(s => s.status === 'completed');
   const PAD = 8;
@@ -1861,7 +1870,12 @@ const gcStyles = StyleSheet.create({
   plannedBadge:   { borderRadius: 100, backgroundColor: '#f5a623', paddingHorizontal: 8, paddingVertical: 3, marginRight: 10, flexShrink: 0 },
   plannedBadgeText: { fontSize: 8, fontWeight: '800', color: '#fff', letterSpacing: 0.5 },
   sessFooterName: { flex: 1, fontSize: 15, fontWeight: '700', color: '#1a1a1a' },
-  hlWrap:         { paddingHorizontal: 12, paddingVertical: 8, backgroundColor: '#fff' },
+  // paddingVertical 4 (not 8) — matches the mini gallery card's wBody, so a week-strip
+  // session card lands at the same ~112 total height as a gallery mini (Vitek's call:
+  // the shorter mini proportion is the one that reads right). The COVER stays at
+  // 'strip' 84: it renders 3 exercise lines and the 3rd starts fouling the category
+  // pill below 84 — the height came out of the footer, not the cover.
+  hlWrap:         { paddingHorizontal: 12, paddingVertical: 4, backgroundColor: '#fff' },
   hlRow:          { flexDirection: 'row', alignItems: 'center', gap: 12 },
   hlLabel:        { fontSize: 7, fontWeight: '700', color: '#999', letterSpacing: 0.6, textTransform: 'uppercase', marginBottom: 8, textAlign: 'center' },
   hlChip:         { flexDirection: 'row', alignItems: 'center', gap: 4, flexShrink: 0 },
@@ -1901,7 +1915,12 @@ const sessListStyles = StyleSheet.create({
 // ─── Workouts / Routines section styles ───────────────────────────────────────
 
 const sectionStyles = StyleSheet.create({
-  headerRow:      { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingTop: 30, paddingBottom: 14 },
+  // The row IS the touch target (see the section headers). The 30px gap above the
+  // label is split marginTop 22 + paddingTop 8 so the spacing is unchanged while the
+  // tappable area starts just above the text instead of 30px up in dead space.
+  // zIndex keeps the row above the gallery's remaining upward bleed — on iOS RN
+  // implements zIndex by reordering subviews, so it fixes hit-testing, not just paint.
+  headerRow:      { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, marginTop: 22, paddingTop: 8, paddingBottom: 14, zIndex: 1 },
   headerLeft:     { flexDirection: 'row', alignItems: 'center' },
   headerEmoji:    { fontSize: 18 },
   headerLabel:    { fontSize: 12, fontWeight: '700', color: '#1a1a1a', textTransform: 'uppercase', letterSpacing: 0.5, marginLeft: 7 },
@@ -1909,8 +1928,14 @@ const sectionStyles = StyleSheet.create({
   // The scroller clips to its bounds, so the lift shadow needs vertical canvas inside
   // them: pad the content container and pull the same amount back off the outside.
   // Net layout is unchanged; the shadow just stops being sliced at the card edge.
-  hScroll:        { paddingHorizontal: 16, paddingVertical: 24, gap: 12 },
-  hScrollBleed:   { marginVertical: -24 },
+  // The gallery pads itself and bleeds the padding back out, so the cards' lift shadows
+  // aren't clipped by the ScrollView. The bleed is ASYMMETRIC on purpose: a symmetric
+  // -24 pulled the ScrollView's BOX 24px up over the WORKOUTS header row, and since the
+  // ScrollView comes later in the tree it swallowed most of the header's taps (the row
+  // "needed 5 clicks" — the ROUTINE header, with nothing overlapping it, was always
+  // fine). 8px above is all the shadow needs up there (radius 12 − offset 5 = 7).
+  hScroll:        { paddingHorizontal: 16, paddingTop: 8, paddingBottom: 24, gap: 12 },
+  hScrollBleed:   { marginTop: -8, marginBottom: -24 },
 
   wCardOuter:     { width: 212, height: 112, borderRadius: 14, backgroundColor: '#fff', shadowColor: '#000', shadowOffset: { width: 0, height: 5 }, shadowOpacity: 0.08, shadowRadius: 12, elevation: 4 },
   wCard:          { flex: 1, borderRadius: 14, overflow: 'hidden', backgroundColor: '#fff' },

@@ -2,6 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useState } from 'rea
 import * as Linking from 'expo-linking';
 import { Session, User } from '@supabase/supabase-js';
 import { supabase } from '@/lib/supabase';
+import { bindCardVariantToUser } from '@/lib/cardVariant';
 import type { User as UserProfile } from '@/types/database';
 
 type AuthContextType = {
@@ -134,6 +135,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       subscription.unsubscribe();
     };
   }, []);
+
+  // Bind device-local, per-account preferences to whoever is signed in. Everything
+  // that funnels through setProfile (cold start, auth state change, sign-out) lands
+  // here, so the workout card style follows the ACCOUNT rather than the device — a
+  // trainer and a client signed into the same phone no longer share one setting.
+  useEffect(() => {
+    bindCardVariantToUser(profile?.id ?? null);
+  }, [profile?.id]);
 
   const clearPasswordRecovery = useCallback(() => setPasswordRecovery(false), []);
 

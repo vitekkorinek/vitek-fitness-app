@@ -24,7 +24,7 @@ import { relativeTime } from '@/lib/utils';
 import { CATEGORY_COLORS } from '@/lib/workoutCategories';
 import type { WorkoutCategory } from '@/lib/workoutCategories';
 import WorkoutPaperCover, { DARK_CARD_FOOTER } from '@/components/WorkoutPaperCover';
-import { useCardVariant } from '@/lib/cardVariant';
+import { useFooterDark } from '@/lib/cardVariant';
 import { ft, fd } from '@/lib/appType';
 import { fetchExerciseNames } from '@/lib/exerciseNames';
 import type { Routine } from '@/types/database';
@@ -367,11 +367,10 @@ function WorkoutItem({ workout, isDone, onPress, onQuickLook }: {
   onQuickLook?: () => void;
 }) {
   const subtitle = workout.lastSessionDate ? relativeTime(workout.lastSessionDate) : 'Not yet done';
-  // Workout card style (set in Me → Appearance): the cover flips inside
-  // WorkoutPaperCover, and the footer is always the OPPOSITE of the cover — 'dark' =
-  // dark cover + WHITE footer, 'light' = white cover + DARK footer. Light lift shadow
-  // in both.
-  const footerDark = useCardVariant(s => s.variant) === 'light';
+  // Workout card style (set in Me → Appearance): the cover paints itself inside
+  // WorkoutPaperCover; this card owns the frame + footer. Light lift shadow in all four
+  // styles — see lib/cardVariant.ts.
+  const footerDark = useFooterDark();
 
   return (
     <TouchableOpacity style={[coverCardStyles.card, footerDark && coverCardStyles.cardDarkBg]} onPress={onPress} activeOpacity={0.92}>

@@ -27,7 +27,7 @@ import { CATEGORY_COLORS, CATEGORY_OPTIONS, STRETCHING_CATEGORIES } from '@/lib/
 import { resolveWeeklyGoal } from '@/lib/weeklyGoal';
 import type { WorkoutCategory } from '@/lib/workoutCategories';
 import WorkoutPaperCover, { DARK_CARD_FOOTER } from '@/components/WorkoutPaperCover';
-import { useCardVariant } from '@/lib/cardVariant';
+import { useFooterDark } from '@/lib/cardVariant';
 import { fetchExerciseNames } from '@/lib/exerciseNames';
 import { ft, fd } from '@/lib/appType';
 
@@ -545,16 +545,11 @@ function WorkoutItem({
   onPress: () => void;
   onMenuPress: () => void;
 }) {
-  // Workout card style (set in trainer Account → Appearance): footer is always the
-  // OPPOSITE of the cover — 'dark' = dark cover + WHITE footer, 'light' = white cover
-  // + DARK footer. Hook stays above the rename early-return (hooks must be unconditional).
-  const footerDark = useCardVariant(s => s.variant) === 'light';
+  // Workout card style (set in trainer Account → Appearance) — see lib/cardVariant.ts
+  // for the four anatomies. Hook stays above the rename early-return (unconditional).
+  const footerDark = useFooterDark();
   const gradColors = (CATEGORY_GRADIENTS[workout.category ?? ''] ?? GRADIENT_DEFAULT) as [string, string];
   const catColors = workout.category ? CATEGORY_COLORS[workout.category as WorkoutCategory] : null;
-  const subtitle = [
-    workout.lastSessionDate ? formatShortDate(workout.lastSessionDate) : 'Not yet done',
-    workout.routineName ?? 'standalone',
-  ].join(' · ');
 
   if (isRenaming) {
     return (
@@ -581,20 +576,37 @@ function WorkoutItem({
   return (
     <TouchableOpacity style={[coverCardStyles.card, footerDark && coverCardStyles.frameDarkBg]} onPress={onPress} activeOpacity={0.92}>
       <View style={[coverCardStyles.cardInner, footerDark && coverCardStyles.cardInnerDark]}>
-        <WorkoutPaperCover category={workout.category} exerciseNames={workout.exerciseNames} />
-        {/* Name demoted from the cover to the footer — the exercises are the content now. */}
-        <View style={[coverCardStyles.footer, footerDark && coverCardStyles.footerDark]}>
-          <View style={coverCardStyles.footerLeft}>
-            <View style={coverCardStyles.nameRow}>
-              <Text style={[coverCardStyles.itemName, footerDark && coverCardStyles.textOnDark, fd(700)]} numberOfLines={1}>{workout.name}</Text>
-              {workout.thisWeekCount > 0 && workout.status !== 'completed' && (
-                <View style={[coverCardStyles.checkBadge, workout.thisWeekCount > 1 && { width: undefined, paddingHorizontal: 5 }]}>
-                  <Text style={coverCardStyles.checkMark}>✓{workout.thisWeekCount > 1 ? ` ×${workout.thisWeekCount}` : ''}</Text>
-                </View>
-              )}
+        <WorkoutPaperCover
+          category={workout.category}
+          exerciseNames={workout.exerciseNames}
+          size="strip" // mirrors the client's My Workouts card
+        >
+          {/* Done-this-week check sits on the COVER's top-right, not beside the name —
+              the footer is a single line and the badge was the widest thing competing
+              with the name for it. */}
+          {workout.thisWeekCount > 0 && workout.status !== 'completed' && (
+            <View style={[coverCardStyles.checkBadge, workout.thisWeekCount > 1 && coverCardStyles.checkBadgeWide]}>
+              <Text style={coverCardStyles.checkMark}>✓{workout.thisWeekCount > 1 ? ` ×${workout.thisWeekCount}` : ''}</Text>
             </View>
-            <Text style={[coverCardStyles.footerSub, footerDark && coverCardStyles.subOnDark, ft(400)]} numberOfLines={1}>{subtitle}</Text>
-          </View>
+          )}
+        </WorkoutPaperCover>
+        {/* Footer — ONE line, mirroring the client's My Workouts card:
+              name · last-done DATE (bare, ACCENT — no "Done" prefix) ·· routine-or-
+              Standalone · ⋯
+            Name demoted from the cover; the exercises are the content now. */}
+        <View style={[coverCardStyles.footer, footerDark && coverCardStyles.footerDark]}>
+          <Text style={[coverCardStyles.itemName, footerDark && coverCardStyles.textOnDark, fd(700)]} numberOfLines={1}>{workout.name}</Text>
+          <Text
+            style={[coverCardStyles.footerDate, ft(600),
+              { color: workout.lastSessionDate ? ACCENT : footerDark ? 'rgba(255,255,255,0.5)' : '#999' }]}
+            numberOfLines={1}
+          >
+            {workout.lastSessionDate ? formatShortDate(workout.lastSessionDate) : '—'}
+          </Text>
+          <View style={coverCardStyles.footerSpacer} />
+          <Text style={[coverCardStyles.footerSource, footerDark && coverCardStyles.subOnDark, ft(400)]} numberOfLines={1}>
+            {workout.routineName ?? 'Standalone'}
+          </Text>
           {isTrainer && (
             <TouchableOpacity style={coverCardStyles.footerMenuBtn} onPress={onMenuPress} hitSlop={8} activeOpacity={0.5}>
               <SymbolView name="ellipsis" size={16} tintColor={footerDark ? 'rgba(255,255,255,0.65)' : '#bbb'} />
@@ -731,15 +743,22 @@ const coverCardStyles = StyleSheet.create({
   textOnDark:    { color: '#fff' },
   subOnDark:     { color: 'rgba(255,255,255,0.6)' },
   menuBtn: { position: 'absolute', top: 9, right: 10 },
-  footer: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 6, gap: 8, backgroundColor: '#fff' },
-  footerLeft: { flex: 1 },
-  footerSub: { fontSize: 11, color: '#999' },
+  // paddingVertical 4 — same as the client's card footer and the gallery minis' wBody,
+  // so every cover card in the app lands at the same ~112 height.
+  footer: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 4, gap: 8, backgroundColor: '#fff' },
+  // Spacer (rather than flex:1 on the name) keeps the date glued to the name it belongs
+  // to, and pushes the source label + ⋯ to the right edge as their own cluster.
+  footerSpacer: { flex: 1, minWidth: 8 },
+  footerDate:   { fontSize: 12 },
+  footerSource: { fontSize: 11, color: '#999', flexShrink: 1 },
   footerMenuBtn: { padding: 4 },
-  bottomLeft: { flex: 1, gap: 2 },
-  nameRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   itemName: { fontSize: 15, fontWeight: '700', color: '#1a1a1a', flexShrink: 1 },
-  itemSub: { fontSize: 10, color: 'rgba(255,255,255,0.65)' },
-  checkBadge: { width: 16, height: 16, borderRadius: 8, backgroundColor: '#24ac88', alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
+  checkBadge: {
+    position: 'absolute', top: 8, right: 8,
+    width: 18, height: 18, borderRadius: 9, backgroundColor: '#24ac88',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  checkBadgeWide: { width: undefined, paddingHorizontal: 7 },
   checkMark: { fontSize: 9, color: '#fff', fontWeight: '700', lineHeight: 13 },
 });
 

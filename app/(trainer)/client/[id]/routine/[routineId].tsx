@@ -27,7 +27,7 @@ import { BottomSheet } from '@/components/BottomSheet';
 import { CATEGORY_COLORS } from '@/lib/workoutCategories';
 import type { WorkoutCategory } from '@/lib/workoutCategories';
 import WorkoutPaperCover, { DARK_CARD_FOOTER } from '@/components/WorkoutPaperCover';
-import { useCardVariant } from '@/lib/cardVariant';
+import { useFooterDark } from '@/lib/cardVariant';
 import { ft, fd } from '@/lib/appType';
 import { fetchExerciseNames } from '@/lib/exerciseNames';
 import type { Routine } from '@/types/database';
@@ -777,9 +777,9 @@ function WorkoutItem({
   onMenuPress: () => void;
 }) {
   // Workout card style (trainer Account → Appearance, mirrors the client routine
-  // detail): footer always the OPPOSITE of the cover. Hook stays above the rename
-  // early-return (hooks must be unconditional).
-  const footerDark = useCardVariant(s => s.variant) === 'light';
+  // detail) — see lib/cardVariant.ts. Hook stays above the rename early-return (hooks
+  // must be unconditional).
+  const footerDark = useFooterDark();
   const gradColors = (CATEGORY_GRADIENTS[workout.category ?? ''] ?? GRADIENT_DEFAULT) as [string, string];
   const catColors = workout.category ? CATEGORY_COLORS[workout.category as WorkoutCategory] : null;
   const lastDoneText = workout.lastSessionDate ? relativeTime(workout.lastSessionDate) : 'Not yet done';

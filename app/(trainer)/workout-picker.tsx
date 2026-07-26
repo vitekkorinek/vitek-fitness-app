@@ -17,7 +17,7 @@ import { SymbolView } from 'expo-symbols';
 import { LinearGradient } from 'expo-linear-gradient';
 import { supabase } from '@/lib/supabase';
 import WorkoutPaperCover, { DARK_CARD_FOOTER } from '@/components/WorkoutPaperCover';
-import { useCardVariant } from '@/lib/cardVariant';
+import { useFooterDark } from '@/lib/cardVariant';
 import { fetchExerciseNames } from '@/lib/exerciseNames';
 import { ft, fd } from '@/lib/appType';
 import { useAuth } from '@/context/AuthContext';
@@ -235,9 +235,9 @@ export default function WorkoutPickerScreen() {
 function WorkoutPickerRow({
   workout, copying, disabled, onPress,
 }: { workout: WorkoutRow; copying: boolean; disabled: boolean; onPress: () => void }) {
-  // Workout card style (trainer Account → Appearance): footer always the OPPOSITE of
-  // the cover — 'dark' = dark cover + WHITE footer, 'light' = white cover + DARK footer.
-  const footerDark = useCardVariant(s => s.variant) === 'light';
+  // Workout card style (trainer Account → Appearance) — cover-dark and footer-dark are
+  // independent questions; see lib/cardVariant.ts for the four anatomies.
+  const footerDark = useFooterDark();
   const gradColors = (CATEGORY_GRADIENTS[workout.category ?? ''] ?? GRADIENT_DEFAULT) as [string, string];
 
   return (

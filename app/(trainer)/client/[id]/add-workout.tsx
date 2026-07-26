@@ -20,7 +20,7 @@ import { useAuth } from '@/context/AuthContext';
 import { CATEGORY_OPTIONS, CATEGORY_COLORS } from '@/lib/workoutCategories';
 import type { WorkoutCategory } from '@/lib/workoutCategories';
 import WorkoutPaperCover, { DARK_CARD_FOOTER } from '@/components/WorkoutPaperCover';
-import { useCardVariant } from '@/lib/cardVariant';
+import { useCoverDark, useFooterDark } from '@/lib/cardVariant';
 import { fetchExerciseNames, fetchTemplateExerciseNames } from '@/lib/exerciseNames';
 import { ft, fd } from '@/lib/appType';
 
@@ -140,10 +140,10 @@ export default function AddWorkoutToDayScreen() {
   const router = useRouter();
   const { profile } = useAuth();
 
-  // Workout card style (trainer Account → Appearance): footer always the OPPOSITE of
-  // the cover — 'dark' = dark cover + WHITE footer, 'light' = white cover + DARK footer.
-  const coverDark = useCardVariant(s => s.variant) === 'dark';
-  const footerDark = !coverDark;
+  // Workout card style — cover-dark and footer-dark are INDEPENDENT (the seamless
+  // 'white' / 'green' styles are light+light and dark+dark). See lib/cardVariant.ts.
+  const coverDark = useCoverDark();
+  const footerDark = useFooterDark();
   const [mainTab, setMainTab] = useState<MainTab>('workouts');
   const [allWorkouts, setAllWorkouts] = useState<PickerWorkout[]>([]);
   const [templates, setTemplates] = useState<PickerTemplate[]>([]);

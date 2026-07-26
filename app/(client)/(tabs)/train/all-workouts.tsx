@@ -27,7 +27,7 @@ import { CATEGORY_COLORS, CATEGORY_OPTIONS, STRETCHING_CATEGORIES } from '@/lib/
 import { resolveWeeklyGoal } from '@/lib/weeklyGoal';
 import type { WorkoutCategory } from '@/lib/workoutCategories';
 import WorkoutPaperCover, { DARK_CARD_FOOTER } from '@/components/WorkoutPaperCover';
-import { useCardVariant } from '@/lib/cardVariant';
+import { useCoverDark, useFooterDark } from '@/lib/cardVariant';
 import { fetchExerciseNames } from '@/lib/exerciseNames';
 import { ft, fd } from '@/lib/appType';
 
@@ -424,17 +424,12 @@ const wpStyles = StyleSheet.create({
 
 function WorkoutItem({ workout, onPress, thisWeekCount, onQuickLook }: { workout: WorkoutRow; onPress: () => void; thisWeekCount?: number; onQuickLook?: () => void }) {
   // Workout card style (setting in lib/cardVariant.ts, picked in Me → Appearance).
-  // The footer is always the OPPOSITE of the cover: 'dark' = dark cover + WHITE footer,
-  // 'light' = white cover + DARK footer (the cover flips inside WorkoutPaperCover).
-  // Both styles keep the base light lift shadow.
-  const coverDark = useCardVariant(s => s.variant) === 'dark';
-  const footerDark = !coverDark;
+  // Cover-dark and footer-dark are independent questions — the seamless 'white' and
+  // 'green' styles are light+light and dark+dark. All four keep the light lift shadow.
+  const coverDark = useCoverDark();
+  const footerDark = useFooterDark();
   const isDone = workout.status === 'completed';
   const catColors = workout.category ? CATEGORY_COLORS[workout.category as WorkoutCategory] : null;
-  const subtitle = [
-    workout.lastSessionDate ? `Done ${formatShortDate(workout.lastSessionDate)}` : 'Not yet done',
-    workout.routineName ?? 'Standalone',
-  ].join(' · ');
 
   return (
     <TouchableOpacity
@@ -454,22 +449,35 @@ function WorkoutItem({ workout, onPress, thisWeekCount, onQuickLook }: { workout
               <Text style={[coverCardStyles.doneBadgeText, coverDark && coverCardStyles.doneBadgeTextDark]}>Done</Text>
             </View>
           )}
-        </WorkoutPaperCover>
-        {/* Footer: name (demoted from the cover — the exercises are the content now,
-            but the name is still the workout's handle for search, Do Mode's header and
-            session history) + last-done + ⋯. Painted the opposite of the cover. */}
-        <View style={[coverCardStyles.footer, footerDark && coverCardStyles.footerDark]}>
-          <View style={coverCardStyles.footerLeft}>
-            <View style={coverCardStyles.nameRow}>
-              <Text style={[coverCardStyles.itemName, footerDark && coverCardStyles.textOnDark, fd(700)]} numberOfLines={1}>{workout.name}</Text>
-              {!!thisWeekCount && thisWeekCount > 0 && !isDone && (
-                <View style={[coverCardStyles.checkBadge, thisWeekCount > 1 && { width: undefined, paddingHorizontal: 7 }]}>
-                  <Text style={coverCardStyles.checkMark}>✓{thisWeekCount > 1 ? ` ×${thisWeekCount}` : ''}</Text>
-                </View>
-              )}
+          {/* Done-this-week check lives on the COVER's top-right corner, not beside the
+              name — the footer is a single line now and the badge was the widest thing
+              competing with the name for it. Never collides with the archived "Done"
+              badge above: that one only renders when isDone, this one only when !isDone. */}
+          {!!thisWeekCount && thisWeekCount > 0 && !isDone && (
+            <View style={[coverCardStyles.checkBadge, thisWeekCount > 1 && coverCardStyles.checkBadgeWide]}>
+              <Text style={coverCardStyles.checkMark}>✓{thisWeekCount > 1 ? ` ×${thisWeekCount}` : ''}</Text>
             </View>
-            <Text style={[coverCardStyles.footerSub, footerDark && coverCardStyles.subOnDark, ft(400)]} numberOfLines={1}>{subtitle}</Text>
-          </View>
+          )}
+        </WorkoutPaperCover>
+        {/* Footer — ONE line, so the card matches the Training-tab week-strip session
+            cards in height (cover 84 + a single 15px row at paddingVertical 8):
+              name · last-done DATE (bare, ACCENT — "Done" prefix dropped, the green
+              already says it) ·· routine-or-Standalone · ⋯
+            The name is demoted from the cover but is still the workout's handle for
+            search, Do Mode's header and session history. Painted opposite the cover. */}
+        <View style={[coverCardStyles.footer, footerDark && coverCardStyles.footerDark]}>
+          <Text style={[coverCardStyles.itemName, footerDark && coverCardStyles.textOnDark, fd(700)]} numberOfLines={1}>{workout.name}</Text>
+          <Text
+            style={[coverCardStyles.footerDate, ft(600),
+              { color: workout.lastSessionDate ? ACCENT : footerDark ? 'rgba(255,255,255,0.5)' : '#999' }]}
+            numberOfLines={1}
+          >
+            {workout.lastSessionDate ? formatShortDate(workout.lastSessionDate) : '—'}
+          </Text>
+          <View style={coverCardStyles.footerSpacer} />
+          <Text style={[coverCardStyles.footerSource, footerDark && coverCardStyles.subOnDark, ft(400)]} numberOfLines={1}>
+            {workout.routineName ?? 'Standalone'}
+          </Text>
           {onQuickLook && (
             <TouchableOpacity style={coverCardStyles.footerMenuBtn} onPress={onQuickLook} hitSlop={10} activeOpacity={0.6}>
               <SymbolView name="ellipsis" size={16} tintColor={footerDark ? 'rgba(255,255,255,0.65)' : '#bbb'} />
@@ -501,14 +509,18 @@ const coverCardStyles = StyleSheet.create({
   doneBadgeDark:     { backgroundColor: 'rgba(255,255,255,0.16)' },
   doneBadgeTextDark: { color: 'rgba(255,255,255,0.85)' },
   cardDone: { opacity: 0.75 },
-  nameRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   itemName: { fontSize: 15, fontWeight: '700', color: '#1a1a1a', flexShrink: 1 },
+  // paddingVertical 4 — matches gcStyles.hlWrap on the Training tab AND the mini
+  // gallery card's wBody, so all three card shapes land at the same ~112 height.
   footer: {
     flexDirection: 'row', alignItems: 'center',
-    paddingHorizontal: 12, paddingVertical: 6, gap: 8, backgroundColor: '#fff',
+    paddingHorizontal: 12, paddingVertical: 4, gap: 8, backgroundColor: '#fff',
   },
-  footerLeft: { flex: 1 },
-  footerSub: { fontSize: 11, color: '#999' },
+  // The spacer (rather than flex:1 on the name) keeps the date glued to the name it
+  // belongs to, and pushes the source label + ⋯ to the right edge as their own cluster.
+  footerSpacer: { flex: 1, minWidth: 8 },
+  footerDate:   { fontSize: 12 },
+  footerSource: { fontSize: 11, color: '#999', flexShrink: 1 },
   footerMenuBtn: { padding: 4 },
   doneBadge: {
     position: 'absolute', top: 8, right: 8,
@@ -516,7 +528,12 @@ const coverCardStyles = StyleSheet.create({
     paddingHorizontal: 8, paddingVertical: 3,
   },
   doneBadgeText: { fontSize: 9, fontWeight: '700', color: '#8a8a86', letterSpacing: 0.5 },
-  checkBadge: { width: 16, height: 16, borderRadius: 8, backgroundColor: '#24ac88', alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
+  checkBadge: {
+    position: 'absolute', top: 8, right: 8,
+    width: 18, height: 18, borderRadius: 9, backgroundColor: '#24ac88',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  checkBadgeWide: { width: undefined, paddingHorizontal: 7 },
   checkMark: { fontSize: 9, color: '#fff', fontWeight: '700', lineHeight: 13 },
 });
 

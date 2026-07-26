@@ -44,7 +44,7 @@ import { relativeTime } from '@/lib/utils';
 import { CATEGORY_COLORS, CATEGORY_OPTIONS, STRETCHING_CATEGORIES } from '@/lib/workoutCategories';
 import type { WorkoutCategory } from '@/lib/workoutCategories';
 import WorkoutPaperCover, { DARK_CARD_FOOTER } from '@/components/WorkoutPaperCover';
-import { useCardVariant } from '@/lib/cardVariant';
+import { useCoverDark, useFooterDark } from '@/lib/cardVariant';
 import { ft, fd } from '@/lib/appType';
 import { fetchExerciseNames, fetchTemplateExerciseNames } from '@/lib/exerciseNames';
 import t from '@/i18n/en';
@@ -2139,11 +2139,11 @@ function WorkoutLibraryRow({
   onPress: () => void;
   onMenuPress: () => void;
 }) {
-  // Workout card style (set in trainer Account → Appearance): footer is always the
-  // OPPOSITE of the cover — 'dark' = dark cover + WHITE footer, 'light' = white cover
-  // + DARK footer. Hook stays above the rename early-return (hooks must be unconditional).
-  const coverDark = useCardVariant(s => s.variant) === 'dark';
-  const footerDark = !coverDark;
+  // Workout card style (set in trainer Account → Appearance) — cover-dark and
+  // footer-dark are independent questions; see lib/cardVariant.ts for the four
+  // anatomies. Hooks stay above the rename early-return (must be unconditional).
+  const coverDark = useCoverDark();
+  const footerDark = useFooterDark();
   if (isRenaming) {
     return (
       <View style={wStyles.renameRow}>
@@ -2217,8 +2217,8 @@ function TemplateLibraryRow({
   onMenuPress: () => void;
 }) {
   // Workout card style — same contrast-footer logic as WorkoutLibraryRow above.
-  const coverDark = useCardVariant(s => s.variant) === 'dark';
-  const footerDark = !coverDark;
+  const coverDark = useCoverDark();
+  const footerDark = useFooterDark();
   if (isRenaming) {
     return (
       <View style={wStyles.renameRow}>
