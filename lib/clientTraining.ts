@@ -2,6 +2,73 @@ import { supabase } from './supabase';
 import { isMuscleRestCategory, shiftDateStr } from './muscleRest';
 import type { Routine, Workout } from '@/types/database';
 
+/**
+ * Weekly ✓/→/⋯ marks — the ONE implementation of the routine rule (July 2026).
+ *
+ * Weeks run Mon–Sun. For each workout in a routine:
+ *   `✓` doneThisWeek — a completed session dated in the current week.
+ *   `→` START HERE   — ONLY the first workout in program order that was missed LAST
+ *                      week and is not yet done this week. At most one per routine;
+ *                      as they get caught up the arrow walks to the next missed one,
+ *                      and a clean week shows no arrow at all.
+ *   `⋯` not done, nothing urgent.
+ *
+ * `missedLastWeek` requires that the ROUTINE and the WORKOUT both already existed
+ * before this week's Monday — something created this week cannot have been missed, so
+ * a routine never arrows in its first week.
+ *
+ * This replaced the cycle's "earliest not-done" arrow, which was catch-up logic and
+ * could suggest e.g. Full Body immediately after Full Body. Cycle fields still exist
+ * on WorkoutWithLastDate for the plan-routine flow — do NOT drive marks from them.
+ */
+export type WeeklyMark = '✓' | '→' | '⋯';
+
+export function computeWeeklyRoutineMarks(args: {
+  /** `routines.created_at` — a routine created this week never arrows. */
+  routineCreatedAt: string;
+  workouts: { id: string; createdAt: string; orderIndex: number }[];
+  /** COMPLETED sessions for those workouts (any order). */
+  completed: { workout_id: string | null; date: string }[];
+}): Map<string, { doneThisWeek: boolean; missedLastWeek: boolean; mark: WeeklyMark; startHere: boolean }> {
+  const todayMid = new Date();
+  todayMid.setHours(0, 0, 0, 0);
+  // Monday-of-this-week via setDate (DST-safe — no millisecond arithmetic).
+  const thisMonday = new Date(todayMid);
+  thisMonday.setDate(thisMonday.getDate() - ((thisMonday.getDay() + 6) % 7));
+  const lastMonday = new Date(thisMonday);
+  lastMonday.setDate(lastMonday.getDate() - 7);
+  const dateStr = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  const thisMondayStr = dateStr(thisMonday);
+  const lastMondayStr = dateStr(lastMonday);
+
+  const doneThisWeekIds = new Set<string>();
+  const doneLastWeekIds = new Set<string>();
+  for (const s of args.completed) {
+    if (!s.workout_id) continue;
+    if (s.date >= thisMondayStr) doneThisWeekIds.add(s.workout_id);
+    else if (s.date >= lastMondayStr) doneLastWeekIds.add(s.workout_id);
+  }
+
+  // `created_at` is a timestamp and thisMondayStr a date — lexicographic `<` is still
+  // correct for "created before this Monday" on ISO strings.
+  const routineExistedLastWeek = args.routineCreatedAt < thisMondayStr;
+  const byOrder = [...args.workouts].sort((a, b) => a.orderIndex - b.orderIndex);
+
+  const flags = byOrder.map(w => ({
+    id: w.id,
+    doneThisWeek: doneThisWeekIds.has(w.id),
+    missedLastWeek: routineExistedLastWeek && w.createdAt < thisMondayStr && !doneLastWeekIds.has(w.id),
+  }));
+  const startHereId = flags.find(f => f.missedLastWeek && !f.doneThisWeek)?.id ?? null;
+
+  return new Map(flags.map(f => [f.id, {
+    doneThisWeek: f.doneThisWeek,
+    missedLastWeek: f.missedLastWeek,
+    startHere: f.id === startHereId,
+    mark: (f.doneThisWeek ? '✓' : f.id === startHereId ? '→' : '⋯') as WeeklyMark,
+  }]));
+}
+
 export type WorkoutWithLastDate = Workout & { lastSessionDate: string | null; isDoneInCycle?: boolean; doneThisWeek?: boolean; missedLastWeek?: boolean };
 export type ClosedRoutineRow = Pick<Routine, 'id' | 'name' | 'auto_name' | 'closed_at'>;
 

@@ -14,7 +14,7 @@ import {
   Modal,
   Pressable,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { LightHeader, HeaderIcon, HEADER_ICON, useHeaderHeight } from '@/components/LightHeader';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { SymbolView } from 'expo-symbols';
 import Svg, { Circle as SvgCircle } from 'react-native-svg';
@@ -158,6 +158,7 @@ async function fetchAllRoutines(clientId: string): Promise<RoutineRow[]> {
 }
 
 export default function AllRoutinesScreen() {
+  const headerH = useHeaderHeight();
   const { id: clientId } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
 
@@ -283,19 +284,7 @@ export default function AllRoutinesScreen() {
 
   return (
     <View style={styles.root}>
-      <StatusBar barStyle="light-content" />
-      <SafeAreaView style={styles.headerSafe} edges={['top']}>
-        <View style={styles.headerBar}>
-          <TouchableOpacity
-            onPress={() => router.back()}
-            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-          >
-            <SymbolView name="chevron.left" size={20} tintColor="#ffffff" />
-          </TouchableOpacity>
-          <Text style={styles.headerTitle}>All Routines</Text>
-          <View style={styles.headerSpacer} />
-        </View>
-      </SafeAreaView>
+      <StatusBar barStyle="dark-content" />
 
       {loading ? (
         <View style={styles.loaderWrap}>
@@ -304,10 +293,11 @@ export default function AllRoutinesScreen() {
       ) : (
         <ScrollView
           style={styles.scroll}
-          contentContainerStyle={styles.content}
+          contentContainerStyle={[styles.content, { paddingTop: headerH + 16 }]}
+          scrollIndicatorInsets={{ top: headerH }}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={ACCENT} />}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={ACCENT} progressViewOffset={headerH} />}
         >
           {/* Search bar */}
           <View style={styles.searchBar}>
@@ -404,6 +394,18 @@ export default function AllRoutinesScreen() {
           onClose={() => setActiveMenu(null)}
         />
       )}
+
+      {/* Glass header — rendered last so it overlays the scrolling content. Mirrors
+          the client My Routines screen; this screen carried the old dark-green
+          SafeAreaView bar until July 26. */}
+      <LightHeader
+        left={
+          <HeaderIcon onPress={() => router.back()}>
+            <SymbolView name="chevron.left" size={24} tintColor={HEADER_ICON} weight="semibold" />
+          </HeaderIcon>
+        }
+        title="All Routines"
+      />
     </View>
   );
 }
@@ -629,14 +631,7 @@ const TEXT   = '#1a1a1a';
 const MUTED  = '#999';
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: HEADER },
-  headerSafe: { backgroundColor: HEADER },
-  headerBar: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: 20, paddingVertical: 12,
-  },
-  headerTitle: { color: '#fff', fontSize: 17, fontWeight: '600' },
-  headerSpacer: { width: 20 },
+  root: { flex: 1, backgroundColor: BG },
 
   loaderWrap: { flex: 1, backgroundColor: BG, alignItems: 'center', justifyContent: 'center' },
   scroll: { flex: 1, backgroundColor: BG },

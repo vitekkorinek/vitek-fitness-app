@@ -11,7 +11,7 @@ import {
   Image,
   RefreshControl,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { LightHeader, HeaderIcon, HEADER_ICON, useHeaderHeight } from '@/components/LightHeader';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SymbolView } from 'expo-symbols';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -136,6 +136,7 @@ async function fetchTemplates(trainerId: string): Promise<PickerTemplate[]> {
 }
 
 export default function AddWorkoutToDayScreen() {
+  const headerH = useHeaderHeight();
   const { id: clientId, date } = useLocalSearchParams<{ id: string; date: string }>();
   const router = useRouter();
   const { profile } = useAuth();
@@ -223,22 +224,15 @@ export default function AddWorkoutToDayScreen() {
 
   return (
     <View style={styles.root}>
-      <StatusBar barStyle="light-content" />
-      <SafeAreaView style={styles.headerSafe} edges={['top']}>
-        <View style={styles.headerBar}>
-          <TouchableOpacity onPress={() => router.back()} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-            <SymbolView name="chevron.left" size={20} tintColor="#ffffff" />
-          </TouchableOpacity>
-          <View style={{ alignItems: 'center' }}>
-            <Text style={styles.headerTitle}>Workouts Library</Text>
-            {date ? <Text style={styles.headerSub}>{formatDay(date)}</Text> : null}
-          </View>
-          <View style={{ width: 28 }} />
-        </View>
-      </SafeAreaView>
+      <StatusBar barStyle="dark-content" />
+
+      {/* The day this picker schedules onto. It was the header's second line; the glass
+          header takes a single centred title, so it sits here above the sub-tabs — it is
+          context for the whole screen, not decoration on the bar. */}
+      {date ? <Text style={[styles.dateCaption, { marginTop: headerH + 8 }]}>{formatDay(date)}</Text> : null}
 
       {/* Workouts / Templates sub-tabs */}
-      <View style={styles.subTabRow}>
+      <View style={[styles.subTabRow, !date && { paddingTop: headerH + 12 }]}>
         <View style={styles.subTabBar}>
           {(['workouts', 'templates'] as MainTab[]).map(tab => (
             <TouchableOpacity
@@ -446,19 +440,24 @@ export default function AddWorkoutToDayScreen() {
           <View style={{ height: 40 }} />
         </ScrollView>
       )}
+
+      {/* Glass header — rendered last so it overlays the content. This screen carried
+          the old dark-green SafeAreaView bar until July 26. */}
+      <LightHeader
+        left={
+          <HeaderIcon onPress={() => router.back()}>
+            <SymbolView name="chevron.left" size={24} tintColor={HEADER_ICON} weight="semibold" />
+          </HeaderIcon>
+        }
+        title="Workouts Library"
+      />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: BG },
-  headerSafe: { backgroundColor: HEADER },
-  headerBar: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: 16, paddingVertical: 12, backgroundColor: HEADER,
-  },
-  headerTitle: { fontSize: 18, fontWeight: '700', color: '#fff' },
-  headerSub: { fontSize: 12, fontWeight: '500', color: 'rgba(255,255,255,0.65)', marginTop: 2 },
+  dateCaption: { fontSize: 12, fontWeight: '500', color: MUTED, textAlign: 'center' },
   loaderWrap: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   scroll: { flex: 1 },
   content: { paddingHorizontal: 16, paddingTop: 4 },

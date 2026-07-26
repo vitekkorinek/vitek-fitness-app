@@ -15,7 +15,7 @@ import {
   Alert,
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { LightHeader, HeaderIcon, HEADER_ICON, useHeaderHeight } from '@/components/LightHeader';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { SymbolView } from 'expo-symbols';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -30,6 +30,7 @@ import WorkoutPaperCover, { DARK_CARD_FOOTER } from '@/components/WorkoutPaperCo
 import { useFooterDark } from '@/lib/cardVariant';
 import { ft, fd } from '@/lib/appType';
 import { fetchExerciseNames } from '@/lib/exerciseNames';
+import { computeWeeklyRoutineMarks } from '@/lib/clientTraining';
 import type { Routine } from '@/types/database';
 
 type RoutineWorkout = {
@@ -50,19 +51,20 @@ type TemplateRow = {
   muscle_groups: string[];
 };
 
+type WeeklyMarks = ReturnType<typeof computeWeeklyRoutineMarks>;
+
 async function fetchRoutineDetail(routineId: string, clientId: string): Promise<{
   routine: Routine | null;
   workouts: RoutineWorkout[];
-  currentCycleDone: Set<string>;
-  cycleJustCompleted: boolean;
+  marks: WeeklyMarks;
 }> {
   const [{ data: routineData }, { data: workoutData }] = await Promise.all([
     supabase.from('routines').select('*').eq('id', routineId).single(),
-    supabase.from('workouts').select('id, name, order_index, category, cover_image_url').eq('routine_id', routineId).order('order_index'),
+    supabase.from('workouts').select('id, name, order_index, category, cover_image_url, created_at').eq('routine_id', routineId).order('order_index'),
   ]);
 
   if (!workoutData?.length) {
-    return { routine: routineData as Routine | null, workouts: [], currentCycleDone: new Set(), cycleJustCompleted: false };
+    return { routine: routineData as Routine | null, workouts: [], marks: new Map() };
   }
 
   const workoutIds = (workoutData as any[]).map(w => w.id);
@@ -76,21 +78,20 @@ async function fetchRoutineDetail(routineId: string, clientId: string): Promise<
     .order('date', { ascending: true })
     .order('created_at', { ascending: true });
 
-  const totalWorkouts = workoutIds.length;
-  let currentCycleDone = new Set<string>();
-  let hasCyclesCompleted = false;
   const lastDateMap = new Map<string, string>();
-
   for (const s of (sessionsData ?? []) as { workout_id: string; date: string }[]) {
-    currentCycleDone.add(s.workout_id);
     lastDateMap.set(s.workout_id, s.date); // ascending order → last write = most recent date
-    if (currentCycleDone.size === totalWorkouts) {
-      currentCycleDone = new Set();
-      hasCyclesCompleted = true;
-    }
   }
 
-  const cycleJustCompleted = hasCyclesCompleted && currentCycleDone.size === 0;
+  // WEEKLY marks (July 26 2026) — this screen used to run its own CYCLE detection and
+  // arrow the earliest not-done workout, which was catch-up logic and could point at
+  // something done yesterday. Now it shares the one rule with the cards, the client
+  // routine detail and the Training-tab readout — see computeWeeklyRoutineMarks.
+  const marks = computeWeeklyRoutineMarks({
+    routineCreatedAt: (routineData as any)?.created_at ?? '',
+    workouts: (workoutData as any[]).map(w => ({ id: w.id, createdAt: w.created_at, orderIndex: w.order_index })),
+    completed: (sessionsData ?? []) as { workout_id: string; date: string }[],
+  });
 
   return {
     routine: routineData as Routine | null,
@@ -103,12 +104,12 @@ async function fetchRoutineDetail(routineId: string, clientId: string): Promise<
       lastSessionDate: lastDateMap.get(w.id) ?? null,
       exerciseNames: exerciseMap.get(w.id) ?? [],
     })),
-    currentCycleDone,
-    cycleJustCompleted,
+    marks,
   };
 }
 
 export default function RoutineDetailScreen() {
+  const headerH = useHeaderHeight();
   const { id: clientId, routineId } = useLocalSearchParams<{ id: string; routineId: string }>();
   const router = useRouter();
   const { profile } = useAuth();
@@ -118,8 +119,7 @@ export default function RoutineDetailScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
-  const [currentCycleDone, setCurrentCycleDone] = useState<Set<string>>(new Set());
-  const [cycleJustCompleted, setCycleJustCompleted] = useState(false);
+  const [marks, setMarks] = useState<WeeklyMarks>(new Map());
   const [historyModal, setHistoryModal] = useState(false);
   const [reorderModal, setReorderModal] = useState(false);
   const [reorderList, setReorderList] = useState<RoutineWorkout[]>([]);
@@ -218,11 +218,10 @@ export default function RoutineDetailScreen() {
   };
 
   const load = useCallback(async () => {
-    const { routine: r, workouts: w, currentCycleDone: ccd, cycleJustCompleted: cjc } = await fetchRoutineDetail(routineId, clientId);
+    const { routine: r, workouts: w, marks: m } = await fetchRoutineDetail(routineId, clientId);
     setRoutine(r);
     setWorkouts(w);
-    setCurrentCycleDone(ccd);
-    setCycleJustCompleted(cjc);
+    setMarks(m);
   }, [routineId, clientId]);
 
   useFocusEffect(
@@ -356,51 +355,16 @@ export default function RoutineDetailScreen() {
   const isActive = routine?.status === 'active';
 
   const byOrder = [...workouts].sort((a, b) => a.orderIndex - b.orderIndex);
-  let nextUp: RoutineWorkout | null = null;
-  let queueWorkouts: RoutineWorkout[] = [];
-  let completedWorkouts: RoutineWorkout[] = [];
-
-  if (workouts.length > 0 && !cycleJustCompleted) {
-    const neverDone = byOrder.filter(w => !currentCycleDone.has(w.id));
-    const doneOnce  = byOrder.filter(w => currentCycleDone.has(w.id));
-    nextUp            = neverDone[0] ?? null;
-    queueWorkouts     = neverDone.slice(1);
-    completedWorkouts = doneOnce;
-  }
+  // Weekly sections. START HERE only appears when the rule actually fires (missed last
+  // week, not yet done this one) — a clean week nominates nothing, which is the point:
+  // never suggest a "next" just because it is earliest in the cycle.
+  const startHere = byOrder.find(w => marks.get(w.id)?.startHere) ?? null;
+  const doneWorkouts = byOrder.filter(w => marks.get(w.id)?.doneThisWeek);
+  const queueWorkouts = byOrder.filter(w => !marks.get(w.id)?.doneThisWeek && w.id !== startHere?.id);
 
   return (
     <View style={styles.root}>
-      <StatusBar barStyle="light-content" />
-      <SafeAreaView style={styles.headerSafe} edges={['top']}>
-        <View style={styles.headerBar}>
-          <TouchableOpacity
-            onPress={() => router.back()}
-            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-          >
-            <SymbolView name="chevron.left" size={20} tintColor="#ffffff" />
-          </TouchableOpacity>
-          <View style={styles.headerCenter}>
-            <View style={styles.headerNameRow}>
-              <Text style={styles.headerTitle} numberOfLines={1}>{routine?.name ?? 'Routine'}</Text>
-              <TouchableOpacity onPress={() => setHistoryModal(true)} hitSlop={8} style={styles.infoBtn} activeOpacity={0.7}>
-                <Text style={styles.infoBtnText}>i</Text>
-              </TouchableOpacity>
-            </View>
-            {isActive && (
-              <View style={styles.activeBadge}>
-                <Text style={styles.activeBadgeText}>Active</Text>
-              </View>
-            )}
-          </View>
-          <TouchableOpacity
-            onPress={() => setAddModal(true)}
-            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-            style={styles.addBtn}
-          >
-            <SymbolView name="plus" size={16} tintColor="#ffffff" />
-          </TouchableOpacity>
-        </View>
-      </SafeAreaView>
+      <StatusBar barStyle="dark-content" />
 
       {loading ? (
         <View style={styles.loaderWrap}>
@@ -409,10 +373,19 @@ export default function RoutineDetailScreen() {
       ) : (
         <ScrollView
           style={styles.scroll}
-          contentContainerStyle={styles.content}
+          contentContainerStyle={[styles.content, { paddingTop: headerH + 16 }]}
+          scrollIndicatorInsets={{ top: headerH }}
           showsVerticalScrollIndicator={false}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={ACCENT} />}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={ACCENT} progressViewOffset={headerH} />}
         >
+          {/* The Active pill used to sit under the title in the dark header bar. The
+              glass header centres its title and can't carry a second line, so it moved
+              here — first thing in the content, same information. */}
+          {isActive && (
+            <View style={styles.activeBadge}>
+              <Text style={styles.activeBadgeText}>Active</Text>
+            </View>
+          )}
           {workouts.length === 0 ? (
             <View style={styles.emptyCard}>
               <Text style={styles.emptyText}>No workouts in this routine</Text>
@@ -427,75 +400,67 @@ export default function RoutineDetailScreen() {
                     <Text style={secStyles.cycleEdit}>Edit</Text>
                   </TouchableOpacity>
                 </View>
+                {/* Strips are ALWAYS full colour (matching the routine cards) — the
+                    mark row below carries the status, not the strip's opacity. */}
                 <View style={secStyles.stripsRow}>
                   {byOrder.map(w => {
                     const color = w.category ? (CATEGORY_COLORS[w.category as WorkoutCategory]?.border ?? '#888') : '#888';
-                    const isDoneW = currentCycleDone.has(w.id);
-                    const isNextW = !cycleJustCompleted && nextUp?.id === w.id;
-                    return (
-                      <View key={w.id} style={[secStyles.strip, { backgroundColor: color, opacity: cycleJustCompleted || isDoneW || isNextW ? 1 : 0.4 }]} />
-                    );
+                    return <View key={w.id} style={[secStyles.strip, { backgroundColor: color }]} />;
                   })}
                 </View>
                 <View style={secStyles.labelsRow}>
                   {byOrder.map(w => {
-                    const isDoneW = currentCycleDone.has(w.id);
-                    const isNextW = !cycleJustCompleted && nextUp?.id === w.id;
-                    const statusChar = cycleJustCompleted ? '✓' : isNextW ? '→' : isDoneW ? '✓' : '—';
-                    const statusColor = cycleJustCompleted || isDoneW || isNextW ? ACCENT : '#ccc';
-                    const label = w.name.length > 10 ? w.name.slice(0, 9) + '…' : w.name;
+                    const mark = marks.get(w.id)?.mark ?? '⋯';
                     return (
                       <View key={w.id} style={secStyles.labelCell}>
-                        <Text style={secStyles.labelText} numberOfLines={1}>{label}</Text>
-                        <Text style={[secStyles.statusChar, { color: statusColor }]}>{statusChar}</Text>
+                        <Text style={secStyles.labelText} numberOfLines={1}>{w.name || '—'}</Text>
+                        <Text style={[secStyles.statusChar, { color: mark === '⋯' ? '#ccc' : ACCENT }]}>{mark}</Text>
                       </View>
                     );
                   })}
                 </View>
               </View>
-              {cycleJustCompleted ? (
+              {/* START HERE only when the weekly rule fires; otherwise the list just
+                  runs in program order. The cycle's "Start routine again?" restart
+                  block is gone with the cycle logic. */}
+              {startHere && (
                 <>
-                  <View style={secStyles.restartHeader}>
-                    <Text style={secStyles.restartTitle}>Start routine again?</Text>
-                    <Text style={secStyles.restartSub}>Start with</Text>
-                  </View>
-                  {byOrder[0] && (
-                    <WorkoutItem
-                      workout={byOrder[0]}
-                      isDone={false}
-                      isRenaming={renamingId === byOrder[0].id}
-                      renameText={renameText}
-                      onRenameChange={setRenameText}
-                      onRenameConfirm={() => confirmRename(byOrder[0].id, renameText)}
-                      onRenameCancel={() => setRenamingId(null)}
-                      onPress={() => router.push(`/(trainer)/client/${clientId}/workout/${byOrder[0].id}` as any)}
-                      onMenuPress={() => setActiveMenu(byOrder[0])}
-                    />
-                  )}
+                  <Text style={secStyles.label}>START HERE</Text>
+                  <WorkoutItem
+                    workout={startHere}
+                    isDone={false}
+                    isRenaming={renamingId === startHere.id}
+                    renameText={renameText}
+                    onRenameChange={setRenameText}
+                    onRenameConfirm={() => confirmRename(startHere.id, renameText)}
+                    onRenameCancel={() => setRenamingId(null)}
+                    onPress={() => router.push(`/(trainer)/client/${clientId}/workout/${startHere.id}` as any)}
+                    onMenuPress={() => setActiveMenu(startHere)}
+                  />
                 </>
-              ) : (
+              )}
+              {queueWorkouts.map(w => (
+                <WorkoutItem
+                  key={w.id}
+                  workout={w}
+                  isDone={false}
+                  isRenaming={renamingId === w.id}
+                  renameText={renameText}
+                  onRenameChange={setRenameText}
+                  onRenameConfirm={() => confirmRename(w.id, renameText)}
+                  onRenameCancel={() => setRenamingId(null)}
+                  onPress={() => router.push(`/(trainer)/client/${clientId}/workout/${w.id}` as any)}
+                  onMenuPress={() => setActiveMenu(w)}
+                />
+              ))}
+              {doneWorkouts.length > 0 && (
                 <>
-                  {nextUp && (
-                    <>
-                      <Text style={secStyles.label}>NEXT UP</Text>
-                      <WorkoutItem
-                        workout={nextUp}
-                        isDone={false}
-                        isRenaming={renamingId === nextUp.id}
-                        renameText={renameText}
-                        onRenameChange={setRenameText}
-                        onRenameConfirm={() => confirmRename(nextUp.id, renameText)}
-                        onRenameCancel={() => setRenamingId(null)}
-                        onPress={() => router.push(`/(trainer)/client/${clientId}/workout/${nextUp.id}` as any)}
-                        onMenuPress={() => setActiveMenu(nextUp)}
-                      />
-                    </>
-                  )}
-                  {queueWorkouts.map(w => (
+                  <Text style={[secStyles.label, secStyles.completedLabel]}>DONE THIS WEEK</Text>
+                  {doneWorkouts.map(w => (
                     <WorkoutItem
                       key={w.id}
                       workout={w}
-                      isDone={false}
+                      isDone={true}
                       isRenaming={renamingId === w.id}
                       renameText={renameText}
                       onRenameChange={setRenameText}
@@ -505,25 +470,6 @@ export default function RoutineDetailScreen() {
                       onMenuPress={() => setActiveMenu(w)}
                     />
                   ))}
-                  {completedWorkouts.length > 0 && (
-                    <>
-                      <Text style={[secStyles.label, secStyles.completedLabel]}>COMPLETED</Text>
-                      {completedWorkouts.map(w => (
-                        <WorkoutItem
-                          key={w.id}
-                          workout={w}
-                          isDone={true}
-                          isRenaming={renamingId === w.id}
-                          renameText={renameText}
-                          onRenameChange={setRenameText}
-                          onRenameConfirm={() => confirmRename(w.id, renameText)}
-                          onRenameCancel={() => setRenamingId(null)}
-                          onPress={() => router.push(`/(trainer)/client/${clientId}/workout/${w.id}` as any)}
-                          onMenuPress={() => setActiveMenu(w)}
-                        />
-                      ))}
-                    </>
-                  )}
                 </>
               )}
             </View>
@@ -757,6 +703,30 @@ export default function RoutineDetailScreen() {
           </TouchableOpacity>
         </>)}</BottomSheet>
       )}
+
+      {/* Glass header — rendered last so it overlays the scrolling content. Mirrors the
+          client routine screen; this screen carried the old dark-green SafeAreaView bar
+          until July 26. */}
+      <LightHeader
+        left={
+          <HeaderIcon onPress={() => router.back()}>
+            <SymbolView name="chevron.left" size={24} tintColor={HEADER_ICON} weight="semibold" />
+          </HeaderIcon>
+        }
+        title={routine?.name ?? 'Routine'}
+        overlay={
+          <View style={styles.infoBtnWrap}>
+            <TouchableOpacity onPress={() => setHistoryModal(true)} hitSlop={10} style={styles.infoBtn} activeOpacity={0.7}>
+              <Text style={styles.infoBtnText}>i</Text>
+            </TouchableOpacity>
+          </View>
+        }
+        right={
+          <HeaderIcon onPress={() => setAddModal(true)}>
+            <SymbolView name="plus" size={22} tintColor={HEADER_ICON} weight="semibold" />
+          </HeaderIcon>
+        }
+      />
     </View>
   );
 }
@@ -984,32 +954,22 @@ const GRADIENT_DEFAULT: [string, string] = ['#2a2a2a', '#444444'];
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: HEADER },
-  headerSafe: { backgroundColor: HEADER },
-  headerBar: {
-    flexDirection: 'row', alignItems: 'center',
-    paddingHorizontal: 20, paddingVertical: 12, gap: 8,
-  },
-  headerCenter: { flex: 1, alignItems: 'center', gap: 4 },
-  headerNameRow: { flexDirection: 'row', alignItems: 'center', gap: 6, maxWidth: '90%' },
-  headerTitle: { color: '#fff', fontSize: 17, fontWeight: '600', flexShrink: 1 },
+  root: { flex: 1, backgroundColor: BG },
+  // (i) routine-history button — absolute in the LightHeader overlay slot, left of the
+  // + so it never shifts the centred title (mirrors the client routine screen).
+  infoBtnWrap: { position: 'absolute', right: 58, top: 0, bottom: 0, justifyContent: 'center' },
   infoBtn: {
-    width: 18, height: 18, borderRadius: 100,
-    backgroundColor: 'rgba(255,255,255,0.18)',
-    borderWidth: 1, borderColor: 'rgba(255,255,255,0.3)',
-    alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+    width: 20, height: 20, borderRadius: 100,
+    borderWidth: 1.5, borderColor: HEADER,
+    alignItems: 'center', justifyContent: 'center',
   },
-  infoBtnText: { fontSize: 11, fontStyle: 'italic', fontWeight: '700', color: '#fff' },
+  infoBtnText: { fontSize: 11, fontStyle: 'italic', fontWeight: '700', color: HEADER },
+  // Mint pill on the page now, rather than white-alpha on dark green.
   activeBadge: {
-    backgroundColor: 'rgba(255,255,255,0.15)', borderRadius: 100,
-    paddingHorizontal: 8, paddingVertical: 2,
-    borderWidth: 1, borderColor: 'rgba(255,255,255,0.25)',
+    alignSelf: 'flex-start', backgroundColor: 'rgba(36,172,136,0.12)', borderRadius: 100,
+    paddingHorizontal: 9, paddingVertical: 3, marginBottom: 12,
   },
-  activeBadgeText: { color: '#fff', fontSize: 10, fontWeight: '700' },
-  addBtn: {
-    width: 30, height: 30, borderRadius: 100,
-    backgroundColor: ACCENT, alignItems: 'center', justifyContent: 'center',
-  },
+  activeBadgeText: { color: ACCENT, fontSize: 10, fontWeight: '700' },
 
   loaderWrap: { flex: 1, backgroundColor: BG, alignItems: 'center', justifyContent: 'center' },
   scroll: { flex: 1, backgroundColor: BG },
@@ -1113,9 +1073,6 @@ const secStyles = StyleSheet.create({
   labelCell: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 3 },
   labelText: { fontSize: 10, flexShrink: 1, color: '#666' },
   statusChar: { fontSize: 10, fontWeight: '600' },
-  restartHeader: { paddingHorizontal: 2, gap: 2, marginTop: 4 },
-  restartTitle: { fontSize: 13, fontWeight: '700', color: HEADER },
-  restartSub: { fontSize: 11, color: '#999', marginBottom: 2 },
 });
 
 const reorderStyles = StyleSheet.create({

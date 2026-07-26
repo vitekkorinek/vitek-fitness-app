@@ -27,6 +27,7 @@ import WorkoutPaperCover, { DARK_CARD_FOOTER } from '@/components/WorkoutPaperCo
 import { useFooterDark } from '@/lib/cardVariant';
 import { ft, fd } from '@/lib/appType';
 import { fetchExerciseNames } from '@/lib/exerciseNames';
+import { computeWeeklyRoutineMarks } from '@/lib/clientTraining';
 import type { Routine } from '@/types/database';
 
 type RoutineWorkout = {
@@ -39,19 +40,20 @@ type RoutineWorkout = {
   exerciseNames: string[];
 };
 
+type WeeklyMarks = ReturnType<typeof computeWeeklyRoutineMarks>;
+
 async function fetchRoutineDetail(routineId: string, clientId: string): Promise<{
   routine: Routine | null;
   workouts: RoutineWorkout[];
-  currentCycleDone: Set<string>;
-  cycleJustCompleted: boolean;
+  marks: WeeklyMarks;
 }> {
   const [{ data: routineData }, { data: workoutData }] = await Promise.all([
     supabase.from('routines').select('*').eq('id', routineId).single(),
-    supabase.from('workouts').select('id, name, category, cover_image_url, order_index').eq('routine_id', routineId).order('order_index'),
+    supabase.from('workouts').select('id, name, category, cover_image_url, order_index, created_at').eq('routine_id', routineId).order('order_index'),
   ]);
 
   if (!workoutData?.length) {
-    return { routine: routineData as Routine | null, workouts: [], currentCycleDone: new Set(), cycleJustCompleted: false };
+    return { routine: routineData as Routine | null, workouts: [], marks: new Map() };
   }
 
   const workoutIds = (workoutData as any[]).map(w => w.id);
@@ -66,21 +68,21 @@ async function fetchRoutineDetail(routineId: string, clientId: string): Promise<
     .order('date', { ascending: true })
     .order('created_at', { ascending: true });
 
-  const totalWorkouts = workoutIds.length;
-  let currentCycleDone = new Set<string>();
-  let hasCyclesCompleted = false;
   const lastDateMap = new Map<string, string>();
-
   for (const s of (sessionsData ?? []) as { workout_id: string; date: string }[]) {
-    currentCycleDone.add(s.workout_id);
-    lastDateMap.set(s.workout_id, s.date);
-    if (currentCycleDone.size === totalWorkouts) {
-      currentCycleDone = new Set();
-      hasCyclesCompleted = true;
-    }
+    lastDateMap.set(s.workout_id, s.date); // ascending order → last write is the latest
   }
 
-  const cycleJustCompleted = hasCyclesCompleted && currentCycleDone.size === 0;
+  // WEEKLY marks (July 26 2026) — this screen used to run its own CYCLE detection
+  // (walk sessions, reset the set when every workout had been done once) and arrow the
+  // earliest not-done workout. That was catch-up logic: it could point at a workout
+  // done yesterday. It now shares the one rule with the cards and the Training-tab
+  // readout — see computeWeeklyRoutineMarks.
+  const marks = computeWeeklyRoutineMarks({
+    routineCreatedAt: (routineData as any)?.created_at ?? '',
+    workouts: (workoutData as any[]).map(w => ({ id: w.id, createdAt: w.created_at, orderIndex: w.order_index })),
+    completed: (sessionsData ?? []) as { workout_id: string; date: string }[],
+  });
 
   return {
     routine: routineData as Routine | null,
@@ -93,8 +95,7 @@ async function fetchRoutineDetail(routineId: string, clientId: string): Promise<
       orderIndex: w.order_index,
       lastSessionDate: lastDateMap.get(w.id) ?? null,
     })),
-    currentCycleDone,
-    cycleJustCompleted,
+    marks,
   };
 }
 
@@ -108,18 +109,16 @@ export default function ClientRoutineDetailScreen() {
   const [workouts, setWorkouts] = useState<RoutineWorkout[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [currentCycleDone, setCurrentCycleDone] = useState<Set<string>>(new Set());
-  const [cycleJustCompleted, setCycleJustCompleted] = useState(false);
+  const [marks, setMarks] = useState<WeeklyMarks>(new Map());
   const [historyModal, setHistoryModal] = useState(false);
   const [quickLookWorkout, setQuickLookWorkout] = useState<{ id: string; name: string } | null>(null);
 
   const load = useCallback(async () => {
     if (!profile?.id) return;
-    const { routine: r, workouts: w, currentCycleDone: ccd, cycleJustCompleted: cjc } = await fetchRoutineDetail(routineId, profile.id);
+    const { routine: r, workouts: w, marks: m } = await fetchRoutineDetail(routineId, profile.id);
     setRoutine(r);
     setWorkouts(w);
-    setCurrentCycleDone(ccd);
-    setCycleJustCompleted(cjc);
+    setMarks(m);
   }, [routineId, profile?.id]);
 
   useFocusEffect(
@@ -138,17 +137,13 @@ export default function ClientRoutineDetailScreen() {
   const isActive = routine?.status === 'active';
 
   const byOrder = [...workouts].sort((a, b) => a.orderIndex - b.orderIndex);
-  let nextUp: RoutineWorkout | null = null;
-  let queueWorkouts: RoutineWorkout[] = [];
-  let completedWorkouts: RoutineWorkout[] = [];
-
-  if (workouts.length > 0 && !cycleJustCompleted) {
-    const neverDone = byOrder.filter(w => !currentCycleDone.has(w.id));
-    const doneOnce  = byOrder.filter(w => currentCycleDone.has(w.id));
-    nextUp            = neverDone[0] ?? null;
-    queueWorkouts     = neverDone.slice(1);
-    completedWorkouts = doneOnce;
-  }
+  // Weekly sections. START HERE only appears when the rule actually fires (a workout
+  // missed last week and not yet done this one) — in a clean week there is no
+  // suggestion at all, which is the point of the rule: never nominate a "next" just
+  // because it is earliest in the cycle.
+  const startHere = byOrder.find(w => marks.get(w.id)?.startHere) ?? null;
+  const doneWorkouts = byOrder.filter(w => marks.get(w.id)?.doneThisWeek);
+  const queueWorkouts = byOrder.filter(w => !marks.get(w.id)?.doneThisWeek && w.id !== startHere?.id);
 
   return (
     <View style={styles.root}>
@@ -181,83 +176,61 @@ export default function ClientRoutineDetailScreen() {
             <View style={{ gap: 8 }}>
               <View style={secStyles.cycleRow}>
                 <Text style={secStyles.cycleLabel}>PROGRAM ORDER</Text>
+                {/* Strips are ALWAYS full colour (matching the routine cards) — the
+                    mark row below carries the status, not the strip's opacity. */}
                 <View style={secStyles.stripsRow}>
                   {byOrder.map(w => {
                     const color = w.category ? (CATEGORY_COLORS[w.category as WorkoutCategory]?.border ?? '#888') : '#888';
-                    const isDoneW = currentCycleDone.has(w.id);
-                    const isNextW = !cycleJustCompleted && nextUp?.id === w.id;
-                    return (
-                      <View key={w.id} style={[secStyles.strip, { backgroundColor: color, opacity: cycleJustCompleted || isDoneW || isNextW ? 1 : 0.4 }]} />
-                    );
+                    return <View key={w.id} style={[secStyles.strip, { backgroundColor: color }]} />;
                   })}
                 </View>
                 <View style={secStyles.labelsRow}>
                   {byOrder.map(w => {
-                    const isDoneW = currentCycleDone.has(w.id);
-                    const isNextW = !cycleJustCompleted && nextUp?.id === w.id;
-                    const statusChar = cycleJustCompleted ? '✓' : isNextW ? '→' : isDoneW ? '✓' : '—';
-                    const statusColor = cycleJustCompleted || isDoneW || isNextW ? ACCENT : '#ccc';
-                    const label = w.name.length > 10 ? w.name.slice(0, 9) + '…' : w.name;
+                    const mark = marks.get(w.id)?.mark ?? '⋯';
                     return (
                       <View key={w.id} style={secStyles.labelCell}>
-                        <Text style={secStyles.labelText} numberOfLines={1}>{label}</Text>
-                        <Text style={[secStyles.statusChar, { color: statusColor }]}>{statusChar}</Text>
+                        <Text style={secStyles.labelText} numberOfLines={1}>{w.name || '—'}</Text>
+                        <Text style={[secStyles.statusChar, { color: mark === '⋯' ? '#ccc' : ACCENT }]}>{mark}</Text>
                       </View>
                     );
                   })}
                 </View>
               </View>
-              {cycleJustCompleted ? (
+              {/* START HERE only when the weekly rule fires; otherwise the list just
+                  runs in program order. The cycle's "Start routine again?" restart
+                  block is gone with the cycle logic. */}
+              {startHere && (
                 <>
-                  <View style={secStyles.restartHeader}>
-                    <Text style={secStyles.restartTitle}>Start routine again?</Text>
-                    <Text style={secStyles.restartSub}>Start with</Text>
-                  </View>
-                  {byOrder[0] && (
-                    <WorkoutItem
-                      workout={byOrder[0]}
-                      isDone={false}
-                      onPress={() => router.push(`/(client)/workout/session-intro?workoutId=${byOrder[0].id}` as any)}
-                      onQuickLook={() => setQuickLookWorkout({ id: byOrder[0].id, name: byOrder[0].name })}
-                    />
-                  )}
+                  <Text style={secStyles.label}>START HERE</Text>
+                  <WorkoutItem
+                    workout={startHere}
+                    isDone={false}
+                    onPress={() => router.push(`/(client)/workout/session-intro?workoutId=${startHere.id}` as any)}
+                    onQuickLook={() => setQuickLookWorkout({ id: startHere.id, name: startHere.name })}
+                  />
                 </>
-              ) : (
+              )}
+              {queueWorkouts.map(w => (
+                <WorkoutItem
+                  key={w.id}
+                  workout={w}
+                  isDone={false}
+                  onPress={() => router.push(`/(client)/workout/session-intro?workoutId=${w.id}` as any)}
+                  onQuickLook={() => setQuickLookWorkout({ id: w.id, name: w.name })}
+                />
+              ))}
+              {doneWorkouts.length > 0 && (
                 <>
-                  {nextUp && (
-                    <>
-                      <Text style={secStyles.label}>NEXT UP</Text>
-                      <WorkoutItem
-                        workout={nextUp}
-                        isDone={false}
-                        onPress={() => router.push(`/(client)/workout/session-intro?workoutId=${nextUp.id}` as any)}
-                        onQuickLook={() => setQuickLookWorkout({ id: nextUp.id, name: nextUp.name })}
-                      />
-                    </>
-                  )}
-                  {queueWorkouts.map(w => (
+                  <Text style={[secStyles.label, secStyles.completedLabel]}>DONE THIS WEEK</Text>
+                  {doneWorkouts.map(w => (
                     <WorkoutItem
                       key={w.id}
                       workout={w}
-                      isDone={false}
+                      isDone={true}
                       onPress={() => router.push(`/(client)/workout/session-intro?workoutId=${w.id}` as any)}
                       onQuickLook={() => setQuickLookWorkout({ id: w.id, name: w.name })}
                     />
                   ))}
-                  {completedWorkouts.length > 0 && (
-                    <>
-                      <Text style={[secStyles.label, secStyles.completedLabel]}>COMPLETED</Text>
-                      {completedWorkouts.map(w => (
-                        <WorkoutItem
-                          key={w.id}
-                          workout={w}
-                          isDone={true}
-                          onPress={() => router.push(`/(client)/workout/session-intro?workoutId=${w.id}` as any)}
-                          onQuickLook={() => setQuickLookWorkout({ id: w.id, name: w.name })}
-                        />
-                      ))}
-                    </>
-                  )}
                 </>
               )}
             </View>
@@ -500,9 +473,6 @@ const secStyles = StyleSheet.create({
   labelCell: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 3 },
   labelText: { fontSize: 10, flexShrink: 1, color: '#666' },
   statusChar: { fontSize: 10, fontWeight: '600' },
-  restartHeader: { paddingHorizontal: 2, gap: 2, marginTop: 4 },
-  restartTitle: { fontSize: 13, fontWeight: '700', color: HEADER },
-  restartSub: { fontSize: 11, color: '#999', marginBottom: 2 },
 });
 
 const histStyles = StyleSheet.create({

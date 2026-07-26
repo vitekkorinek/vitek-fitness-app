@@ -2139,10 +2139,10 @@ function WorkoutLibraryRow({
   onPress: () => void;
   onMenuPress: () => void;
 }) {
-  // Workout card style (set in trainer Account → Appearance) — cover-dark and
-  // footer-dark are independent questions; see lib/cardVariant.ts for the four
-  // anatomies. Hooks stay above the rename early-return (must be unconditional).
-  const coverDark = useCoverDark();
+  // Workout card style (set in trainer Account → Appearance) — see lib/cardVariant.ts.
+  // Only the footer varies here; nothing is drawn on the cover any more, so this row
+  // has no use for useCoverDark(). Hook stays above the rename early-return
+  // (hooks must be unconditional).
   const footerDark = useFooterDark();
   if (isRenaming) {
     return (
@@ -2167,25 +2167,36 @@ function WorkoutLibraryRow({
   }
 
   const clientFirstName = (workout.clientName ?? '').split(' ')[0];
-  const subtitle = workout.lastSessionDate ? formatShortDate(workout.lastSessionDate) : 'Not yet done';
 
   return (
     <TouchableOpacity style={[coverCardStyles.card, footerDark && coverCardStyles.cardDarkBg]} onPress={onPress} activeOpacity={0.92}>
       <View style={[coverCardStyles.cardInner, footerDark && coverCardStyles.cardDarkBg]}>
-        <WorkoutPaperCover category={workout.category} exerciseNames={workout.exerciseNames}>
+        {/* Nothing sits on the cover — its content is the exercise list. The client
+            pill used to be here (top-left) and printed straight over the first line. */}
+        <WorkoutPaperCover
+          category={workout.category}
+          exerciseNames={workout.exerciseNames}
+          size="strip" // same 84 cover as every other workout card
+        />
+        {/* Footer — name ·· CLIENT · ⋯ (Vitek, July 26).
+            No last-done date: this is the LIBRARY, a catalogue of what exists, not a
+            progress view — the date belongs on the client-facing cards. (It is still
+            FETCHED: `lastSessionDate` drives the sort order — performed newest-first,
+            then never-done — it just isn't drawn.)
+            The client DOES stay: under "All Clients" the list is every client's
+            workouts mixed together, so without it two cards both called "Push" are
+            indistinguishable. Dropping it was tried for one round on the grounds that
+            the Client dropdown already answers "whose"; it doesn't, for the default
+            unfiltered view. */}
+        <View style={coverCardStyles.footer}>
+          <Text style={[coverCardStyles.itemName, footerDark && coverCardStyles.textOnDark, fd(700)]} numberOfLines={1}>{workout.name}</Text>
+          <View style={coverCardStyles.footerSpacer} />
           {!!clientFirstName && (
-            <View style={[coverCardStyles.clientPill, !coverDark && coverCardStyles.clientPillOnLight]}>
-              <SymbolView name="person.fill" size={9} tintColor={coverDark ? '#fff' : '#8a8a86'} />
-              <Text style={[coverCardStyles.clientPillText, !coverDark && coverCardStyles.clientPillTextOnLight]}>{clientFirstName}</Text>
+            <View style={coverCardStyles.clientChip}>
+              <SymbolView name="person.fill" size={9} tintColor={footerDark ? 'rgba(255,255,255,0.6)' : '#999'} />
+              <Text style={[coverCardStyles.clientChipText, footerDark && coverCardStyles.subOnDark]} numberOfLines={1}>{clientFirstName}</Text>
             </View>
           )}
-        </WorkoutPaperCover>
-        {/* Name demoted from the cover to the footer — the exercises are the content now. */}
-        <View style={coverCardStyles.footer}>
-          <View style={coverCardStyles.footerLeft}>
-            <Text style={[coverCardStyles.itemName, footerDark && coverCardStyles.textOnDark, fd(700)]} numberOfLines={1}>{workout.name}</Text>
-            <Text style={[coverCardStyles.footerSub, footerDark && coverCardStyles.subOnDark, ft(400)]} numberOfLines={1}>{subtitle}</Text>
-          </View>
           <TouchableOpacity style={coverCardStyles.footerMenuBtn} onPress={onMenuPress} hitSlop={8} activeOpacity={0.5}>
             <SymbolView name="ellipsis" size={16} tintColor={footerDark ? 'rgba(255,255,255,0.65)' : '#bbb'} />
           </TouchableOpacity>
@@ -2246,17 +2257,25 @@ function TemplateLibraryRow({
   return (
     <TouchableOpacity style={[coverCardStyles.card, footerDark && coverCardStyles.cardDarkBg]} onPress={onPress} activeOpacity={0.92}>
       <View style={[coverCardStyles.cardInner, footerDark && coverCardStyles.cardDarkBg]}>
-        <WorkoutPaperCover category={template.category} exerciseNames={template.exerciseNames}>
+        {/* The TEMPLATE badge stays on the cover: unlike the client pill it is not
+            per-row data competing with the exercise list — it says what KIND of card
+            this is, which is the one thing a cover scrim pill is for. */}
+        <WorkoutPaperCover
+          category={template.category}
+          exerciseNames={template.exerciseNames}
+          size="strip" // matches the Workouts sub-tab and every other cover card
+        >
           <View style={[tmplStyles.badge, !coverDark && tmplStyles.badgeOnLight]}>
             <SymbolView name="rectangle.stack" size={10} tintColor={coverDark ? 'rgba(255,255,255,0.9)' : '#8a8a86'} />
             <Text style={[tmplStyles.badgeText, !coverDark && tmplStyles.badgeTextOnLight]}>TEMPLATE</Text>
           </View>
         </WorkoutPaperCover>
+        {/* One-line footer, same as the Workouts sub-tab — leaving the two tabs at
+            different card heights in one screen reads as a bug. */}
         <View style={coverCardStyles.footer}>
-          <View style={coverCardStyles.footerLeft}>
-            <Text style={[coverCardStyles.itemName, footerDark && coverCardStyles.textOnDark, fd(700)]} numberOfLines={1}>{template.name}</Text>
-            <Text style={[coverCardStyles.footerSub, footerDark && coverCardStyles.subOnDark, ft(400)]} numberOfLines={1}>{subtitle}</Text>
-          </View>
+          <Text style={[coverCardStyles.itemName, footerDark && coverCardStyles.textOnDark, fd(700)]} numberOfLines={1}>{template.name}</Text>
+          <Text style={[coverCardStyles.footerSub, footerDark && coverCardStyles.subOnDark, ft(400)]} numberOfLines={1}>{subtitle}</Text>
+          <View style={coverCardStyles.footerSpacer} />
           <TouchableOpacity style={coverCardStyles.footerMenuBtn} onPress={onMenuPress} hitSlop={8} activeOpacity={0.5}>
             <SymbolView name="ellipsis" size={16} tintColor={footerDark ? 'rgba(255,255,255,0.65)' : '#bbb'} />
           </TouchableOpacity>
@@ -2629,8 +2648,16 @@ const coverCardStyles = StyleSheet.create({
   },
   cardDarkBg: { backgroundColor: DARK_CARD_FOOTER },
   cardInner: { borderRadius: 14, overflow: 'hidden', backgroundColor: '#fff' },
-  footer: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 6, gap: 8, backgroundColor: 'transparent' },
-  footerLeft: { flex: 1 },
+  // paddingVertical 4 + a ⋯ shorter than the name's line box = a 112 card, same as
+  // every other cover card (see the ⚠️ on footerMenuBtn below).
+  footer: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 4, gap: 8, backgroundColor: 'transparent' },
+  // Spacer rather than flex:1 on the name, so the date stays glued to the name it
+  // describes and client + ⋯ form their own right-edge cluster.
+  footerSpacer: { flex: 1, minWidth: 8 },
+  // Client chip — quiet footer text, NOT a scrim pill on the cover (it used to sit on
+  // the cover's top-left and printed over the first line of the exercise list).
+  clientChip: { flexDirection: 'row', alignItems: 'center', gap: 3, flexShrink: 1 },
+  clientChipText: { fontSize: 11, color: '#999', flexShrink: 1 },
   footerSub: { fontSize: 11, color: '#999' },
   subOnDark: { color: 'rgba(255,255,255,0.6)' },
   // paddingHorizontal only — matching the gallery mini's wFooterMenuBtn. With
@@ -2642,17 +2669,6 @@ const coverCardStyles = StyleSheet.create({
   menuBtn: { position: 'absolute', top: 9, right: 10 },
   itemName: { fontSize: 15, fontWeight: '700', color: '#1a1a1a' },
   textOnDark: { color: '#fff' },
-  clientPill: {
-    position: 'absolute', top: 9, left: 10,
-    flexDirection: 'row', alignItems: 'center', gap: 3,
-    backgroundColor: 'rgba(0,0,0,0.55)', borderRadius: 100,
-    paddingHorizontal: 8, paddingVertical: 3,
-  },
-  clientPillText: { fontSize: 10, fontWeight: '700', color: '#fff' },
-  // On the white ('light'-style) cover the scrim pill flips to the quiet ink register
-  // (same treatment as the client My Workouts done-badge on a light cover).
-  clientPillOnLight:     { backgroundColor: 'rgba(0,0,0,0.06)' },
-  clientPillTextOnLight: { color: '#8a8a86' },
 });
 
 const tmplStyles = StyleSheet.create({
