@@ -129,7 +129,7 @@ export default function WorkoutPaperCover({
 
       {names.length > 0 && (
         <Text
-          style={[s.exText, lightCover && s.exTextInk, allWhite && s.exTextGreen, isMini && s.exTextMini, { marginRight: baseInset }, ft(500)]}
+          style={[s.exText, lightCover && s.exTextInk, isMini && s.exTextMini, { marginRight: baseInset }, ft(500)]}
           numberOfLines={PAPER_COVER_LINES[size]}
           pointerEvents="none"
         >
@@ -154,19 +154,27 @@ export default function WorkoutPaperCover({
 // WHITE cover matches the dark cover's register elsewhere in the app).
 export const DARK_CARD_GRADIENT: [string, string, string] = ['#244e43', '#1a3830', '#112820'];
 export const DARK_CARD_FOOTER = '#112820';
-// The brand header green, used as the all-white card's ink (list text + silhouette).
-const HEADER_GREEN = '#244e43';
-
+// The app-wide text colour (TEXT in every screen's local constants) — the light covers'
+// exercise list uses it so the card isn't carrying its own private grey.
+const TEXT_INK = '#1a1a1a';
 const s = StyleSheet.create({
   cover: { paddingTop: 10, paddingHorizontal: 12, overflow: 'hidden' },
   exText: { fontSize: 12, lineHeight: 17, color: 'rgba(255,255,255,0.93)' },
-  // Light-cover twin: the list as quiet near-black ink — secondary content, not a title.
-  exTextInk: { color: 'rgba(0,0,0,0.68)' },
-  // All-white card: the list in HEADER green instead of neutral ink, so the only
-  // near-black text on the card is the workout name in the footer. Full-strength green
-  // (the 0.88-alpha first pass read washed-out) — the card has no dark strip, so the
-  // list and the silhouette together carry all of its weight.
-  exTextGreen: { color: HEADER_GREEN },
+  // Both white-cover styles ('light' and 'white'): the list in the app's text colour.
+  // It used to be a one-off `rgba(0,0,0,0.68)` (≈ #575757 on white) — a "quiet ink" that
+  // matched neither TEXT #1a1a1a nor MUTED #999 anywhere else in the app; switched on
+  // July 26 when Vitek asked whether it was really the app's text colour. It is not
+  // competing with the workout NAME in the footer despite sharing its colour: the name
+  // is 15/700 and the list 12, so size + position separate them, not ink.
+  // The all-white card briefly ran this at ft(700) to give a too-light grey some presence;
+  // the darker ink made that unnecessary and it went back to the shared ft(500) — weight
+  // was compensating for the wrong colour, which is worth remembering before bolding
+  // anything here again.
+  // The all-white card was tried with a GREEN list over three device rounds (0.88-alpha
+  // header green → solid #244e43 → deep #0d5240) and Vitek settled it back on black: the
+  // green belongs to the silhouette, and with the list green too the card had no neutral
+  // to rest on. Don't re-propose a green list.
+  exTextInk: { color: TEXT_INK },
   exTextMini: { fontSize: 11, lineHeight: 15 },
   catPill: {
     position: 'absolute', right: 12, bottom: 9,

@@ -86,7 +86,21 @@ const CONFIG: Record<string, CatCfg> = {
   'Upper Body': {
     grad: ['#7E48B8', '#5E3489', '#432461'], soft: ['#C28A94', '#A06A75', '#774F58'], muted: ['#413349', '#312739', '#221b28'],
     paperCrop: { zoom: 2.1, yFocus: 0.30, xAnchor: 0.52 },
-    body: { side: 'front', slugs: [{ slug: 'chest', intensity: 2 }, { slug: 'deltoids', intensity: 2 }, { slug: 'biceps', intensity: 1 }, { slug: 'abs', intensity: 1 }], yFocus: 0.26 },
+    // "Upper Body" should light up MOST of the upper body (Vitek, July 26) — it used to
+    // be chest + delts at full and biceps/abs at half, which read as a Push-with-arms
+    // figure. Now the whole upper half is lit: chest, delts, traps, biceps and triceps at
+    // full, forearms + abs + obliques as the supporting half-step. Only the back muscles
+    // are missing and that is the front view's limit, not a choice.
+    body: {
+      side: 'front',
+      slugs: [
+        { slug: 'chest', intensity: 2 }, { slug: 'deltoids', intensity: 2 },
+        { slug: 'trapezius', intensity: 2 }, { slug: 'biceps', intensity: 2 },
+        { slug: 'triceps', intensity: 2 }, { slug: 'forearm', intensity: 1 },
+        { slug: 'abs', intensity: 1 }, { slug: 'obliques', intensity: 1 },
+      ],
+      yFocus: 0.26,
+    },
   },
   'Arms': {
     grad: ['#D96A22', '#AC4F17', '#7E3910'], soft: ['#B06838', '#8A4F2A', '#663A1F'], muted: ['#493527', '#38281d', '#281c15'],
@@ -208,11 +222,32 @@ export default function CategoryCover({
   const BRAND_MID = '#1a3830';
   const INK_BASE = '#ffffff';
   const INK = '36,78,67'; // HEADER green as ink — ties the light figure to the brand story
-  // Ink mix levels: body / lit-1 / lit-2 / border. 'inkDeep' (the all-white card) steps
-  // each WELL up — with no dark footer the figure is the card's only weight, and the
-  // first pass (0.13/0.24/0.40/0.20) read too faint on device; the silhouette here is
-  // meant to be seen, not just found (the opposite of the 'brand' ghost's brief).
-  const inkL = isInkDeep ? [0.22, 0.38, 0.58, 0.32] : [0.07, 0.16, 0.28, 0.12];
+  // Ink mix levels: body / lit-1 / lit-2 / border. 'inkDeep' (the all-white card) runs
+  // WELL above 'ink' — with no dark footer the figure is the card's only weight, and it
+  // is meant to be SEEN, not found (the deliberate opposite of the 'brand' ghost's
+  // brief; don't "harmonise" the two). Four device rounds set these numbers:
+  //   0.13/0.24/0.40/0.20 → washed out
+  //   0.22/0.38/0.58/0.32 → still light
+  //   mixing toward #112820 at 0.30/0.48/0.68 → dark but GREY (a near-achromatic ink
+  //     stays grey at every level — chroma survives a mix toward white, lightness does
+  //     not), and toward a hotter #0d5240 → green, but not the app's green
+  //   → "black, no green" — but a TRUE neutral black (0,0,0) was tried and read BROWNISH
+  //     on device. Not a bug: a neutral grey surrounded by this much green UI shifts warm
+  //     by simultaneous contrast, and the card sits on the warm off-white #faf9f7. So
+  //     'inkDeep' keeps mixing toward HEADER green like 'ink' does — at these dilutions
+  //     it has almost no readable hue and lands as the quiet cool grey the "black" ask
+  //     actually means, which is also what it looked like before the green detour.
+  // ⚠️ Do NOT swap this for 0,0,0 (reads brown) or a saturated green (reads decorative).
+  const inkColor = INK;
+  // 'inkDeep' also collapses the TWO highlight tiers into ONE: intensity-2 muscles
+  // (chest, delts) read "super strong … in comparison to the rest of the highlighted
+  // smaller muscles, it should be equal". Every lit muscle now sits at the same level,
+  // one clear step above the unlit body. The per-category `body` configs keep their 1/2
+  // intensities untouched — the Do Mode banners still use both tiers; only this variant
+  // flattens them. Levels: body / lit / lit / border — one step heavier than the
+  // equal-tier pass (0.26/0.52/0.36) on Vitek's "bolder, same tint" note; same ink, so
+  // the hue is identical and only the weight moved.
+  const inkL = isInkDeep ? [0.32, 0.62, 0.62, 0.44] : [0.07, 0.16, 0.28, 0.12];
   // Same idea on the dark ground: 'brandBright' (the all-green card) lifts the white
   // ghost well clear of the gradient, 'brand' keeps its deliberately quiet levels.
   const brandL = isBrandBright ? [0.18, 0.34, 0.52, 0.26] : [0.09, 0.20, 0.33, 0.15];
@@ -226,12 +261,12 @@ export default function CategoryCover({
   // value-steps read as embossed material, matching the home tiles; color read as an
   // anatomical picture. The figure should be found, not noticed.
   const bodyFill = isInk
-    ? mixHex(INK_BASE, INK, inkL[0])
+    ? mixHex(INK_BASE, inkColor, inkL[0])
     : isBrand
     ? mixHex(BRAND_MID, '255,255,255', brandL[0])
     : variant === 'muted' ? 'rgba(255,255,255,0.055)' : 'rgba(255,255,255,0.10)';
   const hl: [string, string] = isInk
-    ? [mixHex(INK_BASE, INK, inkL[1]), mixHex(INK_BASE, INK, inkL[2])]
+    ? [mixHex(INK_BASE, inkColor, inkL[1]), mixHex(INK_BASE, inkColor, inkL[2])]
     : isBrand
     ? [mixHex(BRAND_MID, '255,255,255', brandL[1]), mixHex(BRAND_MID, '255,255,255', brandL[2])]
     : variant === 'muted'
@@ -275,7 +310,7 @@ export default function CategoryCover({
           background={bodyFill}
           {...(isCard ? {
             defaultFill: bodyFill,
-            border: isInk ? mixHex(INK_BASE, INK, inkL[3]) : mixHex(BRAND_MID, '255,255,255', brandL[3]),
+            border: isInk ? mixHex(INK_BASE, inkColor, inkL[3]) : mixHex(BRAND_MID, '255,255,255', brandL[3]),
           } : null)}
         />
       </View>
