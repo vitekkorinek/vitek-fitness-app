@@ -20,6 +20,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { useAuth } from '@/context/AuthContext';
 import { supabase } from '@/lib/supabase';
 import FoodSearchModal from '@/components/FoodSearchModal';
+import { SessionResumeChip } from '@/components/SessionResumeChip';
 import type { FoodConfirmResult } from '@/components/FoodSearchModal';
 
 const BG     = '#faf9f7';
@@ -226,6 +227,7 @@ export default function TrainerCreateRecipeScreen() {
             <SymbolView name="chevron.left" size={22} tintColor="rgba(255,255,255,0.85)" />
           </TouchableOpacity>
           <Text style={s.hdrTitle}>{isEdit ? 'Edit recipe' : 'New recipe'}</Text>
+          <SessionResumeChip />
           <TouchableOpacity
             onPress={handleSave}
             style={s.hdrSide}

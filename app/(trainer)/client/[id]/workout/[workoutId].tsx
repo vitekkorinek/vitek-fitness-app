@@ -83,6 +83,7 @@ import {
   FlatList,
   Vibration,
   PanResponder,
+  Switch,
 } from 'react-native';
 import Svg, { Circle, Line as SvgLine, Polyline as SvgPolyline, Text as SvgLabel, Path as SvgPath } from 'react-native-svg';
 import DraggableFlatList from 'react-native-draggable-flatlist';
@@ -459,6 +460,35 @@ function GlassPill({ onPress, children }: { onPress?: () => void; children: Reac
   ) : body;
 }
 
+// Header round icon button (back ‹ / ⋯) as adaptive Liquid Glass — the material tints
+// itself to whatever the banner shows behind it, so the buttons read on bright photos
+// AND dark gradients (the old flat rgba(0,0,0,0.45) circles sat heavy over both).
+// Raw "regular" glass is nearly invisible at 36px over a mid-tone photo (the icons read
+// as lonely glyphs) — so, like GlassPanel's white scrim, a whisper of DARK scrim sits
+// inside the circle: enough to read as a chip, dark so the white icons keep contrast.
+const GLASS_ICON_SCRIM = 'rgba(0,0,0,0.20)';
+function GlassIconBtn({ onPress, children }: { onPress: () => void; children: React.ReactNode }) {
+  const scrim = (
+    <View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: GLASS_ICON_SCRIM }]} />
+  );
+  const inner = isLiquidGlassAvailable() ? (
+    <GlassView style={styles.glassIconBtn} glassEffectStyle="regular">
+      {scrim}
+      {children}
+    </GlassView>
+  ) : (
+    <BlurView intensity={30} tint="dark" style={styles.glassIconBtn}>
+      {scrim}
+      {children}
+    </BlurView>
+  );
+  return (
+    <TouchableOpacity onPress={onPress} hitSlop={8} activeOpacity={0.7}>
+      <View style={styles.glassIconBtnShadow}>{inner}</View>
+    </TouchableOpacity>
+  );
+}
+
 // ─── useSheetDismissGesture ───────────────────────────────────────────────────────
 
 const SHEET_OFF_SCREEN = 900;
@@ -569,6 +599,7 @@ export default function TrainerWorkoutSessionScreen() {
   const [restApplyAll, setRestApplyAll] = useState(true);
   const [restTotalSecs, setRestTotalSecs] = useState(60);
   const [restRunning, setRestRunning] = useState(false);
+  const [restPaused, setRestPaused] = useState(false);
   const [restInputText, setRestInputText] = useState('60');
   // Running-rest pill drag: offset from its default bottom-right spot. Taps (< 6px move)
   // fall through to the pill's touchables; a real move steals the responder and drags.
@@ -659,7 +690,6 @@ export default function TrainerWorkoutSessionScreen() {
 
   // ── Fixed-header (option 2) state ──────────────────────────────────────
   const [activeHeaderId, setActiveHeaderId] = useState<string | null>(null);
-  const [timerCollapsed, setTimerCollapsed] = useState(true);
   // Keyboard height — drives the "Done" button (numeric keypads have no return key)
   // + extra list padding so a focused set row can be scrolled clear of the keyboard.
   const [kbHeight, setKbHeight] = useState(0);
@@ -1670,6 +1700,7 @@ export default function TrainerWorkoutSessionScreen() {
     const duration = (typeof secs === 'number' && !isNaN(secs) && secs > 0) ? secs : preferredRestSecs;
     if (restRef.current) { clearInterval(restRef.current); restRef.current = null; }
     setRestRunning(false);
+    setRestPaused(false);
     setRestRemaining(duration);
     setRestOvertimeSecs(0);
     setRestInputText(String(duration));
@@ -1681,19 +1712,15 @@ export default function TrainerWorkoutSessionScreen() {
   const stopRest = () => {
     if (restRef.current) { clearInterval(restRef.current); restRef.current = null; }
     setRestRunning(false);
+    setRestPaused(false);
     setRestOvertimeSecs(0);
     setRestVisible(false);
   };
 
-  const beginCountdown = () => {
-    const secs = parseInt(restInputText, 10);
-    if (isNaN(secs) || secs <= 0) return;
-    if (restApplyAll) setPreferredRestSecs(secs);
-    setRestTotalSecs(secs);
-    setRestOvertimeSecs(0);
+  // The 1s tick, shared by begin + resume. State stays in the screen so the clock
+  // outlives the panel.
+  const runRestInterval = () => {
     if (restRef.current) { clearInterval(restRef.current); restRef.current = null; }
-    setRestRemaining(secs);
-    setRestRunning(true);
     restRef.current = setInterval(() => {
       setRestRemaining(prev => {
         if (prev <= 0) {
@@ -1706,6 +1733,33 @@ export default function TrainerWorkoutSessionScreen() {
         return prev - 1;
       });
     }, 1000);
+  };
+
+  // Pause freezes the countdown where it is (interval cleared, remaining kept);
+  // Resume just restarts the tick. Stop is the only thing that cancels.
+  const pauseRest = () => {
+    if (restRef.current) { clearInterval(restRef.current); restRef.current = null; }
+    setRestPaused(true);
+  };
+
+  const resumeRest = () => {
+    setRestPaused(false);
+    runRestInterval();
+  };
+
+  const beginCountdown = () => {
+    // The number pad has no Done key — Start is the commit, so it must also drop
+    // the keyboard or it stays stuck over the running sheet.
+    Keyboard.dismiss();
+    const secs = parseInt(restInputText, 10);
+    if (isNaN(secs) || secs <= 0) return;
+    if (restApplyAll) setPreferredRestSecs(secs);
+    setRestTotalSecs(secs);
+    setRestOvertimeSecs(0);
+    setRestRemaining(secs);
+    setRestRunning(true);
+    setRestPaused(false);
+    runRestInterval();
   };
 
   const handleEditBeforeStart = () => {
@@ -1754,8 +1808,9 @@ export default function TrainerWorkoutSessionScreen() {
     );
     if (di < 0) return;
     // The fixed banner overlays the top bannerH of the list, so land the card top
-    // just BELOW the banner (viewOffset) rather than at y=0 behind it.
-    const viewOffset = FIXED_HEADER ? HEADER_MAX : 0;
+    // just BELOW the banner (viewOffset) rather than at y=0 behind it (+10 breathing,
+    // matching the client).
+    const viewOffset = FIXED_HEADER ? HEADER_MAX + 10 : 0;
     setTimeout(() => { try { flatListRef.current?.scrollToIndex({ index: di, animated: true, viewPosition: 0, viewOffset }); } catch {} }, delay);
   };
 
@@ -3126,29 +3181,17 @@ export default function TrainerWorkoutSessionScreen() {
   const bannerWorkoutName = (isFreeSession ? freeSessionName : workout?.name) ?? '';
 
   // Header timer/START control (the "Start-morph"): before start = expanded
-  // [00:00 · START] pill; on Start (isRunning) it collapses to the glass stopwatch
-  // icon (tap to re-expand to [timer · FINISH]). Edit mode shows a Done button.
+  // [00:00 · START] pill; on Start (isRunning) the pill drops the START half and
+  // stays as an always-visible timer. Edit mode shows a Done button.
   const timerControl = isEditMode ? (
     <TouchableOpacity style={styles.editDoneBtn} onPress={exitEditMode} activeOpacity={0.8}>
       <Text style={styles.editDoneBtnText}>Done</Text>
     </TouchableOpacity>
   ) : isRunning && !pastSession ? (
-    timerCollapsed ? (
-      <TouchableOpacity onPress={() => setTimerCollapsed(false)} activeOpacity={0.85}>
-        <View style={styles.combinedPillShadow}>
-          <GlassPanel style={styles.timerClockGlass}>
-            <SymbolView name="stopwatch" size={18} tintColor={ACCENT} />
-          </GlassPanel>
-        </View>
-      </TouchableOpacity>
-    ) : (
-      /* Running: timer ONLY — finishing lives in the bottom "Finish session" footer (tap = collapse to stopwatch) */
-      <GlassPill>
-        <TouchableOpacity onPress={() => setTimerCollapsed(true)} hitSlop={8} activeOpacity={0.7}>
-          <Text style={styles.combinedPillTimerText}>{formatTimer(elapsed)}</Text>
-        </TouchableOpacity>
-      </GlassPill>
-    )
+    /* Running: timer ONLY, always visible (no collapse — finishing lives in the bottom "Finish session" footer) */
+    <GlassPill>
+      <Text style={styles.combinedPillTimerText}>{formatTimer(elapsed)}</Text>
+    </GlassPill>
   ) : (
     <GlassPill onPress={handleStartPress}>
       <Text style={styles.combinedPillTimerText}>{formatTimer(elapsed)}</Text>
@@ -3181,9 +3224,9 @@ export default function TrainerWorkoutSessionScreen() {
         </Animated.View>
 
         <View style={[styles.headerFloatRow, { paddingTop: insets.top }]}>
-          <TouchableOpacity onPress={handleBack} hitSlop={8} style={styles.floatIconBtn}>
+          <GlassIconBtn onPress={handleBack}>
             <SymbolView name="chevron.left" size={20} tintColor="#fff" />
-          </TouchableOpacity>
+          </GlassIconBtn>
 
           <View style={{ flex: 1, alignItems: 'center' }}>
             {isEditMode ? (
@@ -3205,9 +3248,9 @@ export default function TrainerWorkoutSessionScreen() {
           </View>
 
           <View style={{ position: 'relative' }}>
-            <TouchableOpacity onPress={() => setDotsMenuOpen(true)} hitSlop={8} style={styles.floatIconBtn}>
+            <GlassIconBtn onPress={() => setDotsMenuOpen(true)}>
               <SymbolView name="ellipsis" size={18} tintColor="#fff" />
-            </TouchableOpacity>
+            </GlassIconBtn>
             {hasTrainingNotes && !trainingNotesViewed && (
               <View style={{ position: 'absolute', top: 2, right: 2, width: 8, height: 8, borderRadius: 4, backgroundColor: '#24ac88', borderWidth: 1.5, borderColor: 'rgba(0,0,0,0.2)' }} pointerEvents="none" />
             )}
@@ -3234,14 +3277,18 @@ export default function TrainerWorkoutSessionScreen() {
             ) : (
               <LinearGradient colors={['#2d6b5a', '#244e43', '#1a3832']} start={{ x: 1, y: 0 }} end={{ x: 0, y: 1 }} style={StyleSheet.absoluteFill} />
             )}
-            <LinearGradient colors={['rgba(0,0,0,0.28)', 'transparent', 'rgba(0,0,0,0.55)']} locations={[0, 0.42, 1]} style={StyleSheet.absoluteFill} pointerEvents="none" />
+            {/* Preview-backdrop-style darkening (flat wash + emphasis at the text zones),
+                matching the client — header chrome never fights a bright photo; the
+                long-press peek shows the photo at its original brightness. */}
+            <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.38)' }]} pointerEvents="none" />
+            <LinearGradient colors={['rgba(0,0,0,0.30)', 'transparent', 'rgba(0,0,0,0.38)']} locations={[0, 0.45, 1]} style={StyleSheet.absoluteFill} pointerEvents="none" />
           </Pressable>
 
           {/* top row: back (left) · workout title + session·date (center) · ⋯ (right) */}
           <View style={{ flexDirection: 'row', alignItems: 'center', paddingTop: insets.top, paddingHorizontal: 12, height: insets.top + 52 }}>
-            <TouchableOpacity onPress={handleBack} hitSlop={8} style={styles.floatIconBtn}>
+            <GlassIconBtn onPress={handleBack}>
               <SymbolView name="chevron.left" size={20} tintColor="#fff" />
-            </TouchableOpacity>
+            </GlassIconBtn>
             <View style={{ flex: 1, alignItems: 'center', paddingHorizontal: 4 }}>
               {isFreeSession ? (
                 <TouchableOpacity onPress={() => { setFreeSessionNameDraft(freeSessionName); setEditFreeSessionName(true); }} activeOpacity={0.75} style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
@@ -3254,9 +3301,9 @@ export default function TrainerWorkoutSessionScreen() {
               <Text style={styles.bannerTopMeta} numberOfLines={1}>{bannerSessionLabel}</Text>
             </View>
             <View style={{ position: 'relative' }}>
-              <TouchableOpacity onPress={() => setDotsMenuOpen(true)} hitSlop={8} style={styles.floatIconBtn}>
+              <GlassIconBtn onPress={() => setDotsMenuOpen(true)}>
                 <SymbolView name="ellipsis" size={18} tintColor="#fff" />
-              </TouchableOpacity>
+              </GlassIconBtn>
               {hasTrainingNotes && !trainingNotesViewed && (
                 <View style={{ position: 'absolute', top: 2, right: 2, width: 8, height: 8, borderRadius: 4, backgroundColor: '#24ac88', borderWidth: 1.5, borderColor: 'rgba(0,0,0,0.2)' }} pointerEvents="none" />
               )}
@@ -3843,7 +3890,7 @@ export default function TrainerWorkoutSessionScreen() {
           {...restPillPanResponder.panHandlers}
         >
           <TouchableOpacity style={[styles.restPill, restOvertimeSecs > 0 && styles.restPillOver]} onPress={() => setRestVisible(true)} activeOpacity={0.85}>
-            <SymbolView name="timer" size={16} tintColor="#fff" style={{ width: 18, height: 18 }} />
+            <SymbolView name={restPaused ? 'pause.fill' : 'timer'} size={16} tintColor="#fff" style={{ width: 18, height: 18 }} />
             <Text style={styles.restPillText}>
               {restOvertimeSecs > 0 ? `+${formatRestTimer(restOvertimeSecs)}` : formatRestTimer(restRemaining)}
             </Text>
@@ -3983,6 +4030,7 @@ export default function TrainerWorkoutSessionScreen() {
       {restVisible && (
         <RestTimerSheet
           running={restRunning}
+          paused={restPaused}
           remaining={restRemaining}
           totalSecs={restTotalSecs}
           overtimeSecs={restOvertimeSecs}
@@ -3991,6 +4039,8 @@ export default function TrainerWorkoutSessionScreen() {
           onChangeInput={setRestInputText}
           onToggleApplyAll={() => setRestApplyAll(v => !v)}
           onStart={beginCountdown}
+          onPause={pauseRest}
+          onResume={resumeRest}
           onStop={stopRest}
           onClose={() => setRestVisible(false)}
         />
@@ -4867,13 +4917,16 @@ function ExerciseCard({
                                 {c.hasNote && <View style={styles.setChipNoteDot} />}
                               </View>
                             ))}
-                            {chips.length > 3 && <Text style={styles.setChipsMore}>…</Text>}
+                            {chips.length > 3 && (
+                              <View style={[styles.setChip, styles.setChipMoreBox]}>
+                                <Text style={styles.setChipMoreText}>+{chips.length - 3}</Text>
+                              </View>
+                            )}
                           </View>
                         )}
-                        {/* Always rendered — "No note" placeholder keeps every card the same height */}
+                        {/* Always rendered — "No note" placeholder keeps every card the same height.
+                            No note icon (Vitek: the text alone is enough). */}
                         <View style={styles.collapsedNoteRow}>
-                          {/* marginTop centers the 12px icon in the text's 16px line */}
-                          <SymbolView name="note.text" size={11} tintColor="#b5b5b0" style={{ width: 12, height: 12, marginTop: 2 }} />
                           {latestNote
                             ? <Text style={styles.collapsedNoteText} numberOfLines={1}>{latestNote.text}</Text>
                             : <Text style={styles.collapsedNoteEmpty} numberOfLines={1}>No note</Text>}
@@ -5338,10 +5391,11 @@ function InlineSetRow({
 // the countdown RUNNING — the interval lives in the screen, not in here — and a
 // small pill takes over at the bottom of Do Mode. Only "Stop" cancels it.
 function RestTimerSheet({
-  running, remaining, totalSecs, overtimeSecs, inputText, applyAll,
-  onChangeInput, onToggleApplyAll, onStart, onStop, onClose,
+  running, paused, remaining, totalSecs, overtimeSecs, inputText, applyAll,
+  onChangeInput, onToggleApplyAll, onStart, onPause, onResume, onStop, onClose,
 }: {
   running: boolean;
+  paused: boolean;
   remaining: number;
   totalSecs: number;
   overtimeSecs: number;
@@ -5350,28 +5404,42 @@ function RestTimerSheet({
   onChangeInput: (v: string) => void;
   onToggleApplyAll: () => void;
   onStart: () => void;
+  onPause: () => void;
+  onResume: () => void;
   onStop: () => void;
   onClose: () => void;
 }) {
   const { translateY: sheetY, panHandlers: sheetPan, dismiss: dismissSheet } = useSheetDismissGesture(onClose);
-  const RING = 200, SW = 11;
+  const RING = 208, SW = 10;
   const radius = (RING - SW) / 2;
   const circumference = 2 * Math.PI * radius;
   const isOver = overtimeSecs > 0;
-  const progress = running ? (isOver ? 0 : remaining / (totalSecs || 60)) : 1;
+  // Overtime shows a FULL red ring (an empty ring read as "nothing", not "over").
+  const progress = running ? (isOver ? 1 : remaining / (totalSecs || 60)) : 1;
 
+  // Focused edit mode (Vitek): while typing the number, everything else hides —
+  // just the ring + a Done button. Done sanitises, drops the keyboard and returns
+  // to the normal panel.
+  const [editing, setEditing] = useState(false);
+  const commitEdit = () => {
+    const v = parseInt(inputText, 10);
+    if (isNaN(v) || v <= 0) onChangeInput('60');
+    Keyboard.dismiss();
+    setEditing(false);
+  };
+
+  // Native switch — the system control (liquid glass on iOS 26 builds), not a hand-rolled one.
   const applyToggle = (
-    <TouchableOpacity style={styles.restApplyRow} onPress={onToggleApplyAll} activeOpacity={0.7}>
+    <View style={styles.restApplyRow}>
       <Text style={styles.restApplyText}>Use for all exercises in this workout</Text>
-      <View style={[styles.restApplyToggle, applyAll && styles.restApplyToggleOn]}>
-        <LinearGradient
-          colors={['#ffffff', '#d8d8d8']}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 0, y: 1 }}
-          style={[styles.restApplyThumb, applyAll && styles.restApplyThumbOn]}
-        />
-      </View>
-    </TouchableOpacity>
+      <Switch
+        value={applyAll}
+        onValueChange={onToggleApplyAll}
+        trackColor={{ false: '#d8d8d4', true: ACCENT }}
+        thumbColor="#fff"
+        ios_backgroundColor="#d8d8d4"
+      />
+    </View>
   );
 
   return (
@@ -5381,18 +5449,20 @@ function RestTimerSheet({
         <Animated.View style={[styles.restSheet, { transform: [{ translateY: sheetY }] }]}>
           {/* `restSheet` centres its children, which would shrink the hit area to the
               36px handle pill — stretch it so the whole top strip is draggable. */}
-          <View {...sheetPan} style={[styles.infoSheetHandleHitArea, { alignSelf: 'stretch', paddingVertical: 14, marginBottom: 0 }]}>
+          <View {...sheetPan} style={[styles.infoSheetHandleHitArea, { alignSelf: 'stretch', marginBottom: 0 }]}>
             <View style={styles.infoSheetHandle} />
           </View>
-          <View {...sheetPan} style={{ alignSelf: 'stretch', alignItems: 'center', paddingBottom: 6 }}>
-            <Text style={styles.restLabel}>REST</Text>
+          {/* Proper sheet title, same voice as every other Do Mode sheet — the old 11px
+              "REST" overline floated lost between the handle and the ring. */}
+          <View {...sheetPan} style={{ alignSelf: 'stretch', alignItems: 'center' }}>
+            <Text style={styles.restTitle}>Rest timer</Text>
           </View>
 
           {/* While counting there's nothing interactive in the ring, so make it a
               drag target too — it's the obvious thing to grab to swipe away. */}
           <View {...(running ? sheetPan : {})} style={[styles.restRingWrap, { width: RING, height: RING }]}>
             <Svg width={RING} height={RING}>
-              <Circle cx={RING / 2} cy={RING / 2} r={radius} stroke="#e8e8e4" strokeWidth={SW} fill="none" />
+              <Circle cx={RING / 2} cy={RING / 2} r={radius} stroke="#f0f0ee" strokeWidth={SW} fill="none" />
               <Circle
                 cx={RING / 2} cy={RING / 2} r={radius}
                 stroke={isOver ? '#e53935' : ACCENT}
@@ -5406,9 +5476,14 @@ function RestTimerSheet({
             </Svg>
             <View style={styles.restRingCenter}>
               {running ? (
-                <Text style={[styles.restTimer, isOver && styles.restTimerDone]}>
-                  {isOver ? `+${formatRestTimer(overtimeSecs)}` : formatRestTimer(remaining)}
-                </Text>
+                <>
+                  <Text style={[styles.restTimer, isOver && styles.restTimerDone]}>
+                    {isOver ? `+${formatRestTimer(overtimeSecs)}` : formatRestTimer(remaining)}
+                  </Text>
+                  <Text style={styles.restRingTotalLabel}>
+                    {paused ? 'paused' : isOver ? 'overtime' : `of ${formatRestTimer(totalSecs)}`}
+                  </Text>
+                </>
               ) : (
                 <>
                   <TextInput
@@ -5417,6 +5492,8 @@ function RestTimerSheet({
                     onChangeText={onChangeInput}
                     keyboardType="number-pad"
                     selectTextOnFocus
+                    onFocus={() => setEditing(true)}
+                    onBlur={() => setEditing(false)}
                   />
                   <Text style={styles.restRingSecsLabel}>seconds</Text>
                 </>
@@ -5426,14 +5503,26 @@ function RestTimerSheet({
 
           {running ? (
             <>
-              <TouchableOpacity style={styles.restSkipBtn} onPress={onStop} activeOpacity={0.7}>
-                <Text style={styles.restSkipText}>Stop</Text>
-              </TouchableOpacity>
-              <TouchableOpacity onPress={dismissSheet} hitSlop={8} activeOpacity={0.7}>
-                <Text style={styles.restHideText}>Hide — keeps counting</Text>
+              <View style={styles.restButtons}>
+                <TouchableOpacity style={styles.restPrimaryBtn} onPress={paused ? onResume : onPause} activeOpacity={0.85}>
+                  <Text style={styles.restPrimaryText}>{paused ? 'Resume' : 'Pause'}</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.restSkipBtn} onPress={onStop} activeOpacity={0.7}>
+                  <Text style={styles.restSkipText}>Stop</Text>
+                </TouchableOpacity>
+              </View>
+              <TouchableOpacity onPress={dismissSheet} hitSlop={8} activeOpacity={0.7} style={styles.restHideRow}>
+                <SymbolView name="chevron.down" size={12} tintColor={ACCENT} style={{ width: 13, height: 13 }} />
+                <Text style={styles.restHideText}>{paused ? 'Hide' : 'Hide — keeps counting'}</Text>
               </TouchableOpacity>
               {applyToggle}
             </>
+          ) : editing ? (
+            // Editing the number: only the ring above + this Done — everything else
+            // is noise while the keyboard is up.
+            <TouchableOpacity style={styles.restStartBtn} onPress={commitEdit} activeOpacity={0.85}>
+              <Text style={styles.restStartText}>Done</Text>
+            </TouchableOpacity>
           ) : (
             <>
               <View style={styles.restButtons}>
@@ -6785,6 +6874,9 @@ const styles = StyleSheet.create({
   headerFloatRow: { position: 'absolute', top: 0, left: 0, right: 0, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 10, paddingBottom: 6, gap: 6 },
   // 0.45 (was 0.22) — the faint circle disappeared over bright banner photos, leaving ‹ and ⋯ near-invisible
   floatIconBtn: { width: 36, height: 36, borderRadius: 100, backgroundColor: 'rgba(0,0,0,0.45)', alignItems: 'center', justifyContent: 'center' },
+  // Header glass buttons (back ‹ / ⋯): clipped glass circle + a soft shadow wrapper.
+  glassIconBtn: { width: 36, height: 36, borderRadius: 18, overflow: 'hidden', alignItems: 'center', justifyContent: 'center' },
+  glassIconBtnShadow: { borderRadius: 18, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.18, shadowRadius: 6, elevation: 3 },
   // List-footer CTA while a session is running — same confirm flow as the header FINISH pill.
   // Outline (Type 3 secondary), not filled — Vitek: the filled pill was "too heavy" here.
   finishFooterBtn: { marginHorizontal: 14, marginTop: 8, marginBottom: 4, backgroundColor: '#fff', borderWidth: 1.5, borderColor: ACCENT, borderRadius: 100, paddingVertical: 12, alignItems: 'center' },
@@ -6811,7 +6903,6 @@ const styles = StyleSheet.create({
   // Fixed-header (option 2) glass timer pill + collapsed stopwatch + banner
   combinedPillShadow: { borderRadius: 20, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.22, shadowRadius: 8, elevation: 4 },
   combinedPillGlass: { flexDirection: 'row', alignItems: 'center', borderRadius: 20, overflow: 'hidden', paddingHorizontal: 14, paddingVertical: 7, gap: 10 },
-  timerClockGlass: { width: 40, height: 40, borderRadius: 20, overflow: 'hidden', alignItems: 'center', justifyContent: 'center' },
   fixedBanner: { position: 'absolute', top: 0, left: 0, right: 0, zIndex: 10, overflow: 'hidden' },
   bannerBottom: { position: 'absolute', left: 0, right: 0, bottom: 46, paddingHorizontal: 20, flexDirection: 'row', alignItems: 'flex-end', gap: 10 },
   bannerTopTitle: { color: '#fff', fontSize: 16, fontWeight: '700' },
@@ -6909,12 +7000,14 @@ const styles = StyleSheet.create({
 
   addedLabel: { fontSize: 11, color: '#aaa', marginBottom: 1 },
   ogLabel: { fontSize: 11, color: '#aaa', fontStyle: 'italic', marginBottom: 1 },
-  setChipsRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 10 },
-  setChip: { minWidth: 46, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8, backgroundColor: '#f5f5f3', alignItems: 'center' },
-  setChipTop: { fontSize: 12.5, fontWeight: '700', color: TEXT, fontVariant: ['tabular-nums'] },
-  setChipBottom: { fontSize: 10.5, color: '#8a8a8a', fontVariant: ['tabular-nums'], marginTop: 1 },
-  setChipNoteDot: { position: 'absolute', top: 3, right: 3, width: 5, height: 5, borderRadius: 2.5, backgroundColor: ACCENT },
-  setChipsMore: { fontSize: 13, fontWeight: '700', color: '#b5b5b0', marginLeft: 2 },
+  setChipsRow: { flexDirection: 'row', alignItems: 'stretch', gap: 6, marginTop: 10 },
+  setChip: { minWidth: 54, paddingHorizontal: 9, paddingVertical: 5, borderRadius: 10, backgroundColor: '#f5f5f3', alignItems: 'center', justifyContent: 'center' },
+  setChipTop: { fontSize: 13, fontWeight: '700', color: TEXT, fontVariant: ['tabular-nums'] },
+  setChipBottom: { fontSize: 10.5, fontWeight: '500', color: '#999', fontVariant: ['tabular-nums'], marginTop: 1 },
+  setChipNoteDot: { position: 'absolute', top: 4, right: 4, width: 5, height: 5, borderRadius: 2.5, backgroundColor: ACCENT },
+  // Overflow chip ("+2") — same box as a set chip so the row reads as one family.
+  setChipMoreBox: { minWidth: 34 },
+  setChipMoreText: { fontSize: 12, fontWeight: '700', color: '#a3a39e' },
   collapsedNoteRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 5, marginTop: 6, paddingRight: 8 },
   collapsedNoteText: { flex: 1, fontSize: 12, color: '#8a8a8a', lineHeight: 16 },
   collapsedNoteEmpty: { flex: 1, fontSize: 12, color: '#c2c2bd', lineHeight: 16, fontStyle: 'italic' },
@@ -7076,7 +7169,9 @@ const styles = StyleSheet.create({
   setNoteEntry: { flexDirection: 'row', alignItems: 'flex-start', backgroundColor: '#f9f9f7', borderRadius: 10, padding: 10, marginBottom: 6, gap: 8 },
 
   restSheet: { backgroundColor: '#fff', borderTopLeftRadius: 20, borderTopRightRadius: 20, paddingHorizontal: 24, paddingTop: 6, paddingBottom: 34, alignItems: 'center', gap: 12 },
-  restHideText: { fontSize: 13, fontWeight: '600', color: MUTED },
+  // ACCENT link + chevron so it reads as tappable (muted grey read as a caption).
+  restHideRow: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingVertical: 2 },
+  restHideText: { fontSize: 14, fontWeight: '600', color: ACCENT },
   restPillWrap: { position: 'absolute', right: 16, alignItems: 'flex-end' },
   bannerPeekRoot: { flex: 1, backgroundColor: 'rgba(0,0,0,0.94)', justifyContent: 'center' },
   // Green filled + bigger (was white w/ green text) — needs to stand out; drag it anywhere. Overtime flips the pill red.
@@ -7084,26 +7179,34 @@ const styles = StyleSheet.create({
   restPillOver: { backgroundColor: '#e53935' },
   restPillText: { fontSize: 17, color: '#fff', fontVariant: ['tabular-nums'], ...fd(800) },
   restPillSep: { width: 1, height: 16, backgroundColor: 'rgba(255,255,255,0.35)' },
-  restLabel: { fontSize: 12, fontWeight: '700', color: MUTED, letterSpacing: 0.8 },
+  restTitle: { fontSize: 16, fontWeight: '700', color: TEXT },
   restRingWrap: { width: 220, height: 220, position: 'relative', alignItems: 'center', justifyContent: 'center' },
   restRingCenter: { position: 'absolute', alignItems: 'center', justifyContent: 'center' },
-  restTimer: { fontSize: 46, color: TEXT, fontVariant: ['tabular-nums'], lineHeight: 50, ...fd(500) },
+  restTimer: { fontSize: 52, color: TEXT, fontVariant: ['tabular-nums'], lineHeight: 58, ...fd(500) },
   restTimerDone: { color: '#e53935' },
+  restRingTotalLabel: { fontSize: 12, fontWeight: '500', color: '#b5b5b0', fontVariant: ['tabular-nums'], marginTop: 2 },
   restRingSecsLabel: { fontSize: 12, fontWeight: '500', color: MUTED, letterSpacing: 0.5, marginTop: 2 },
-  restTimerInput: { fontSize: 46, fontWeight: '300', color: TEXT, fontVariant: ['tabular-nums'], textAlign: 'center', minWidth: 100, lineHeight: 50 },
-  restButtons: { flexDirection: 'row', gap: 16, marginTop: 0 },
-  restAdjBtn: { backgroundColor: '#f0f0ee', borderRadius: 10, paddingHorizontal: 20, paddingVertical: 10 },
+  // ⚠️ No lineHeight on the INPUT — on iOS a TextInput lineHeight below the font's
+  // natural line box clips the glyphs ("numbers look cut off"); paddingVertical: 0
+  // keeps it compact instead.
+  restTimerInput: { fontSize: 52, color: TEXT, fontVariant: ['tabular-nums'], textAlign: 'center', minWidth: 110, paddingVertical: 0, ...fd(500) },
+  // Stretched row — the running Pause/Stop pair are equal-width REAL buttons, not
+  // floating chips; the idle −15s/+15s keep their natural width, centered.
+  restButtons: { flexDirection: 'row', gap: 10, alignSelf: 'stretch', justifyContent: 'center' },
+  restAdjBtn: { backgroundColor: '#f0f0ee', borderRadius: 100, paddingHorizontal: 22, paddingVertical: 10 },
   restAdjText: { fontSize: 15, fontWeight: '600', color: TEXT },
-  restSkipBtn: { backgroundColor: ACCENT, borderRadius: 100, paddingHorizontal: 32, paddingVertical: 11 },
-  restSkipText: { fontSize: 15, fontWeight: '700', color: '#fff' },
+  // Stop = ends the rest, not the primary action — white + ACCENT outline (the same
+  // quieting the "Finish session" footer went through; filled green read as "go").
+  restSkipBtn: { flex: 1, alignItems: 'center', backgroundColor: '#fff', borderWidth: 1.5, borderColor: ACCENT, borderRadius: 100, paddingVertical: 12 },
+  restSkipText: { fontSize: 15, fontWeight: '700', color: ACCENT },
+  // Pause/Resume = the filled primary button (the gray fill read "off", not like a
+  // real button — Vitek); Stop stays the quiet outline next to it.
+  restPrimaryBtn: { flex: 1, alignItems: 'center', backgroundColor: ACCENT, borderRadius: 100, paddingVertical: 13.5 },
+  restPrimaryText: { fontSize: 15, fontWeight: '700', color: '#fff' },
   restStartBtn: { backgroundColor: ACCENT, borderRadius: 100, paddingVertical: 13, paddingHorizontal: 48, marginTop: 4 },
   restStartText: { color: '#fff', fontWeight: '700', fontSize: 16 },
-  restApplyRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8, alignSelf: 'stretch', marginTop: 4 },
-  restApplyToggle: { width: 48, height: 26, borderRadius: 13, backgroundColor: '#d0d0ce', padding: 2 },
-  restApplyToggleOn: { backgroundColor: ACCENT },
-  restApplyThumb: { position: 'absolute', width: 28, height: 22, borderRadius: 11, top: 2, left: 2, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.28, shadowRadius: 4, elevation: 4 },
-  restApplyThumbOn: { left: 18 },
-  restApplyText: { fontSize: 13, fontWeight: '500', color: TEXT, flex: 1 },
+  restApplyRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8, alignSelf: 'stretch', marginTop: 10, paddingTop: 12, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: '#e2e2df' },
+  restApplyText: { fontSize: 13, fontWeight: '500', color: '#555', flex: 1 },
 
   infoRow: { paddingHorizontal: 20, paddingVertical: 13, borderTopWidth: 1, borderTopColor: '#f0f0f0' },
   infoRowSplit: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },

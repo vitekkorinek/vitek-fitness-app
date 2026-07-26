@@ -26,6 +26,7 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/context/AuthContext';
 import { registerPickHandler } from '@/lib/exercisePicker';
 import { BottomSheet } from '@/components/BottomSheet';
+import { SessionResumeChip } from '@/components/SessionResumeChip';
 import { CATEGORY_OPTIONS, CATEGORY_COLORS, STRETCHING_CATEGORIES, STRETCHING_CATEGORY_TO_STRETCH_TYPE } from '@/lib/workoutCategories';
 import type { WorkoutCategory } from '@/lib/workoutCategories';
 import type { Exercise, Routine } from '@/types/database';
@@ -999,6 +1000,7 @@ export default function WorkoutBuilderScreen() {
             <SymbolView name="chevron.left" size={22} tintColor={HEADER} weight="semibold" />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>{editWorkoutId ? 'Edit Workout' : 'Build Workout'}</Text>
+          <SessionResumeChip />
           <TouchableOpacity style={styles.saveHeaderBtn} onPress={handleSavePress} activeOpacity={0.8}>
             <Text style={styles.saveHeaderBtnText}>Save</Text>
           </TouchableOpacity>
