@@ -4263,7 +4263,7 @@ const PROFILE_TABS: Tab[] = ['training', 'sessions', 'nutrition', 'progress', 'i
 /**
  * Pinned section switcher below the solid header — a plain UNDERLINE switcher (the
  * primary level). The 5 titles are evenly spread; the active one gets an accent-green
- * underline + accent text, inactive stay black. (Sub-tabs use a glass toggle instead,
+ * underline + accent text, inactive are dimmed. (Sub-tabs use a glass toggle instead,
  * so the two levels read as clearly different.)
  */
 function TabPillSwitcher({
@@ -4323,7 +4323,10 @@ const styles = StyleSheet.create({
   // Underline sits under the text only (inner view hugs the label), not the full cell.
   segUnderline: { paddingBottom: 7, borderBottomWidth: 2, borderBottomColor: 'transparent' },
   segUnderlineActive: { borderBottomColor: ACCENT },
-  segLabel: { fontSize: 14, fontWeight: '600', color: TEXT },
+  // Inactive titles are DIMMED (#bbb / lighter weight) so only the active tab reads
+  // as a live element — 5 black labels in a row was too much noise. Matches the
+  // client-side underline switchers (Workouts/Stretching, Body/Strength).
+  segLabel: { fontSize: 14, fontWeight: '500', color: '#bbb' },
   segLabelActive: { color: ACCENT, fontWeight: '700' },
 
   scroll: { flex: 1 },
