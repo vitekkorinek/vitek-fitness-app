@@ -568,6 +568,20 @@ export default function TrainerWorkoutSessionScreen() {
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [sessionCount, setSessionCount] = useState(0);
   const [lastCompletedSessionAt, setLastCompletedSessionAt] = useState<string | null>(null);
+  // The session an off-session "Save changes" writes into (most recent completed one).
+  const [lastCompletedSession, setLastCompletedSession] = useState<{ id: string; date: string } | null>(null);
+  // Sets edited while NO session is running — `${workoutExerciseId}::${setLocalId}::${field}`.
+  // Per FIELD on purpose: the inputs are pre-filled from the client's most recent logs
+  // ACROSS workouts, so writing an untouched field back would stamp another workout's
+  // number onto this session's history.
+  const [offSessionDirtyFields, setOffSessionDirtyFields] = useState<Set<string>>(new Set());
+  // Exercise/set notes reach the DB the moment they're typed, so they need no write at
+  // save time — but the Save button must still light up, or writing a note and reading
+  // "Nothing to save yet" looks like the note was lost.
+  const [offSessionNoteTouched, setOffSessionNoteTouched] = useState(false);
+  const [savingOffSession, setSavingOffSession] = useState(false);
+  const [savedToast, setSavedToast] = useState<string | null>(null);
+  const savedToastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [sessionHistory, setSessionHistory] = useState<SessionHistoryEntry[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [pastSession, setPastSession] = useState<PastSession | null>(null);
@@ -935,6 +949,8 @@ export default function TrainerWorkoutSessionScreen() {
     // Start time of the most recent completed session — a note counts as "new" (name dot)
     // only until the client completes a session after it was written.
     setLastCompletedSessionAt(((recentSessData as any[])?.[0]?.created_at) ?? null);
+    const lastCompleted = (recentSessData as any[])?.[0];
+    setLastCompletedSession(lastCompleted ? { id: lastCompleted.id as string, date: lastCompleted.date as string } : null);
 
     // Build map: exercise_id → movedFromLabel (from permanent drag history)
     const exIdToMoveLabel = new Map<string, string>();
@@ -1407,6 +1423,12 @@ export default function TrainerWorkoutSessionScreen() {
     resumeSession(isFreeSession ? 'free' : workoutId!, origStartedAt);
   }, [loading, resumeSessionId, resumeStartedAt]);
 
+  // Once a session is actually running, edits belong to IT — FINISH writes them.
+  // Drop anything the off-session Save was still holding.
+  useEffect(() => {
+    if (startedAt) setOffSessionDirtyFields(new Set());
+  }, [startedAt]);
+
   // ── Draft persistence ───────────────────────────────────────────────────
   // Weights/reps/done-marks only reach the DB at FINISH, so mirror them to disk
   // on every change while the session runs. Leaving Do Mode (or iOS reclaiming
@@ -1780,6 +1802,7 @@ export default function TrainerWorkoutSessionScreen() {
 
   const showPendingDoneToast = (exerciseName: string) => {
     if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    if (savedToastTimerRef.current) { clearTimeout(savedToastTimerRef.current); setSavedToast(null); }
     setPendingDoneToast(exerciseName);
     toastTimerRef.current = setTimeout(() => setPendingDoneToast(null), 3000);
   };
@@ -1870,6 +1893,25 @@ export default function TrainerWorkoutSessionScreen() {
     handleEditBeforeStart();
     checkPrevUnchecked(exIdx);
     setExercises(prev => prev.map((ex, i) => i !== exIdx ? ex : { ...ex, sets: ex.sets.map(s => s.localId !== setLocalId ? s : { ...s, [field]: value }) }));
+    markOffSessionDirty(exIdx, setLocalId, field);
+  };
+
+  // Remember a number typed with no session running, so "Save changes" can write it
+  // into the last completed session (or, before the first one, into the workout).
+  // Only sets that already exist in the program qualify — sets/exercises added here
+  // are a program change and belong in the workout builder.
+  const markOffSessionDirty = (exIdx: number, setLocalId: string, field: 'repsCompleted' | 'weightKg') => {
+    if (startedAtRef.current || pastSession || isFreeSession) return;
+    const ex = exercises[exIdx];
+    const set = ex?.sets.find(s => s.localId === setLocalId);
+    if (!ex || !set || ex.isAddedDuringSession || !set.workoutSetId || set.isDropset) return;
+    const key = `${ex.workoutExerciseId}::${setLocalId}::${field}`;
+    setOffSessionDirtyFields(prev => (prev.has(key) ? prev : new Set(prev).add(key)));
+  };
+
+  const markOffSessionNoteTouched = () => {
+    if (startedAtRef.current || pastSession || isFreeSession) return;
+    setOffSessionNoteTouched(true);
   };
 
   const toggleLiveForSuperset = useCallback((groupId: string) => {
@@ -2084,6 +2126,7 @@ export default function TrainerWorkoutSessionScreen() {
 
   const addSetNote = async (exIdx: number, setLocalId: string, role: 'trainer' | 'client', text: string) => {
     handleEditBeforeStart();
+    markOffSessionNoteTouched();
     const entry: NoteEntry = { id: generateUUID(), text, date: todayLabel() };
     setExercises(prev => prev.map((ex, i) => i !== exIdx ? ex : {
       ...ex, sets: ex.sets.map(s => s.localId !== setLocalId ? s : {
@@ -2103,6 +2146,7 @@ export default function TrainerWorkoutSessionScreen() {
   };
 
   const deleteSetNote = (exIdx: number, setLocalId: string, role: 'trainer' | 'client', noteId: string) => {
+    markOffSessionNoteTouched();
     setExercises(prev => prev.map((ex, i) => i !== exIdx ? ex : {
       ...ex, sets: ex.sets.map(s => s.localId !== setLocalId ? s : {
         ...s,
@@ -2114,6 +2158,7 @@ export default function TrainerWorkoutSessionScreen() {
 
   const editSetNote = async (exIdx: number, setLocalId: string, role: 'trainer' | 'client', noteId: string, text: string) => {
     handleEditBeforeStart();
+    markOffSessionNoteTouched();
     setExercises(prev => prev.map((ex, i) => i !== exIdx ? ex : {
       ...ex, sets: ex.sets.map(s => s.localId !== setLocalId ? s : {
         ...s,
@@ -2127,6 +2172,7 @@ export default function TrainerWorkoutSessionScreen() {
 
   const addExerciseNote = async (exIdx: number, text: string) => {
     handleEditBeforeStart();
+    markOffSessionNoteTouched();
     const entry: NoteEntry = { id: generateUUID(), text, date: todayLabel() };
     const weId = exercises[exIdx]?.workoutExerciseId;
     setExercises(prev => prev.map((ex, i) => i !== exIdx ? ex : { ...ex, trainerNotes: [...ex.trainerNotes, entry] }));
@@ -2140,6 +2186,7 @@ export default function TrainerWorkoutSessionScreen() {
   };
 
   const deleteExerciseNote = (exIdx: number, noteId: string) => {
+    markOffSessionNoteTouched();
     setExercises(prev => prev.map((ex, i) => i !== exIdx ? ex : {
       ...ex, trainerNotes: ex.trainerNotes.map(n => n.id === noteId ? { ...n, isDeleted: !n.isDeleted } : n),
     }));
@@ -2147,6 +2194,7 @@ export default function TrainerWorkoutSessionScreen() {
 
   const editExerciseNote = async (exIdx: number, noteId: string, text: string) => {
     handleEditBeforeStart();
+    markOffSessionNoteTouched();
     setExercises(prev => prev.map((ex, i) => i !== exIdx ? ex : {
       ...ex, trainerNotes: ex.trainerNotes.map(n => n.id === noteId ? { ...n, text } : n),
     }));
@@ -2156,6 +2204,7 @@ export default function TrainerWorkoutSessionScreen() {
 
   const addClientNote = async (exIdx: number, text: string) => {
     handleEditBeforeStart();
+    markOffSessionNoteTouched();
     const entry: NoteEntry = { id: generateUUID(), text, date: todayLabel() };
     const weId = exercises[exIdx]?.workoutExerciseId;
     setExercises(prev => prev.map((ex, i) => i !== exIdx ? ex : { ...ex, clientNote: [...ex.clientNote, entry] }));
@@ -2169,6 +2218,7 @@ export default function TrainerWorkoutSessionScreen() {
   };
 
   const deleteClientNote = (exIdx: number, noteId: string) => {
+    markOffSessionNoteTouched();
     setExercises(prev => prev.map((ex, i) => i !== exIdx ? ex : {
       ...ex, clientNote: ex.clientNote.map(n => n.id === noteId ? { ...n, isDeleted: !n.isDeleted } : n),
     }));
@@ -2176,6 +2226,7 @@ export default function TrainerWorkoutSessionScreen() {
 
   const addTrainingNote = async (role: 'trainer' | 'client', text: string): Promise<boolean> => {
     if (!text.trim()) return false;
+    markOffSessionNoteTouched();
     const entry: NoteEntry = { id: generateUUID(), text: text.trim(), date: todayLabel() };
     if (role === 'trainer') setTrainingTrainerNotes(prev => [...prev, entry]);
     else setTrainingClientNotes(prev => [...prev, entry]);
@@ -2196,6 +2247,7 @@ export default function TrainerWorkoutSessionScreen() {
   };
 
   const deleteTrainingNote = (role: 'trainer' | 'client', noteId: string) => {
+    markOffSessionNoteTouched();
     if (role === 'trainer') setTrainingTrainerNotes(prev => prev.map(n => n.id === noteId ? { ...n, isDeleted: !n.isDeleted } : n));
     else setTrainingClientNotes(prev => prev.map(n => n.id === noteId ? { ...n, isDeleted: !n.isDeleted } : n));
   };
@@ -2355,15 +2407,23 @@ export default function TrainerWorkoutSessionScreen() {
 
   // ─── Edit mode DB helpers ────────────────────────────────────────────────────
 
+  // ⚠️ SOFT delete (`is_active = false`), never a hard delete — a hard delete cascades the
+  // row's `session_logs` and erases what the client actually lifted on that exercise. Same
+  // rule the workout builder follows; every exercise-list read filters `is_active`.
+  // Exercises added right here have no DB row yet (their id is a local `uid()`, not a UUID) —
+  // dropping them from state is the whole job.
   const deleteExerciseFromWorkout = useCallback(async (weId: string) => {
-    await supabase.from('workout_exercises').delete().eq('id', weId);
-    setExercises(prev => prev.filter(e => e.workoutExerciseId !== weId).map((ex, idx) => ({ ...ex, slotNumber: idx + 1 })));
+    const ex = exercisesRef.current.find(e => e.workoutExerciseId === weId);
+    if (ex && !ex.isAddedDuringSession) {
+      await supabase.from('workout_exercises').update({ is_active: false }).eq('id', weId);
+    }
+    setExercises(prev => prev.filter(e => e.workoutExerciseId !== weId).map((ex2, idx) => ({ ...ex2, slotNumber: idx + 1 })));
   }, []);
 
   const deleteSupersetGroup = useCallback(async (groupId: string) => {
-    const toDelete = exercisesRef.current.filter(e => e.supersetGroupId === groupId);
+    const toDelete = exercisesRef.current.filter(e => e.supersetGroupId === groupId && !e.isAddedDuringSession);
     if (toDelete.length > 0) {
-      await supabase.from('workout_exercises').delete().in('id', toDelete.map(e => e.workoutExerciseId));
+      await supabase.from('workout_exercises').update({ is_active: false }).in('id', toDelete.map(e => e.workoutExerciseId));
     }
     setExercises(prev => prev.filter(e => e.supersetGroupId !== groupId).map((ex, idx) => ({ ...ex, slotNumber: idx + 1 })));
   }, []);
@@ -2695,6 +2755,344 @@ export default function TrainerWorkoutSessionScreen() {
       startSession(workoutId!);
       createInProgressSession();
     }
+  };
+
+  // ── Off-session save (trainer only) ───────────────────────────────────────
+  // Between sessions there was no way to record a weight you forgot to log or a
+  // note you forgot to write — the only route was start-a-session-and-finish-it,
+  // which invented an extra session and re-dated every note. "Save changes"
+  // writes the corrections into the LAST COMPLETED session instead (or, before
+  // the first session exists, into the workout's own starting numbers), so the
+  // session count is untouched and the notes show up as reminders next time.
+  const offSessionChanges = useMemo(() => {
+    const sets: Array<{ ex: SessionExercise; set: SessionSet; weight: boolean; reps: boolean }> = [];
+    exercises.forEach(ex => {
+      if (ex.isAddedDuringSession) return;
+      ex.sets.forEach(s => {
+        if (!s.workoutSetId || s.isDropset) return;
+        const base = `${ex.workoutExerciseId}::${s.localId}`;
+        const weight = offSessionDirtyFields.has(`${base}::weightKg`);
+        const reps = offSessionDirtyFields.has(`${base}::repsCompleted`);
+        if (weight || reps) sets.push({ ex, set: s, weight, reps });
+      });
+    });
+
+    // Notes ADD/EDIT already hit the DB the moment they're written (exercise- and
+    // set-level notes hang off the workout, not off a session). Only deletions and
+    // training notes — which need a session to point at — are still pending here.
+    const noteDeleteIds: string[] = [];
+    exercises.forEach(ex => {
+      ex.sets.forEach(s => {
+        [...s.trainerNotes, ...s.clientNotes].forEach(n => {
+          if (n.isDeleted && persistedSetNoteIdsRef.current.has(n.id)) noteDeleteIds.push(n.id);
+        });
+      });
+      [...ex.trainerNotes, ...ex.clientNote].forEach(n => {
+        if (n.isDeleted && persistedExerciseNoteIdsRef.current.has(n.id)) noteDeleteIds.push(n.id);
+      });
+    });
+    [...trainingTrainerNotes, ...trainingClientNotes].forEach(n => {
+      if (n.isDeleted && persistedTrainingNoteIdsRef.current.has(n.id)) noteDeleteIds.push(n.id);
+    });
+
+    const trainingNotes = [
+      ...trainingTrainerNotes.filter(n => !n.isDeleted && !persistedTrainingNoteIdsRef.current.has(n.id)).map(n => ({ ...n, role: 'trainer' as const })),
+      ...trainingClientNotes.filter(n => !n.isDeleted && !persistedTrainingNoteIdsRef.current.has(n.id)).map(n => ({ ...n, role: 'client' as const })),
+    ];
+
+    // Program changes made here but not yet written. (Deleting an exercise, reordering and
+    // making/breaking supersets already persist the moment you do them — they need no Save.
+    // Removing a SET stays a session-level "skipped this time", exactly as at FINISH.)
+    const addedExercises = exercises.filter(ex => ex.isAddedDuringSession);
+    const replacedExercises = exercises.filter(ex => !ex.isAddedDuringSession && ex.originalExerciseId !== null);
+    const addedSets = exercises
+      .filter(ex => !ex.isAddedDuringSession)
+      .flatMap(ex => ex.sets.filter(s => s.workoutSetId === null && !s.isDropset && !s.isRemoved).map(set => ({ ex, set })));
+
+    return {
+      sets, noteDeleteIds, trainingNotes, addedExercises, replacedExercises, addedSets,
+      count: sets.length + noteDeleteIds.length + trainingNotes.length + (offSessionNoteTouched ? 1 : 0)
+        + addedExercises.length + replacedExercises.length + addedSets.length,
+    };
+  }, [exercises, offSessionDirtyFields, offSessionNoteTouched, trainingTrainerNotes, trainingClientNotes]);
+
+  const runOffSessionSave = async () => {
+    if (!clientId || !workoutId || isFreeSession) return;
+    const { sets, noteDeleteIds, trainingNotes, addedExercises, replacedExercises, addedSets } = offSessionChanges;
+    const targetSessionId = lastCompletedSession?.id ?? null;
+    const today = new Date().toISOString().split('T')[0];
+    setSavingOffSession(true);
+    let ok = true;
+    // Local id → the real DB id the insert handed back, so state can be settled without a reload.
+    const realExerciseIds = new Map<string, string>();
+    const realSetIds = new Map<string, string>();
+    // Sets that only exist from this save on — their typed numbers still have to reach the session.
+    const freshLogs: Array<{ weId: string; set: SessionSet; ex: SessionExercise }> = [];
+
+    try {
+      // ── Program changes: exercises added here, exercises swapped out, sets added ──
+      if (addedExercises.length) {
+        const { data: topWe } = await supabase
+          .from('workout_exercises').select('order_index').eq('workout_id', workoutId)
+          .order('order_index', { ascending: false }).limit(1);
+        let nextIdx = ((topWe as any[])?.[0]?.order_index ?? 0) + 1;
+        for (const ex of addedExercises) {
+          const { data: insertedWe, error: weErr } = await supabase
+            .from('workout_exercises')
+            .insert({ workout_id: workoutId, exercise_id: ex.exerciseId, order_index: nextIdx })
+            .select('id').single();
+          if (weErr || !insertedWe) { console.log('[offSessionSave] workout_exercises insert error:', weErr); ok = false; continue; }
+          const realWeId = (insertedWe as any).id as string;
+          realExerciseIds.set(ex.workoutExerciseId, realWeId);
+          nextIdx++;
+
+          // One insert per set (not a bulk one) so each returned id maps to a known local set —
+          // dropsets repeat their parent's set_number, so set_number alone can't match them back.
+          for (const s of ex.sets.filter(x => !x.isRemoved && !x.isDropset)) {
+            const { data: insertedSet, error: wsErr } = await supabase
+              .from('workout_sets')
+              .insert({
+                workout_exercise_id: realWeId,
+                set_number: s.setNumber,
+                target_reps: s.repsCompleted.trim() ? parseInt(s.repsCompleted, 10) : (s.targetReps ?? null),
+                target_weight_kg: s.weightKg.trim() ? parseFloat(s.weightKg) : (s.targetWeightKg ?? null),
+                rest_seconds: null,
+                is_added_during_session: false,
+              })
+              .select('id').single();
+            if (wsErr || !insertedSet) { console.log('[offSessionSave] workout_sets insert error:', wsErr); ok = false; continue; }
+            realSetIds.set(s.localId, (insertedSet as any).id as string);
+            if (s.weightKg.trim() || s.repsCompleted.trim()) freshLogs.push({ weId: realWeId, set: s, ex });
+          }
+        }
+      }
+
+      for (const { ex, set: s } of addedSets) {
+        const { data: insertedSet, error: wsErr } = await supabase
+          .from('workout_sets')
+          .insert({
+            workout_exercise_id: ex.workoutExerciseId,
+            set_number: s.setNumber,
+            target_reps: s.repsCompleted.trim() ? parseInt(s.repsCompleted, 10) : (s.targetReps ?? null),
+            target_weight_kg: s.weightKg.trim() ? parseFloat(s.weightKg) : (s.targetWeightKg ?? null),
+            rest_seconds: null,
+            is_added_during_session: false,
+          })
+          .select('id').single();
+        if (wsErr || !insertedSet) { console.log('[offSessionSave] extra workout_sets insert error:', wsErr); ok = false; continue; }
+        realSetIds.set(s.localId, (insertedSet as any).id as string);
+        if (s.weightKg.trim() || s.repsCompleted.trim()) freshLogs.push({ weId: ex.workoutExerciseId, set: s, ex });
+      }
+
+      for (const ex of replacedExercises) {
+        const { error: repErr } = await supabase
+          .from('workout_exercises').update({ exercise_id: ex.exerciseId }).eq('id', ex.workoutExerciseId);
+        if (repErr) { console.log('[offSessionSave] replacement update error:', repErr); ok = false; continue; }
+        const slotNumber = exercises.indexOf(ex) + 1;
+        const { data: slotRow } = await supabase
+          .from('workout_exercise_slots')
+          .upsert(
+            { workout_id: workoutId, slot_number: slotNumber, original_exercise_id: ex.originalExerciseId, current_exercise_id: ex.exerciseId },
+            { onConflict: 'workout_id,slot_number' }
+          )
+          .select('id').single();
+        if (slotRow) {
+          await supabase.from('slot_replacement_history').insert({
+            slot_id: (slotRow as any).id,
+            exercise_id: ex.exerciseId,
+            replaced_on: today,
+            session_id: targetSessionId,
+            is_permanent: true,
+          });
+        }
+      }
+
+      if (sets.length) {
+        if (targetSessionId) {
+          // Correct the rows that session already wrote; add a row for a set it never logged.
+          const { data: existingLogs, error: fetchErr } = await supabase
+            .from('session_logs')
+            .select('id, workout_exercise_id, set_number')
+            .eq('session_id', targetSessionId);
+          if (fetchErr) { console.log('[offSessionSave] session_logs fetch error:', fetchErr); ok = false; }
+          const logIdByKey = new Map<string, string>();
+          (existingLogs as any[] ?? []).forEach((r: any) => logIdByKey.set(`${r.workout_exercise_id}:${r.set_number}`, r.id));
+
+          const inserts: any[] = [];
+          for (const { ex, set, weight, reps } of sets) {
+            const patch: any = {};
+            if (weight) patch.weight_kg = set.weightKg.trim() ? parseFloat(set.weightKg) : null;
+            if (reps) patch.reps_completed = set.repsCompleted.trim() ? parseInt(set.repsCompleted, 10) : null;
+
+            const rowId = logIdByKey.get(`${ex.workoutExerciseId}:${set.setNumber}`);
+            if (rowId) {
+              // Only the edited fields — barbell weight / machine brand on an existing
+              // row are that session's own record and must not be re-guessed here.
+              const { error } = await supabase.from('session_logs').update(patch).eq('id', rowId);
+              if (error) { console.log('[offSessionSave] session_logs update error:', error); ok = false; }
+            } else {
+              const eqLower = (ex.equipment ?? '').toLowerCase();
+              const isBarbelEx = eqLower.includes('barbell') || eqLower === 'z bar';
+              const isZBarEx = eqLower === 'z bar';
+              const isCableMachineEx = eqLower === 'cable' || eqLower === 'machine';
+              inserts.push({
+                session_id: targetSessionId,
+                workout_exercise_id: ex.workoutExerciseId,
+                set_number: set.setNumber,
+                reps_completed: set.repsCompleted.trim() ? parseInt(set.repsCompleted, 10) : null,
+                weight_kg: set.weightKg.trim() ? parseFloat(set.weightKg) : null,
+                barbell_weight_used_kg: isBarbelEx ? (barbellWeightsRef.current.get(ex.workoutExerciseId) ?? (isZBarEx ? 5 : 20)) : null,
+                machine_brand: isCableMachineEx ? (machineBrandsRef.current.get(ex.workoutExerciseId) ?? null) : null,
+                is_removed: set.isRemoved,
+                is_dropset: false,
+                dropset_order: null,
+                notes: null,
+              });
+            }
+          }
+          if (inserts.length) {
+            const { error } = await supabase.from('session_logs').insert(inserts);
+            if (error) { console.log('[offSessionSave] session_logs insert error:', error); ok = false; }
+          }
+        } else {
+          // No session has ever been performed — the numbers are the workout's targets,
+          // exactly as if they had been typed in the builder when it was created.
+          for (const { set, weight, reps } of sets) {
+            const patch: any = {};
+            if (weight) patch.target_weight_kg = set.weightKg.trim() ? parseFloat(set.weightKg) : null;
+            if (reps) patch.target_reps = set.repsCompleted.trim() ? parseInt(set.repsCompleted, 10) : null;
+            const { error } = await supabase.from('workout_sets').update(patch).eq('id', set.workoutSetId!);
+            if (error) { console.log('[offSessionSave] workout_sets update error:', error); ok = false; }
+          }
+        }
+      }
+
+      // Numbers typed on a set that only just got its DB row — those belong to the session too.
+      // (With no session yet they already went in as the set's target above.)
+      if (freshLogs.length && targetSessionId) {
+        const { error } = await supabase.from('session_logs').insert(freshLogs.map(({ weId, set: s, ex }) => {
+          const eqLower = (ex.equipment ?? '').toLowerCase();
+          const isBarbelEx = eqLower.includes('barbell') || eqLower === 'z bar';
+          const isCableMachineEx = eqLower === 'cable' || eqLower === 'machine';
+          return {
+            session_id: targetSessionId,
+            workout_exercise_id: weId,
+            set_number: s.setNumber,
+            reps_completed: s.repsCompleted.trim() ? parseInt(s.repsCompleted, 10) : null,
+            weight_kg: s.weightKg.trim() ? parseFloat(s.weightKg) : null,
+            barbell_weight_used_kg: isBarbelEx ? (barbellWeightsRef.current.get(ex.workoutExerciseId) ?? (eqLower === 'z bar' ? 5 : 20)) : null,
+            machine_brand: isCableMachineEx ? (machineBrandsRef.current.get(ex.workoutExerciseId) ?? null) : null,
+            is_removed: false,
+            is_dropset: false,
+            dropset_order: null,
+            notes: null,
+          };
+        }));
+        if (error) { console.log('[offSessionSave] fresh session_logs insert error:', error); ok = false; }
+      }
+
+      const bridgeNoteDeletes = flushPendingNoteDeletes();
+      const allDeleteIds = [...new Set([...noteDeleteIds, ...bridgeNoteDeletes])];
+      if (allDeleteIds.length) {
+        const { error } = await supabase.from('notes').delete().in('id', allDeleteIds);
+        if (error) { console.log('[offSessionSave] notes delete error:', error); ok = false; }
+      }
+
+      if (trainingNotes.length && targetSessionId && profile?.id) {
+        const { error } = await supabase.from('notes').insert(
+          trainingNotes.map(n => ({ id: n.id, content: n.text, role: n.role, level: 'training', reference_id: targetSessionId, created_by: profile.id }))
+        );
+        if (error) { console.log('[offSessionSave] training notes insert error:', error); ok = false; }
+        else trainingNotes.forEach(n => persistedTrainingNoteIdsRef.current.add(n.id));
+      }
+    } catch (err) {
+      console.log('[offSessionSave] unexpected error:', err);
+      ok = false;
+    } finally {
+      setSavingOffSession(false);
+    }
+
+    if (!ok) {
+      setConfirmModal({
+        title: "Couldn't save the changes",
+        message: 'Everything you typed is still here. Check your connection and try Save again.',
+        actions: [{ text: 'Try again', primary: true, onPress: () => { void runOffSessionSave(); } }],
+        cancelText: 'Back',
+      });
+      return;
+    }
+
+    // Settle local state onto the real DB ids so a second Save doesn't insert everything twice.
+    // (Deliberately NOT a load() — that would re-fire the order-mismatch and last-session-notes
+    // popups, and re-read numbers the trainer may still be typing.)
+    setExercises(prev => prev.map(ex => {
+      const realWeId = realExerciseIds.get(ex.workoutExerciseId);
+      const wasReplaced = replacedExercises.some(r => r.workoutExerciseId === ex.workoutExerciseId);
+      return {
+        ...ex,
+        ...(realWeId ? { workoutExerciseId: realWeId, isAddedDuringSession: false } : {}),
+        ...(wasReplaced ? { originalExerciseId: null, originalExerciseName: null } : {}),
+        trainerNotes: ex.trainerNotes.filter(n => !n.isDeleted),
+        clientNote: ex.clientNote.filter(n => !n.isDeleted),
+        sets: ex.sets.map(s => {
+          const realSetId = realSetIds.get(s.localId);
+          const edited = sets.find(d => d.set.localId === s.localId);
+          const targeted = edited && !lastCompletedSession
+            ? {
+                targetWeightKg: edited.weight ? (s.weightKg.trim() ? parseFloat(s.weightKg) : null) : s.targetWeightKg,
+                targetReps: edited.reps ? (s.repsCompleted.trim() ? parseInt(s.repsCompleted, 10) : null) : s.targetReps,
+              }
+            : null;
+          return {
+            ...s,
+            ...(realSetId ? { workoutSetId: realSetId, isAddedDuringSession: false } : {}),
+            ...(targeted ?? {}),
+            trainerNotes: s.trainerNotes.filter(n => !n.isDeleted),
+            clientNotes: s.clientNotes.filter(n => !n.isDeleted),
+          };
+        }),
+      };
+    }));
+    setTrainingTrainerNotes(prev => prev.filter(n => !n.isDeleted));
+    setTrainingClientNotes(prev => prev.filter(n => !n.isDeleted));
+    setOffSessionDirtyFields(new Set());
+    setOffSessionNoteTouched(false);
+
+    // Own timer — sharing toastTimerRef with the "not marked as done" toast would leave
+    // whichever one it belonged to stuck on screen.
+    if (savedToastTimerRef.current) clearTimeout(savedToastTimerRef.current);
+    if (toastTimerRef.current) { clearTimeout(toastTimerRef.current); setPendingDoneToast(null); }
+    setSavedToast(lastCompletedSession ? `Saved to the session of ${formatDate(lastCompletedSession.date)}` : 'Saved to this workout');
+    savedToastTimerRef.current = setTimeout(() => setSavedToast(null), 3000);
+  };
+
+  const handleOffSessionSave = () => {
+    if (savingOffSession || offSessionChanges.count === 0) return;
+    const { addedExercises, replacedExercises, addedSets, sets } = offSessionChanges;
+    const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
+
+    // Spell out both halves — the program change and where the numbers land — because they
+    // go to different places and one of them rewrites history.
+    const lines: string[] = [];
+    if (addedExercises.length) lines.push(`• ${plural(addedExercises.length, 'exercise', 'exercises')} added to the workout`);
+    if (replacedExercises.length) lines.push(`• ${plural(replacedExercises.length, 'exercise', 'exercises')} swapped in the workout`);
+    if (addedSets.length) lines.push(`• ${plural(addedSets.length, 'set', 'sets')} added to the workout`);
+    if (sets.length) {
+      lines.push(lastCompletedSession
+        ? `• ${plural(sets.length, 'set', 'sets')} corrected in the session of ${formatDate(lastCompletedSession.date)}`
+        : `• ${plural(sets.length, 'set', 'sets')} saved as this workout's starting numbers`);
+    }
+
+    const tail = lastCompletedSession
+      ? 'No new session is started and the session count stays the same.'
+      : 'The next session starts with them.';
+
+    setConfirmModal({
+      title: lastCompletedSession ? 'Save to the last session?' : 'Save to this workout?',
+      message: lines.length ? `${lines.join('\n')}\n\n${tail}` : tail,
+      actions: [{ text: 'Save', primary: true, onPress: () => { void runOffSessionSave(); } }],
+      cancelText: 'Cancel',
+    });
   };
 
   const handleFinish = () => {
@@ -3595,6 +3993,27 @@ export default function TrainerWorkoutSessionScreen() {
                   </View>
                   <Text style={styles.finishFooterSub}>{exercises.filter(e => e.isDone).length} / {exercises.length} exercises done</Text>
                 </TouchableOpacity>
+              ) : (!pastSession && !isFreeSession && !loading) ? (
+                /* Between sessions: record a forgotten weight or note without inventing a session. */
+                <TouchableOpacity
+                  style={[styles.finishFooterBtn, offSessionChanges.count === 0 && styles.saveFooterBtnIdle]}
+                  onPress={handleOffSessionSave}
+                  activeOpacity={offSessionChanges.count === 0 ? 1 : 0.85}
+                  disabled={savingOffSession || offSessionChanges.count === 0}
+                >
+                  <View style={styles.finishFooterTitleRow}>
+                    <Text style={[styles.finishFooterTitle, offSessionChanges.count === 0 && styles.saveFooterTitleIdle]}>
+                      {savingOffSession ? 'Saving…' : 'Save changes'}
+                    </Text>
+                  </View>
+                  <Text style={[styles.finishFooterSub, offSessionChanges.count === 0 && styles.saveFooterSubIdle]}>
+                    {offSessionChanges.count === 0
+                      ? 'Nothing to save yet'
+                      : lastCompletedSession
+                        ? `To the session of ${formatDate(lastCompletedSession.date)}`
+                        : 'To this workout'}
+                  </Text>
+                </TouchableOpacity>
               ) : null}
               keyExtractor={(item: DisplayItem) =>
                 item.kind === 'exercise' ? item.exercise.workoutExerciseId : item.groupId
@@ -3926,6 +4345,12 @@ export default function TrainerWorkoutSessionScreen() {
           <Text style={styles.pendingDoneToastText} numberOfLines={2}>
             {pendingDoneToast} wasn't marked as done — make sure you're finished with it.
           </Text>
+        </View>
+      )}
+
+      {savedToast && (
+        <View pointerEvents="none" style={[styles.pendingDoneToast, { top: HEADER_MIN + 8 }]}>
+          <Text style={styles.pendingDoneToastText} numberOfLines={2}>{savedToast}</Text>
         </View>
       )}
 
@@ -6895,6 +7320,11 @@ const styles = StyleSheet.create({
   finishFooterSep: { width: 1, height: 14, backgroundColor: 'rgba(36,172,136,0.35)' },
   finishFooterTimer: { color: ACCENT, fontSize: 15, fontWeight: '600', fontVariant: ['tabular-nums'] },
   finishFooterSub: { color: '#7fbfae', fontSize: 12, fontWeight: '600', marginTop: 1, fontVariant: ['tabular-nums'] },
+  // Same footer slot between sessions ("Save changes"); greyed while there is nothing pending,
+  // so the button is still discoverable where the trainer expects to find it.
+  saveFooterBtnIdle: { borderColor: '#e2e2df' },
+  saveFooterTitleIdle: { color: '#bbb' },
+  saveFooterSubIdle: { color: '#c8c8c4' },
   miniBarCollapsed: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8 },
   miniBarName: { flex: 1, fontSize: 13, fontWeight: '500', color: '#fff', textAlign: 'center' },
   miniBarTimer: { fontSize: 12, color: 'rgba(255,255,255,0.7)', fontVariant: ['tabular-nums'] },

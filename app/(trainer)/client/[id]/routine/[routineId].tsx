@@ -144,6 +144,13 @@ export default function RoutineDetailScreen() {
   const [loadingTemplates, setLoadingTemplates] = useState(false);
   const [applyingTemplate, setApplyingTemplate] = useState(false);
 
+  const openEditWorkout = () => {
+    if (!activeMenu) return;
+    const target = activeMenu;
+    setActiveMenu(null);
+    router.push(`/(trainer)/workout-builder?clientId=${clientId}&editWorkoutId=${target.id}` as any);
+  };
+
   const startRename = () => {
     if (!activeMenu) return;
     setRenameText(activeMenu.name);
@@ -644,6 +651,7 @@ export default function RoutineDetailScreen() {
       {activeMenu && (
         <WorkoutMenuModal
           workoutName={activeMenu.name}
+          onEdit={openEditWorkout}
           onRename={startRename}
           onDelete={startDelete}
           onAddToRoutine={openRoutinePicker}
@@ -823,15 +831,21 @@ function WorkoutItem({
 // ─── WorkoutMenuModal ─────────────────────────────────────────────────────────
 
 function WorkoutMenuModal({
-  workoutName, onRename, onDelete, onAddToRoutine, onChangeCover, onViewExercises, onClose,
+  workoutName, onEdit, onRename, onDelete, onAddToRoutine, onChangeCover, onViewExercises, onClose,
 }: {
-  workoutName: string; onRename: () => void; onDelete: () => void;
+  workoutName: string; onEdit: () => void; onRename: () => void; onDelete: () => void;
   onAddToRoutine: () => void; onChangeCover: () => void; onViewExercises: () => void; onClose: () => void;
 }) {
   return (
     <BottomSheet onClose={onClose}>{close => (<>
       <Text style={menuStyles.sheetTitle} numberOfLines={1}>{workoutName}</Text>
       <View style={menuStyles.sheetDivider} />
+      {/* First option, same as every other workout ⋯ menu — opens the builder in edit mode. */}
+      <TouchableOpacity style={menuStyles.option} onPress={() => close(onEdit)} activeOpacity={0.7}>
+        <SymbolView name="square.and.pencil" size={16} tintColor="#1a1a1a" />
+        <Text style={menuStyles.optionText}>Edit workout</Text>
+      </TouchableOpacity>
+      <View style={menuStyles.optionDivider} />
       <TouchableOpacity style={menuStyles.option} onPress={() => close(onViewExercises)} activeOpacity={0.7}>
         <SymbolView name="list.bullet" size={16} tintColor="#1a1a1a" />
         <Text style={menuStyles.optionText}>View exercises</Text>
