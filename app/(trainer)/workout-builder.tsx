@@ -29,6 +29,8 @@ import { BottomSheet } from '@/components/BottomSheet';
 import { SessionResumeChip } from '@/components/SessionResumeChip';
 import GlassPanel from '@/components/GlassPanel';
 import { CATEGORY_OPTIONS, CATEGORY_COLORS, STRETCHING_CATEGORIES, STRETCHING_CATEGORY_TO_STRETCH_TYPE } from '@/lib/workoutCategories';
+import { setKey, compareSets, buildSetLabels } from '@/lib/warmupSets';
+import en from '@/i18n/en';
 import type { WorkoutCategory } from '@/lib/workoutCategories';
 import type { Exercise, Routine } from '@/types/database';
 
@@ -49,6 +51,10 @@ type BuilderSet = {
   target_reps: string;
   target_weight_kg: string;
   rest_seconds: string;
+  // Warm-ups always sit at the top of the list and render "W"; `set_number` is
+  // counted within its own block, so the working sets still read 1 · 2 · 3.
+  // See lib/warmupSets.ts.
+  is_warmup: boolean;
 };
 
 type BuilderExercise = {
@@ -71,14 +77,44 @@ type SaveIntent =
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function makeSet(setNumber: number, weight?: number): BuilderSet {
+function makeSet(setNumber: number, weight?: number, isWarmup = false): BuilderSet {
   return {
     key: uid(),
     set_number: setNumber,
     target_reps: '10',
     target_weight_kg: weight != null ? String(weight) : '',
     rest_seconds: '60',
+    is_warmup: isWarmup,
   };
+}
+
+// Warm-ups float to the top, keeping their relative order. Call this after ANY
+// add / remove / warm-up toggle — it is what guarantees the list can never read
+// W · 1 · W · 2.
+//
+// ⚠️ It does NOT renumber 1..n. A set that already has a number KEEPS it, so
+// deleting a set leaves a gap (1, 2, 4) rather than pulling its neighbours down.
+// That matters because session_logs records a set by its number: renumbering
+// hands a surviving set its deleted neighbour's weight history, which is exactly
+// what Vitek hit on device July 27 2026. Only sets with `set_number: 0` (freshly
+// added, or just moved into the other block) get one, and they take max + 1 so
+// they can't collide with a gap-mate. `buildSetLabels` closes the gap on screen.
+function renumberSets(sets: BuilderSet[]): BuilderSet[] {
+  const assign = (block: BuilderSet[]): BuilderSet[] => {
+    const taken = new Set(block.filter(s => s.set_number > 0).map(s => s.set_number));
+    let next = block.reduce((max, s) => Math.max(max, s.set_number), 0);
+    return block.map(s => {
+      if (s.set_number > 0) return s;
+      next += 1;
+      while (taken.has(next)) next += 1;
+      taken.add(next);
+      return { ...s, set_number: next };
+    });
+  };
+  return [
+    ...assign(sets.filter(s => s.is_warmup)),
+    ...assign(sets.filter(s => !s.is_warmup)),
+  ];
 }
 
 function repSummary(sets: BuilderSet[]): string {
@@ -180,7 +216,9 @@ async function fetchLastWeight(clientId: string, exerciseId: string): Promise<nu
 }
 
 // For each exercise, find the client's most-recent completed-session performance
-// and return a map of set_number → { weight, reps } (as strings, '' when blank).
+// and return a map of setKey() → { weight, reps } (as strings, '' when blank).
+// Keyed by setKey, not the raw set_number, so a warm-up 1 can't pre-fill the
+// working set 1 — see lib/warmupSets.ts.
 // Used to pre-fill the builder when opening a workout to schedule — the trainer
 // sees what the client actually last did, not stale planned targets.
 async function fetchLastPerformedMap(
@@ -211,7 +249,7 @@ async function fetchLastPerformedMap(
 
   const { data: logs } = await supabase
     .from('session_logs')
-    .select('workout_exercise_id, session_id, set_number, weight_kg, reps_completed')
+    .select('workout_exercise_id, session_id, set_number, is_warmup, weight_kg, reps_completed')
     .in('workout_exercise_id', weIds)
     .in('session_id', sessionIds)
     .eq('is_removed', false)
@@ -233,8 +271,9 @@ async function fetchLastPerformedMap(
     if (!exId || bestSession.get(exId) !== l.session_id) return;
     let m = result.get(exId);
     if (!m) { m = new Map(); result.set(exId, m); }
-    if (!m.has(l.set_number)) {
-      m.set(l.set_number, {
+    const k = setKey(l.set_number, l.is_warmup);
+    if (!m.has(k)) {
+      m.set(k, {
         weight: l.weight_kg != null ? String(l.weight_kg) : '',
         reps: l.reps_completed != null ? String(l.reps_completed) : '',
       });
@@ -323,6 +362,7 @@ async function ensureClientStretchWorkout(
     target_reps: s.target_reps,
     target_weight_kg: s.target_weight_kg,
     rest_seconds: s.rest_seconds,
+    is_warmup: !!s.is_warmup,
   })).filter(s => s.workout_exercise_id != null);
   if (wsInserts.length > 0) await supabase.from('workout_sets').insert(wsInserts);
 }
@@ -448,16 +488,17 @@ export default function WorkoutBuilderScreen() {
         const ex = exMap.get(te.exercise_id);
         if (!ex) continue;
         const perfForEx = lastPerf.get(te.exercise_id);
-        const setRows = (tsByTe.get(te.id) ?? []).sort((a, b) => a.set_number - b.set_number);
+        const setRows = (tsByTe.get(te.id) ?? []).sort(compareSets);
         const sets: BuilderSet[] = setRows.length > 0
           ? setRows.map(s => {
-              const perf = perfForEx?.get(s.set_number);
+              const perf = perfForEx?.get(setKey(s.set_number, s.is_warmup));
               return {
                 key: uid(),
                 set_number: s.set_number,
                 target_reps: perf ? perf.reps : (s.target_reps != null ? String(s.target_reps) : ''),
                 target_weight_kg: perf ? perf.weight : (s.target_weight_kg != null ? String(s.target_weight_kg) : ''),
                 rest_seconds: s.rest_seconds != null ? String(s.rest_seconds) : '',
+                is_warmup: !!s.is_warmup,
               };
             })
           : [makeSet(1), makeSet(2), makeSet(3)];
@@ -508,16 +549,17 @@ export default function WorkoutBuilderScreen() {
         const ex = exMap.get(we.exercise_id);
         if (!ex) continue;
         const perfForEx = lastPerf.get(we.exercise_id);
-        const setRows = (wsByWe.get(we.id) ?? []).sort((a, b) => a.set_number - b.set_number);
+        const setRows = (wsByWe.get(we.id) ?? []).sort(compareSets);
         const baseRows: any[] = setRows.length > 0 ? setRows : [{ set_number: 1 }, { set_number: 2 }, { set_number: 3 }];
         const sets: BuilderSet[] = baseRows.map((s: any) => {
-          const perf = scheduleDate ? perfForEx?.get(s.set_number) : undefined;
+          const perf = scheduleDate ? perfForEx?.get(setKey(s.set_number, s.is_warmup)) : undefined;
           return {
             key: uid(),
             set_number: s.set_number,
             target_reps: scheduleDate ? (perf ? perf.reps : '') : (s.target_reps != null ? String(s.target_reps) : ''),
             target_weight_kg: scheduleDate ? (perf ? perf.weight : '') : (s.target_weight_kg != null ? String(s.target_weight_kg) : ''),
             rest_seconds: s.rest_seconds != null ? String(s.rest_seconds) : '60',
+            is_warmup: !!s.is_warmup,
           };
         });
         loaded.push({ key: uid(), exercise: ex, sets, is_superset: !!we.is_superset, expanded: false, originalWeId: we.id });
@@ -788,6 +830,7 @@ export default function WorkoutBuilderScreen() {
             target_reps: parseInt(s.target_reps) || null,
             target_weight_kg: parseFloat(s.target_weight_kg) || null,
             rest_seconds: parseInt(s.rest_seconds) || null,
+            is_warmup: s.is_warmup,
           }))
         );
         if (tmplSets.length > 0) {
@@ -898,7 +941,7 @@ export default function WorkoutBuilderScreen() {
         // Replace all workout_sets (safe — session_logs are not FK'd to workout_sets)
         if (finalIds.size > 0) await supabase.from('workout_sets').delete().in('workout_exercise_id', [...finalIds]);
         const allSets = items.flatMap((item, i) =>
-          item.sets.map(s => ({ workout_exercise_id: finalWeId[i], set_number: s.set_number, target_reps: parseInt(s.target_reps) || null, target_weight_kg: parseFloat(s.target_weight_kg) || null, rest_seconds: parseInt(s.rest_seconds) || null }))
+          item.sets.map(s => ({ workout_exercise_id: finalWeId[i], set_number: s.set_number, target_reps: parseInt(s.target_reps) || null, target_weight_kg: parseFloat(s.target_weight_kg) || null, rest_seconds: parseInt(s.rest_seconds) || null, is_warmup: s.is_warmup }))
         );
         if (allSets.length > 0) {
           const { error: setsErr } = await supabase.from('workout_sets').insert(allSets);
@@ -923,7 +966,7 @@ export default function WorkoutBuilderScreen() {
         if (weErr || !weRows) throw weErr ?? new Error('WorkoutExercise insert failed');
 
         const allSets = items.flatMap((item, i) =>
-          item.sets.map(s => ({ workout_exercise_id: (weRows as any[])[i].id, set_number: s.set_number, target_reps: parseInt(s.target_reps) || null, target_weight_kg: parseFloat(s.target_weight_kg) || null, rest_seconds: parseInt(s.rest_seconds) || null }))
+          item.sets.map(s => ({ workout_exercise_id: (weRows as any[])[i].id, set_number: s.set_number, target_reps: parseInt(s.target_reps) || null, target_weight_kg: parseFloat(s.target_weight_kg) || null, rest_seconds: parseInt(s.rest_seconds) || null, is_warmup: s.is_warmup }))
         );
         if (allSets.length > 0) {
           const { error: setsErr } = await supabase.from('workout_sets').insert(allSets);
@@ -1304,19 +1347,37 @@ function ExerciseRow({
   const firstMuscle = item.exercise.muscle_groups[0] ?? null;
 
   const addSet = () => {
-    const last = item.sets[item.sets.length - 1];
-    const next = makeSet(item.sets.length + 1);
+    const last = [...item.sets].reverse().find(s => !s.is_warmup) ?? item.sets[item.sets.length - 1];
+    const next = makeSet(0);
     if (last) { next.target_reps = last.target_reps; next.target_weight_kg = last.target_weight_kg; next.rest_seconds = last.rest_seconds; }
-    onUpdate({ sets: [...item.sets, next] });
+    onUpdate({ sets: renumberSets([...item.sets, next]) });
+  };
+
+  // Appended to the END of the warm-up block, so an existing warm-up keeps its
+  // place and the working sets are never renumbered.
+  const addWarmup = () => {
+    const firstWarm = item.sets.find(s => s.is_warmup);
+    const next = makeSet(0, undefined, true);
+    if (firstWarm) { next.target_reps = firstWarm.target_reps; next.rest_seconds = firstWarm.rest_seconds; }
+    let insertAt = 0;
+    item.sets.forEach((s, i) => { if (s.is_warmup) insertAt = i + 1; });
+    const updated = [...item.sets];
+    updated.splice(insertAt, 0, next);
+    onUpdate({ sets: renumberSets(updated) });
   };
 
   const updateSet = (setKey: string, patch: Partial<BuilderSet>) =>
     onUpdate({ sets: item.sets.map(s => s.key === setKey ? { ...s, ...patch } : s) });
 
+  // Tapping the set number flips it between a number and W. The set then moves
+  // into its block — turning W on sends it to the end of the warm-ups, turning
+  // it off sends it to the front of the working sets.
+  const toggleWarmup = (setKey: string) =>
+    onUpdate({ sets: renumberSets(item.sets.map(s => s.key === setKey ? { ...s, is_warmup: !s.is_warmup, set_number: 0 } : s)) });
+
   const removeSet = (setKey: string) => {
     if (item.sets.length <= 1) return;
-    const updated = item.sets.filter(s => s.key !== setKey).map((s, i) => ({ ...s, set_number: i + 1 }));
-    onUpdate({ sets: updated });
+    onUpdate({ sets: renumberSets(item.sets.filter(s => s.key !== setKey)) });
   };
 
   return (
@@ -1393,23 +1454,36 @@ function ExerciseRow({
           </View>
 
           {/* Set rows */}
-          {item.sets.map(s => (
+          {buildSetLabels(item.sets.map(s => ({ isWarmup: s.is_warmup }))).map((label, i) => {
+            const s = item.sets[i];
+            return (
             <SetRow
               key={s.key}
               set={s}
+              displayLabel={label}
               onUpdate={patch => updateSet(s.key, patch)}
               onRemove={() => removeSet(s.key)}
+              onToggleWarmup={() => toggleWarmup(s.key)}
               canRemove={item.sets.length > 1}
             />
-          ))}
+            );
+          })}
 
           <View style={styles.exCardDivider} />
 
-          {/* Add Set */}
-          <TouchableOpacity style={styles.addSetBtn} onPress={addSet} activeOpacity={0.7}>
-            <SymbolView name="plus" size={13} tintColor={ACCENT} />
-            <Text style={styles.addSetBtnText}>Add Set</Text>
-          </TouchableOpacity>
+          {/* Add Set · Add Warm-up. Adding a warm-up leaves the working sets'
+              numbers alone; converting an existing set with the W toggle
+              re-labels the ones below it. */}
+          <View style={styles.addSetRow}>
+            <TouchableOpacity style={[styles.addSetBtn, { flex: 1 }]} onPress={addSet} activeOpacity={0.7}>
+              <SymbolView name="plus" size={13} tintColor={ACCENT} />
+              <Text style={styles.addSetBtnText}>{en.doMode.addSet}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={[styles.addSetBtn, { flex: 1 }]} onPress={addWarmup} activeOpacity={0.7}>
+              <SymbolView name="flame" size={13} tintColor={ACCENT} />
+              <Text style={styles.addSetBtnText}>{en.doMode.addWarmupSet}</Text>
+            </TouchableOpacity>
+          </View>
         </>
       )}
       </View>
@@ -1486,10 +1560,15 @@ function VideoModal({ url, onClose }: { url: string; onClose: () => void }) {
 
 // ─── SetRow ───────────────────────────────────────────────────────────────────
 
-function SetRow({ set, onUpdate, onRemove, canRemove }: { set: BuilderSet; onUpdate: (patch: Partial<BuilderSet>) => void; onRemove: () => void; canRemove: boolean }) {
+function SetRow({ set, displayLabel, onUpdate, onRemove, onToggleWarmup, canRemove }: { set: BuilderSet; displayLabel: string; onUpdate: (patch: Partial<BuilderSet>) => void; onRemove: () => void; onToggleWarmup: () => void; canRemove: boolean }) {
   return (
     <View style={styles.setRow}>
-      <Text style={styles.setNumLabel}>{set.set_number}</Text>
+      {/* Tap the number to make it a warm-up (and back). */}
+      <TouchableOpacity onPress={onToggleWarmup} hitSlop={{ top: 8, bottom: 8, left: 8, right: 6 }} activeOpacity={0.6}>
+        <Text style={[styles.setNumLabel, set.is_warmup && styles.setNumLabelWarmup]}>
+          {displayLabel}
+        </Text>
+      </TouchableOpacity>
       <TextInput style={[styles.setInput, styles.repsCol]} value={set.target_reps} onChangeText={v => onUpdate({ target_reps: v })} keyboardType="number-pad" selectTextOnFocus placeholder="—" placeholderTextColor="#ccc" returnKeyType="done" />
       <TextInput style={[styles.setInput, styles.kgCol]} value={set.target_weight_kg} onChangeText={v => onUpdate({ target_weight_kg: v })} keyboardType="decimal-pad" selectTextOnFocus placeholder="—" placeholderTextColor="#ccc" returnKeyType="done" />
       <TextInput style={[styles.setInput, styles.restCol]} value={set.rest_seconds} onChangeText={v => onUpdate({ rest_seconds: v })} keyboardType="number-pad" selectTextOnFocus placeholder="—" placeholderTextColor="#ccc" returnKeyType="done" />
@@ -1901,8 +1980,10 @@ const styles = StyleSheet.create({
   removeCol: { width: 28, alignItems: 'center', justifyContent: 'center' },
   setRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 5, gap: 6 },
   setNumLabel: { width: 24, fontSize: 13, fontWeight: '600', color: MUTED, textAlign: 'center' },
+  setNumLabelWarmup: { color: ACCENT, fontWeight: '800' },
   setInput: { backgroundColor: '#f5f5f3', borderRadius: 7, paddingVertical: 7, paddingHorizontal: 4, fontSize: 16, fontWeight: '700', color: TEXT, textAlign: 'center' },
 
+  addSetRow: { flexDirection: 'row' },
   addSetBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 10 },
   addSetBtnText: { fontSize: 13, fontWeight: '700', color: ACCENT },
 

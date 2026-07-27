@@ -127,6 +127,7 @@ async function copyWorkoutToRoutine(
       target_reps: s.target_reps ?? null,
       target_weight_kg: s.target_weight_kg ?? null,
       rest_seconds: s.rest_seconds ?? null,
+      is_warmup: !!s.is_warmup,
       is_added_during_session: false,
     }))
     .filter(s => s.workout_exercise_id);

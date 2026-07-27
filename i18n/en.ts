@@ -534,6 +534,13 @@ const en = {
     seeHistory: 'See history →',
     startTimer: 'Start timer',
     addPhoto: 'Add photo',
+    addSet: 'Add Set',
+    addWarmupSet: 'Add Warm-up Set',
+    addDropset: 'Add Dropset',
+    // The set-number column for a warm-up. Kept short on purpose — the column is
+    // ~24pt wide and sits beside the kg/reps values.
+    warmupLabel: 'W',
+    warmupSetLabel: (n: number) => `Warm-up ${n}`,
   },
 
   // Trainer — Exercise Detail Screen

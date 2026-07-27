@@ -19,6 +19,8 @@ export interface BridgedSet {
   repsCompleted: string;
   weightKg: string;
   isRemoved: boolean;
+  // Warm-up sets sit at the top of the list and render "W" — see lib/warmupSets.ts.
+  isWarmup: boolean;
   isDropset: boolean;
   dropsetParentLocalId: string | null;
   trainerNotes: BridgedNoteEntry[];

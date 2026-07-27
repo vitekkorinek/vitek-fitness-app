@@ -13,7 +13,7 @@ const TEXT = '#1a1a1a';
 const HEADER = '#244e43';
 const MUTED = '#999';
 
-type SetRow = { setNumber: number; targetReps: number | null; targetWeightKg: number | null };
+type SetRow = { setNumber: number; targetReps: number | null; targetWeightKg: number | null; isWarmup: boolean };
 type ExerciseEntry = {
   id: string;
   name: string;
@@ -21,8 +21,15 @@ type ExerciseEntry = {
   sets: SetRow[];
 };
 
-function formatSets(sets: SetRow[]): string {
-  if (sets.length === 0) return '';
+// Warm-ups are counted separately — folding them into "4 × 10 reps" would
+// overstate the working sets, which is what this line is describing.
+function formatSets(all: SetRow[]): string {
+  if (all.length === 0) return '';
+  const warmCount = all.filter(s => s.isWarmup).length;
+  const sets = all.filter(s => !s.isWarmup);
+  const warmPrefix = warmCount === 0 ? '' : `${warmCount} × W · `;
+  if (sets.length === 0) return warmPrefix.replace(/ · $/, '');
+
   const count = sets.length;
   const firstReps = sets[0].targetReps;
   const firstWeight = sets[0].targetWeightKg;
@@ -33,10 +40,10 @@ function formatSets(sets: SetRow[]): string {
     const parts: string[] = [];
     parts.push(`${count} × ${firstReps ?? '—'} reps`);
     if (firstWeight) parts.push(`${firstWeight} kg`);
-    return parts.join(' · ');
+    return warmPrefix + parts.join(' · ');
   }
 
-  return sets.map(s => {
+  return warmPrefix + sets.map(s => {
     const parts: string[] = [`${s.targetReps ?? '—'} reps`];
     if (s.targetWeightKg) parts.push(`${s.targetWeightKg} kg`);
     return parts.join(' · ');
@@ -70,15 +77,17 @@ export function WorkoutExercisesModal({
         const { data: wsData } = weIds.length
           ? await supabase
               .from('workout_sets')
-              .select('workout_exercise_id, set_number, target_reps, target_weight_kg')
+              .select('workout_exercise_id, set_number, is_warmup, target_reps, target_weight_kg')
               .in('workout_exercise_id', weIds)
+              // Warm-ups first, then the working sets — see lib/warmupSets.ts.
+              .order('is_warmup', { ascending: false })
               .order('set_number')
           : { data: [] };
 
         const setsMap = new Map<string, SetRow[]>();
         ((wsData ?? []) as any[]).forEach(ws => {
           const arr = setsMap.get(ws.workout_exercise_id) ?? [];
-          arr.push({ setNumber: ws.set_number, targetReps: ws.target_reps, targetWeightKg: ws.target_weight_kg });
+          arr.push({ setNumber: ws.set_number, targetReps: ws.target_reps, targetWeightKg: ws.target_weight_kg, isWarmup: !!ws.is_warmup });
           setsMap.set(ws.workout_exercise_id, arr);
         });
 

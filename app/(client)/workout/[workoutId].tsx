@@ -123,6 +123,7 @@ import Swipeable from 'react-native-gesture-handler/Swipeable';
 import { useAuth } from '@/context/AuthContext';
 import type { Workout } from '@/types/database';
 import en from '@/i18n/en';
+import { setKey, setLabel, buildSetLabels, nextSetNumber } from '@/lib/warmupSets';
 import MuscleThumb from '@/components/MuscleThumb';
 import CategoryCover, { categoryHasCover } from '@/components/CategoryCover';
 import { exerciseBodyCfg } from '@/lib/muscleSilhouette';
@@ -178,6 +179,10 @@ type SessionSet = {
   repsCompleted: string;
   weightKg: string;
   isRemoved: boolean;
+  // Warm-up sets sit at the top of the list and show "W" instead of a number,
+  // so the working sets still read 1 · 2 · 3. `setNumber` is counted within its
+  // own block — see lib/warmupSets.ts.
+  isWarmup: boolean;
   isDropset: boolean;
   dropsetParentLocalId: string | null;
   trainerNotes: NoteEntry[];
@@ -233,6 +238,7 @@ type PastSet = {
   setNumber: number;
   repsCompleted: number | null;
   weightKg: number | null;
+  isWarmup: boolean;
   isDropset: boolean;
 };
 
@@ -311,8 +317,8 @@ function todayLabel(): string {
   return new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
 }
 
-function makeEmptySet(n: number): SessionSet {
-  return { localId: uid(), workoutSetId: null, setNumber: n, targetReps: null, targetWeightKg: null, firstSessionWeightKg: null, firstSessionReps: null, repsCompleted: '', weightKg: '', isRemoved: false, isDropset: false, dropsetParentLocalId: null, trainerNotes: [], clientNotes: [], isAddedDuringSession: true, isDone: false, prefillTrendWeight: null, prefillTrendReps: null };
+function makeEmptySet(n: number, isWarmup = false): SessionSet {
+  return { localId: uid(), workoutSetId: null, setNumber: n, targetReps: null, targetWeightKg: null, firstSessionWeightKg: null, firstSessionReps: null, repsCompleted: '', weightKg: '', isRemoved: false, isWarmup, isDropset: false, dropsetParentLocalId: null, trainerNotes: [], clientNotes: [], isAddedDuringSession: true, isDone: false, prefillTrendWeight: null, prefillTrendReps: null };
 }
 
 function calcTotal(weightKg: number | null, equipment: string | null, barWeightKg: number): string {
@@ -329,6 +335,12 @@ function calcTotal(weightKg: number | null, equipment: string | null, barWeightK
 // One chip per real set, ALWAYS — nothing logged reads "0 kg / 0×" so every card keeps
 // the same rhythm. First 3 sets, then a "…" if more.
 // `hasNote` marks a set carrying a (non-deleted) set note → green dot on the chip.
+// Warm-ups are NOT filtered out — the chips are there to say "grab this weight
+// first", and the first thing you actually do is the warm-up. They carry NO W
+// marker: it was tried July 27 2026 and rejected on device — at 8px in the
+// chip's corner it collided with the kg value and read as "W140 kg" (Vitek:
+// "bit unclear the w1 etc in the chips"). The expanded card's set rows are
+// where W1/W2/W3 is legible.
 type SetChip = { key: string; top: string; bottom: string; hasNote: boolean };
 function buildSetChips(sets: SessionSet[]): SetChip[] {
   const rows = sets.filter(s => !s.isRemoved && !s.isDropset);
@@ -1072,6 +1084,7 @@ export default function TrainerWorkoutSessionScreen() {
             repsCompleted: s.repsCompleted,
             weightKg: s.weightKg,
             isRemoved: s.isRemoved,
+            isWarmup: s.isWarmup,
             isDropset: s.isDropset,
             dropsetParentLocalId: s.dropsetParentLocalId,
             trainerNotes: s.trainerNotes,
@@ -1244,7 +1257,8 @@ export default function TrainerWorkoutSessionScreen() {
       }
     }
 
-    const { data: setsData } = await supabase.from('workout_sets').select('*').in('workout_exercise_id', weIds.length ? weIds : ['none']).order('set_number');
+    // Warm-ups first, then the working sets — see lib/warmupSets.ts.
+    const { data: setsData } = await supabase.from('workout_sets').select('*').in('workout_exercise_id', weIds.length ? weIds : ['none']).order('is_warmup', { ascending: false }).order('set_number');
 
     const setsMap = new Map<string, any[]>();
     (setsData ?? []).forEach((s: any) => {
@@ -1287,7 +1301,10 @@ export default function TrainerWorkoutSessionScreen() {
       }
     }
 
-    // Build pre-fill maps: workout_exercise_id → set_number → value
+    // Build pre-fill maps: workout_exercise_id → setKey() → value
+    // ⚠️ Keyed by setKey(), never the raw set_number — warm-ups and working sets
+    // share the number space (warm-up 1 AND working set 1), so a raw key would
+    // pre-fill working set 1 with the warm-up's weight. See lib/warmupSets.ts.
     // Build first-session peek data: for each exercise+set, find data from the oldest session
     // where that exercise was logged. Covers exercises added in any session.
     const firstWeightMap = new Map<string, Map<number, number>>();
@@ -1300,7 +1317,7 @@ export default function TrainerWorkoutSessionScreen() {
     const allSessIds: string[] = (allSessAscData as any[] ?? []).map((s: any) => s.id);
     if (allSessIds.length > 0) {
       const { data: firstSessLogs } = await supabase.from('session_logs')
-        .select('session_id, workout_exercise_id, set_number, weight_kg, reps_completed, barbell_weight_used_kg, machine_brand')
+        .select('session_id, workout_exercise_id, set_number, is_warmup, weight_kg, reps_completed, barbell_weight_used_kg, machine_brand')
         .in('session_id', allSessIds);
       // allSessIds is ordered oldest-first; assign rank so oldest = 0
       const firstSessRank = new Map(allSessIds.map((id, idx) => [id, idx]));
@@ -1311,7 +1328,7 @@ export default function TrainerWorkoutSessionScreen() {
       (firstSessLogs ?? []).forEach((log: any) => {
         const rank = firstSessRank.get(log.session_id) ?? Infinity;
         const weId: string = log.workout_exercise_id;
-        const setNum: number = log.set_number;
+        const setNum: number = setKey(log.set_number, log.is_warmup);
         if (!firstWeightMap.has(weId)) {
           firstWeightMap.set(weId, new Map());
           firstRepsMap.set(weId, new Map());
@@ -1357,7 +1374,7 @@ export default function TrainerWorkoutSessionScreen() {
         const n2WMap = new Map<string, number>();
         const n2RMap = new Map<string, number>();
         (firstSessLogs ?? []).forEach((log: any) => {
-          const key = `${log.workout_exercise_id}:${log.set_number}`;
+          const key = `${log.workout_exercise_id}:${setKey(log.set_number, log.is_warmup)}`;
           if (log.session_id === sessN1Id) {
             if (log.weight_kg != null) n1WMap.set(key, log.weight_kg);
             if (log.reps_completed != null) n1RMap.set(key, log.reps_completed);
@@ -1389,7 +1406,7 @@ export default function TrainerWorkoutSessionScreen() {
 
     // Cross-workout pre-fill: find the most recent weight/reps for each exercise across ALL
     // completed sessions for this client (not limited to this workout).
-    // Key: `${exerciseId}:${machineBrand ?? ''}` → setNum → value
+    // Key: `${exerciseId}:${machineBrand ?? ''}` → setKey() → value
     // Brand '' means no brand (non-machine or legacy sessions without machine_brand)
     const crossWorkoutWeightMap = new Map<string, Map<number, number>>();
     const crossWorkoutRepsMap   = new Map<string, Map<number, number>>();
@@ -1408,7 +1425,7 @@ export default function TrainerWorkoutSessionScreen() {
       if (allWeIdsForExercises.length > 0 && clientSessIds.length > 0) {
         const { data: crossLogs } = await supabase
           .from('session_logs')
-          .select('workout_exercise_id, set_number, weight_kg, reps_completed, session_id, machine_brand')
+          .select('workout_exercise_id, set_number, is_warmup, weight_kg, reps_completed, session_id, machine_brand')
           .in('workout_exercise_id', allWeIdsForExercises)
           .in('session_id', clientSessIds);
 
@@ -1421,7 +1438,7 @@ export default function TrainerWorkoutSessionScreen() {
           const exId = weIdToExId.get(log.workout_exercise_id);
           if (!exId) return;
           const rank     = sessRankMap.get(log.session_id) ?? Infinity;
-          const setNum: number = log.set_number;
+          const setNum: number = setKey(log.set_number, log.is_warmup);
           const brandKey = `${exId}:${log.machine_brand ?? ''}`;
 
           if (!crossWorkoutWeightMap.has(brandKey)) {
@@ -1564,18 +1581,19 @@ export default function TrainerWorkoutSessionScreen() {
         sets: targetSets.length
           ? targetSets.map(s => {
               const setNotes = setNotesBySetId.get(s.id) ?? { trainer: [], client: [] };
+              const k = setKey(s.set_number, s.is_warmup);
               return {
                 localId: uid(), workoutSetId: s.id, setNumber: s.set_number,
                 targetReps: s.target_reps, targetWeightKg: s.target_weight_kg,
-                firstSessionWeightKg: firstWeightMap.get(we.id)?.get(s.set_number) ?? null,
-                firstSessionReps: firstRepsMap.get(we.id)?.get(s.set_number) ?? null,
-                repsCompleted: rMap?.get(s.set_number) != null ? String(rMap!.get(s.set_number)!) : '',
-                weightKg:      wMap?.get(s.set_number) != null ? String(wMap!.get(s.set_number)!) : '',
-                isRemoved: false, isDropset: false, dropsetParentLocalId: null,
+                firstSessionWeightKg: firstWeightMap.get(we.id)?.get(k) ?? null,
+                firstSessionReps: firstRepsMap.get(we.id)?.get(k) ?? null,
+                repsCompleted: rMap?.get(k) != null ? String(rMap!.get(k)!) : '',
+                weightKg:      wMap?.get(k) != null ? String(wMap!.get(k)!) : '',
+                isRemoved: false, isWarmup: !!s.is_warmup, isDropset: false, dropsetParentLocalId: null,
                 trainerNotes: setNotes.trainer, clientNotes: setNotes.client,
                 isAddedDuringSession: s.is_added_during_session ?? false, isDone: false,
-                prefillTrendWeight: trendWeightMap.get(we.id)?.get(s.set_number) ?? null,
-                prefillTrendReps: trendRepsMap.get(we.id)?.get(s.set_number) ?? null,
+                prefillTrendWeight: trendWeightMap.get(we.id)?.get(k) ?? null,
+                prefillTrendReps: trendRepsMap.get(we.id)?.get(k) ?? null,
               };
             })
           : [makeEmptySet(1)],
@@ -1879,8 +1897,9 @@ export default function TrainerWorkoutSessionScreen() {
     console.log(`[loadPastSession] Loading sessionId=${sessionId}`);
     const [{ data: logs, error: logsErr }, { data: weData, error: weErr }] = await Promise.all([
       supabase.from('session_logs')
-        .select('workout_exercise_id, set_number, reps_completed, weight_kg, is_dropset')
+        .select('workout_exercise_id, set_number, is_warmup, reps_completed, weight_kg, is_dropset')
         .eq('session_id', sessionId)
+        .order('is_warmup', { ascending: false })
         .order('set_number'),
       supabase.from('workout_exercises')
         .select('id, order_index, exercises!inner(id, name, muscle_groups, secondary_muscle_groups, equipment, thumbnail_url, video_url)')
@@ -1921,6 +1940,7 @@ export default function TrainerWorkoutSessionScreen() {
             setNumber: l.set_number,
             repsCompleted: l.reps_completed,
             weightKg: l.weight_kg,
+            isWarmup: l.is_warmup ?? false,
             isDropset: l.is_dropset ?? false,
           })),
         };
@@ -1986,6 +2006,7 @@ export default function TrainerWorkoutSessionScreen() {
             repsCompleted: s.repsCompleted,
             weightKg: s.weightKg,
             isRemoved: s.isRemoved,
+            isWarmup: s.isWarmup,
             isDropset: s.isDropset,
             dropsetParentLocalId: s.dropsetParentLocalId,
             trainerNotes: s.trainerNotes,
@@ -2242,8 +2263,22 @@ export default function TrainerWorkoutSessionScreen() {
     handleEditBeforeStart();
     setExercises(prev => prev.map((ex, i) => {
       if (i !== exIdx) return ex;
-      const n = ex.sets.filter(s => !s.isDropset).length + 1;
-      return { ...ex, sets: [...ex.sets, makeEmptySet(n)] };
+      return { ...ex, sets: [...ex.sets, makeEmptySet(nextSetNumber(ex.sets, false))] };
+    }));
+  };
+
+  // A warm-up lands at the BOTTOM of the warm-up block — the first one goes to
+  // the very top of the card, a second one slots under it as warm-up 2. Working
+  // sets keep their own numbering, so adding one never renumbers them.
+  const addWarmupSet = (exIdx: number) => {
+    handleEditBeforeStart();
+    setExercises(prev => prev.map((ex, i) => {
+      if (i !== exIdx) return ex;
+      let insertAt = 0;
+      ex.sets.forEach((s, i2) => { if (s.isWarmup) insertAt = i2 + 1; });
+      const newSets = [...ex.sets];
+      newSets.splice(insertAt, 0, makeEmptySet(nextSetNumber(ex.sets, true), true));
+      return { ...ex, sets: newSets };
     }));
   };
 
@@ -2253,7 +2288,7 @@ export default function TrainerWorkoutSessionScreen() {
       if (i !== exIdx) return ex;
       const lastRegular = [...ex.sets].reverse().find(s => !s.isDropset && !s.isRemoved);
       const parentId = lastRegular?.localId ?? null;
-      const dropset: SessionSet = { localId: uid(), workoutSetId: null, setNumber: lastRegular?.setNumber ?? 1, targetReps: null, targetWeightKg: null, firstSessionWeightKg: null, firstSessionReps: null, repsCompleted: '', weightKg: '', isRemoved: false, isDropset: true, dropsetParentLocalId: parentId, trainerNotes: [], clientNotes: [], isAddedDuringSession: true, isDone: false, prefillTrendWeight: null, prefillTrendReps: null };
+      const dropset: SessionSet = { localId: uid(), workoutSetId: null, setNumber: lastRegular?.setNumber ?? 1, targetReps: null, targetWeightKg: null, firstSessionWeightKg: null, firstSessionReps: null, repsCompleted: '', weightKg: '', isRemoved: false, isWarmup: false, isDropset: true, dropsetParentLocalId: parentId, trainerNotes: [], clientNotes: [], isAddedDuringSession: true, isDone: false, prefillTrendWeight: null, prefillTrendReps: null };
       let idx = -1;
       ex.sets.forEach((s, i2) => { if (s.localId === parentId || (s.isDropset && s.dropsetParentLocalId === parentId)) idx = i2; });
       const newSets = [...ex.sets];
@@ -3110,6 +3145,7 @@ export default function TrainerWorkoutSessionScreen() {
               target_reps: s.targetReps ?? null,
               target_weight_kg: s.weightKg ? parseFloat(s.weightKg) : null,
               rest_seconds: null,
+              is_warmup: s.isWarmup,
               is_added_during_session: true,
             }));
           console.log(`[saveSession] Inserting ${setsToInsert.length} workout_sets for realId=${realId}`);
@@ -3135,6 +3171,7 @@ export default function TrainerWorkoutSessionScreen() {
             target_reps: s.targetReps ?? null,
             target_weight_kg: s.weightKg ? parseFloat(s.weightKg) : null,
             rest_seconds: null,
+            is_warmup: s.isWarmup,
             is_added_during_session: true,
           }))
         );
@@ -3222,7 +3259,7 @@ export default function TrainerWorkoutSessionScreen() {
         ex.sets.forEach(s => {
           const allSetNotes = [...s.trainerNotes, ...s.clientNotes];
           const notesText = allSetNotes.length ? allSetNotes.map(n => `${n.date} — ${n.text}`).join('\n') : null;
-          logs.push({ session_id: sessionId, workout_exercise_id: weId, set_number: s.setNumber, reps_completed: s.repsCompleted ? parseInt(s.repsCompleted, 10) : null, weight_kg: s.weightKg ? parseFloat(s.weightKg) : null, barbell_weight_used_kg: barbellKgUsed, machine_brand: machineBrandUsed, is_removed: s.isRemoved, is_dropset: s.isDropset, dropset_order: s.isDropset ? ++dropOrder : null, notes: notesText });
+          logs.push({ session_id: sessionId, workout_exercise_id: weId, set_number: s.setNumber, reps_completed: s.repsCompleted ? parseInt(s.repsCompleted, 10) : null, weight_kg: s.weightKg ? parseFloat(s.weightKg) : null, barbell_weight_used_kg: barbellKgUsed, machine_brand: machineBrandUsed, is_removed: s.isRemoved, is_warmup: s.isWarmup, is_dropset: s.isDropset, dropset_order: s.isDropset ? ++dropOrder : null, notes: notesText });
         });
       }
       console.log(`[saveSession] Built ${logs.length} session_log rows`);
@@ -4019,6 +4056,7 @@ export default function TrainerWorkoutSessionScreen() {
                                   onUnmarkDone={() => unmarkDone(exIdx)}
                                   onUpdateSet={(setLocalId, field, value) => updateSet(exIdx, setLocalId, field, value)}
                                   onAddRegularSet={() => addRegularSet(exIdx)}
+                                  onAddWarmupSet={() => addWarmupSet(exIdx)}
                                   onAddDropset={() => addDropset(exIdx)}
                                   onOpenInfo={() => setInfoModalExIdx(exIdx)}
                                   onOpenSetNote={setLocalId => setSetNoteModal({ exIdx, setLocalId })}
@@ -4091,6 +4129,7 @@ export default function TrainerWorkoutSessionScreen() {
                           onUnmarkDone={() => unmarkDone(exIdx)}
                           onUpdateSet={(setLocalId, field, value) => updateSet(exIdx, setLocalId, field, value)}
                           onAddRegularSet={() => addRegularSet(exIdx)}
+                          onAddWarmupSet={() => addWarmupSet(exIdx)}
                           onAddDropset={() => addDropset(exIdx)}
                           onOpenInfo={() => setInfoModalExIdx(exIdx)}
                           onOpenSetNote={setLocalId => setSetNoteModal({ exIdx, setLocalId })}
@@ -4332,7 +4371,7 @@ export default function TrainerWorkoutSessionScreen() {
             onDeleteNote={(role, noteId) => deleteSetNote(setNoteModal.exIdx, setNoteModal.setLocalId, role, noteId)}
             onSeeHistory={ex && set ? () => {
               setSetNoteModal(null);
-              setSetHistoryModal({ weId: ex.workoutExerciseId, highlightSetNum: set.setNumber });
+              setSetHistoryModal({ weId: ex.workoutExerciseId, highlightSetNum: setKey(set.setNumber, set.isWarmup) });
             } : undefined}
             onClose={() => setSetNoteModal(null)}
           />
@@ -4928,6 +4967,7 @@ function ExerciseCard({
   onUnmarkDone,
   onUpdateSet,
   onAddRegularSet,
+  onAddWarmupSet,
   onAddDropset,
   onOpenInfo,
   onOpenSetNote,
@@ -4993,6 +5033,7 @@ function ExerciseCard({
   onUnmarkDone: () => void;
   onUpdateSet: (setLocalId: string, field: 'repsCompleted' | 'weightKg', value: string) => void;
   onAddRegularSet: () => void;
+  onAddWarmupSet: () => void;
   onAddDropset: () => void;
   onOpenInfo: () => void;
   onOpenSetNote: (setLocalId: string) => void;
@@ -5409,7 +5450,11 @@ function ExerciseCard({
             {(() => {
               let dividerInserted = false;
               const hasAnyOriginalSets = exercise.sets.some(s => !s.isAddedDuringSession && !s.isRemoved);
-              return exercise.sets.map(s => {
+              // What the rows are CALLED is their position, not their stored
+              // setNumber — those differ once a set has been deleted. See
+              // buildSetLabels.
+              const setLabels = buildSetLabels(exercise.sets);
+              return exercise.sets.map((s, setIdx) => {
                 const showDivider = !dividerInserted && sessionCount > 0 && s.isAddedDuringSession && !s.isRemoved && hasAnyOriginalSets;
                 if (showDivider) dividerInserted = true;
                 return (
@@ -5417,6 +5462,7 @@ function ExerciseCard({
                     {showDivider && <View style={styles.addedSetsDivider} />}
                     <InlineSetRow
                       set={s}
+                      displayLabel={setLabels[setIdx]}
                       onChangeReps={v => onUpdateSet(s.localId, 'repsCompleted', v)}
                       onChangeWeight={v => onUpdateSet(s.localId, 'weightKg', v)}
                       onNotePress={() => onOpenSetNote(s.localId)}
@@ -5445,12 +5491,18 @@ function ExerciseCard({
                 </TouchableOpacity>
                 <TouchableOpacity style={styles.addSetMenuBtn} onPress={() => { onAddRegularSet(); setAddSetMenuOpen(false); }} activeOpacity={0.7}>
                   <SymbolView name="plus.circle" size={16} tintColor={ACCENT} />
-                  <Text style={styles.addSetMenuText}>Add Set</Text>
+                  <Text style={styles.addSetMenuText}>{en.doMode.addSet}</Text>
+                </TouchableOpacity>
+                <View style={styles.addSetMenuDiv} />
+                {/* Goes to the top of the card as W (or under an existing warm-up). */}
+                <TouchableOpacity style={styles.addSetMenuBtn} onPress={() => { onAddWarmupSet(); setAddSetMenuOpen(false); }} activeOpacity={0.7}>
+                  <SymbolView name="flame" size={16} tintColor={ACCENT} />
+                  <Text style={styles.addSetMenuText}>{en.doMode.addWarmupSet}</Text>
                 </TouchableOpacity>
                 <View style={styles.addSetMenuDiv} />
                 <TouchableOpacity style={styles.addSetMenuBtn} onPress={() => { onAddDropset(); setAddSetMenuOpen(false); }} activeOpacity={0.7}>
                   <SymbolView name="arrow.down.circle" size={16} tintColor={ACCENT} />
-                  <Text style={styles.addSetMenuText}>Add Dropset</Text>
+                  <Text style={styles.addSetMenuText}>{en.doMode.addDropset}</Text>
                 </TouchableOpacity>
               </View>
             ) : (
@@ -5592,6 +5644,7 @@ function MachineBrandModal({
 
 function InlineSetRow({
   set,
+  displayLabel,
   onChangeReps,
   onChangeWeight,
   onNotePress,
@@ -5607,6 +5660,8 @@ function InlineSetRow({
   readOnly,
 }: {
   set: SessionSet;
+  /** What this row is CALLED (`W1`, `2`) — its position, not its stored setNumber. */
+  displayLabel: string;
   onChangeReps: (v: string) => void;
   onChangeWeight: (v: string) => void;
   onNotePress: () => void;
@@ -5675,7 +5730,9 @@ function InlineSetRow({
           ? <Text style={styles.dropsetArrow}>↓</Text>
           : (
             <View>
-              <Text style={[styles.setNum, isPeeking && styles.setNumPeeking]}>{set.setNumber}</Text>
+              <Text style={[styles.setNum, set.isWarmup && styles.setNumWarmup, isPeeking && styles.setNumPeeking]}>
+                {displayLabel}
+              </Text>
               {hasSetNotes && <View style={styles.setNumNoteDot} />}
             </View>
           )
@@ -6524,9 +6581,11 @@ type SetHistorySession = {
   sessionId: string;
   sessionNumber: number;
   date: string;
-  sets: { setNumber: number; weightKg: number | null; repsCompleted: number | null; isDropset: boolean }[];
+  sets: { setNumber: number; weightKg: number | null; repsCompleted: number | null; isWarmup: boolean; isDropset: boolean }[];
 };
 
+// `highlightSetNum` is a setKey(), not a raw set number — warm-ups and working
+// sets share the number space, so a raw number would highlight both.
 function SetHistoryModal({ workoutExerciseId, highlightSetNum, onClose }: {
   workoutExerciseId: string;
   highlightSetNum: number | null;
@@ -6540,8 +6599,9 @@ function SetHistoryModal({ workoutExerciseId, highlightSetNum, onClose }: {
     (async () => {
       const { data } = await supabase
         .from('session_logs')
-        .select('session_id, set_number, weight_kg, reps_completed, is_dropset, sessions!inner(date, status)')
+        .select('session_id, set_number, is_warmup, weight_kg, reps_completed, is_dropset, sessions!inner(date, status)')
         .eq('workout_exercise_id', workoutExerciseId)
+        .order('is_warmup', { ascending: false })
         .order('set_number', { ascending: true });
 
       if (!data) { setLoading(false); return; }
@@ -6557,6 +6617,7 @@ function SetHistoryModal({ workoutExerciseId, highlightSetNum, onClose }: {
           setNumber: row.set_number,
           weightKg: row.weight_kg,
           repsCompleted: row.reps_completed,
+          isWarmup: row.is_warmup ?? false,
           isDropset: row.is_dropset ?? false,
         });
       }
@@ -6599,11 +6660,11 @@ function SetHistoryModal({ workoutExerciseId, highlightSetNum, onClose }: {
                       key={i}
                       style={[
                         setHistStyles.setRow,
-                        !s.isDropset && highlightSetNum === s.setNumber && setHistStyles.setRowHighlight,
+                        !s.isDropset && highlightSetNum === setKey(s.setNumber, s.isWarmup) && setHistStyles.setRowHighlight,
                       ]}
                     >
-                      <Text style={setHistStyles.setNumText}>
-                        {s.isDropset ? '↓' : String(s.setNumber)}
+                      <Text style={[setHistStyles.setNumText, s.isWarmup && setHistStyles.setNumTextWarmup]}>
+                        {s.isDropset ? '↓' : setLabel(s.setNumber, s.isWarmup)}
                       </Text>
                       <Text style={setHistStyles.setDataText}>
                         {s.weightKg != null ? `${s.weightKg} kg` : '—'}
@@ -7607,6 +7668,9 @@ const styles = StyleSheet.create({
   inlineSetRemoved: { opacity: 0.3 },
   setNumCol: { width: 30, alignItems: 'center', justifyContent: 'center' },
   setNum: { fontSize: 15, fontWeight: '700', color: '#999' },
+  // W has to read as a label, not as a number that lost its digit — ACCENT does
+  // that without adding a second grey to the row.
+  setNumWarmup: { color: ACCENT },
   setNumNoteDot: { position: 'absolute', top: 0, right: -8, width: 5, height: 5, borderRadius: 2.5, backgroundColor: ACCENT },
   setNumPeeking: { color: '#b87d00' },
   dropsetArrow: { fontSize: 15, color: ACCENT, fontWeight: '700' },
@@ -7896,5 +7960,6 @@ const setHistStyles = StyleSheet.create({
   setRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 5, paddingHorizontal: 8, borderRadius: 8 },
   setRowHighlight: { backgroundColor: '#e8f7f3' },
   setNumText: { fontSize: 13, fontWeight: '700', color: '#bbb', width: 20, textAlign: 'center' },
+  setNumTextWarmup: { color: ACCENT },
   setDataText: { fontSize: 14, fontWeight: '600', color: TEXT },
 });

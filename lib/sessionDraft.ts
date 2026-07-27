@@ -68,6 +68,7 @@ type AnySet = {
   localId: string;
   workoutSetId: string | null;
   setNumber: number;
+  isWarmup: boolean;
   isDropset: boolean;
   weightKg: string;
   repsCompleted: string;
@@ -123,7 +124,11 @@ function mergeSets(loadedSets: AnySet[], draftSets: AnySet[]): AnySet[] {
     if (!base) return d; // set added during the session
     return {
       ...base,
+      // setNumber and isWarmup must come from the SAME side — they are one label
+      // ("W" vs "2"), so taking the number from the draft and the flag from the
+      // DB row could show a warm-up numbered like a working set.
       setNumber: d.setNumber,
+      isWarmup: d.isWarmup,
       weightKg: d.weightKg,
       repsCompleted: d.repsCompleted,
       isRemoved: d.isRemoved,

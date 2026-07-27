@@ -247,6 +247,7 @@ export default function ClientProfileScreen() {
                 target_reps: ts.target_reps ?? null,
                 target_weight_kg: ts.target_weight_kg ?? null,
                 rest_seconds: ts.rest_seconds ?? null,
+                is_warmup: !!ts.is_warmup,
                 is_added_during_session: false,
               }))
               .filter((ws) => ws.workout_exercise_id);

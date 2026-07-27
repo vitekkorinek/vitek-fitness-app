@@ -6,6 +6,7 @@ import {
 import { SymbolView } from 'expo-symbols';
 import { useRouter } from 'expo-router';
 import { supabase } from '@/lib/supabase';
+import en from '@/i18n/en';
 import { CATEGORY_COLORS } from '@/lib/workoutCategories';
 import type { WorkoutCategory } from '@/lib/workoutCategories';
 
@@ -253,9 +254,11 @@ async function loadPerformed(
   const [{ data: logs }, weData] = await Promise.all([
     supabase
       .from('session_logs')
-      .select('workout_exercise_id, set_number, reps_completed, weight_kg, is_dropset, workout_exercises(exercises(name, equipment))')
+      .select('workout_exercise_id, set_number, is_warmup, reps_completed, weight_kg, is_dropset, workout_exercises(exercises(name, equipment))')
       .eq('session_id', sessionId)
       .eq('is_removed', false)
+      // Warm-ups first, then the working sets — see lib/warmupSets.ts.
+      .order('is_warmup', { ascending: false })
       .order('set_number', { ascending: true }),
     (async (): Promise<any[]> => {
       if (!workoutId) return [];
@@ -280,6 +283,7 @@ async function loadPerformed(
     const reps: number | null = l.reps_completed ?? null;
     const weight: number | null = l.weight_kg ?? null;
     const isDrop: boolean = l.is_dropset ?? false;
+    const isWarm: boolean = l.is_warmup ?? false;
     const done = (reps ?? 0) > 0 || (weight ?? 0) > 0;
     const cur = byWe.get(weId) ?? { name, equipment: equip, sets: [], done: false, maxWeight: 0 };
     let label: string;
@@ -287,6 +291,8 @@ async function loadPerformed(
       const n = (dropCounters.get(weId) ?? 0) + 1;
       dropCounters.set(weId, n);
       label = `Drop ${n}`;
+    } else if (isWarm) {
+      label = en.doMode.warmupSetLabel(l.set_number);
     } else {
       label = `Set ${l.set_number}`;
     }
@@ -381,8 +387,9 @@ async function loadPlanned(workoutId: string): Promise<ExRow[]> {
   const { data: setData } = weIds.length
     ? await supabase
         .from('workout_sets')
-        .select('workout_exercise_id, set_number, target_reps, target_weight_kg')
+        .select('workout_exercise_id, set_number, is_warmup, target_reps, target_weight_kg')
         .in('workout_exercise_id', weIds)
+        .order('is_warmup', { ascending: false })
         .order('set_number', { ascending: true })
     : { data: [] as any[] };
 
@@ -391,7 +398,7 @@ async function loadPlanned(workoutId: string): Promise<ExRow[]> {
     const arr = setsMap.get(ws.workout_exercise_id) ?? [];
     arr.push({
       key: `${ws.workout_exercise_id}-${ws.set_number}`,
-      label: `Set ${ws.set_number}`,
+      label: ws.is_warmup ? en.doMode.warmupSetLabel(ws.set_number) : `Set ${ws.set_number}`,
       value: setValue(ws.target_reps ?? null, ws.target_weight_kg ?? null),
       isDropset: false,
     });

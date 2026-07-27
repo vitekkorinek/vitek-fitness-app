@@ -89,6 +89,9 @@ export interface TemplateSet {
   target_reps: number | null;
   target_weight_kg: number | null;
   rest_seconds: number | null;
+  // Warm-up sets sit at the top of the list and render as "W". `set_number` is
+  // counted within its own block — see lib/warmupSets.ts.
+  is_warmup: boolean;
   created_at: string;
 }
 
@@ -142,6 +145,9 @@ export interface WorkoutSet {
   target_reps: number | null;
   target_weight_kg: number | null;
   rest_seconds: number | null;
+  // Warm-up sets sit at the top of the list and render as "W". `set_number` is
+  // counted within its own block — see lib/warmupSets.ts.
+  is_warmup: boolean;
   created_at: string;
 }
 
@@ -168,6 +174,7 @@ export interface SessionLog {
   notes: string | null;
   barbell_weight_used_kg: number | null;
   is_removed: boolean;
+  is_warmup: boolean;
   is_dropset: boolean;
   dropset_parent_id: string | null;
   dropset_order: number | null;
