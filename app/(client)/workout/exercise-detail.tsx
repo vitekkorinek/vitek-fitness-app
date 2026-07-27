@@ -2909,7 +2909,7 @@ const styles = StyleSheet.create({
   inlineDropsetRow: { paddingLeft: 24, backgroundColor: '#fafaf8' },
   inlineSetRemoved: { opacity: 0.3 },
   setNumCol: { width: 30, alignItems: 'center', justifyContent: 'center' },
-  setNum: { fontSize: 15, fontWeight: '700', color: TEXT, minWidth: 20, textAlign: 'center' },
+  setNum: { fontSize: 15, fontWeight: '700', color: '#999', minWidth: 20, textAlign: 'center' },
   setNumActive: { color: HEADER_COLOR },
   setNumPeeking: { color: '#c8a800' },
   inputPeeking: { backgroundColor: '#fffbe6', color: '#a07800' },
@@ -2922,7 +2922,7 @@ const styles = StyleSheet.create({
   },
   repsInput: {
     flex: 1, textAlign: 'center', fontSize: 15, fontWeight: '500',
-    color: '#999', backgroundColor: '#f5f5f3', borderRadius: 8,
+    color: TEXT, backgroundColor: '#f5f5f3', borderRadius: 8,
     paddingVertical: 8, paddingHorizontal: 4,
   },
   totalDisplay: { flex: 1.2, alignItems: 'center', justifyContent: 'center' },
