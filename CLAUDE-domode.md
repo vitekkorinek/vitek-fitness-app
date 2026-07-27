@@ -352,7 +352,7 @@ The rest timer was a centered `Modal` whose dismissal (tap-outside / back) **cle
 - **Running-rest pill** — shown when `restRunning && !restVisible && !isEditMode && kbHeight === 0`, defaults bottom-right (`restPillWrap` / `restPill`, `insets.bottom + 16`). **ACCENT-filled, white text, 17px, bigger paddings** (device review — the white pill didn't stand out); overtime flips the whole pill red (`restPillOver` `#e53935`, `+mm:ss`). Layout: `timer` icon + `mm:ss` + white hairline + ✕. Tap body = reopen panel; ✕ = cancel. **Draggable anywhere:** the wrapper is an `Animated.View` with `restPillDrag` (ValueXY) + `restPillPanResponder` — `onMoveShouldSetPanResponder(Capture)` fires only past a 6px slop so plain taps still reach the two touchables; `extractOffset()`/`flattenOffset()` around the move keeps the chosen spot for the rest of the session (offset survives pill hide/show, resets on screen unmount). No `pointerEvents="box-none"` on the wrapper — it must be able to claim the responder.
 - The **Exercise Detail** screen keeps its own separate (still centered) rest modal — not part of this change.
 
-### "Save changes" — off-session save, TRAINER FILE ONLY (July 27 2026, Vitek)
+### "Save changes" — off-session save, TRAINER FILE ONLY (`0c8b5f9`, July 27 2026, Vitek — device-review-pending)
 
 **The problem:** between sessions there was no way to record a weight the trainer forgot to log or a note he forgot to write. The only route was start-a-session-and-finish-it, which *invented an extra session* (wrecking the session count with the client) and re-dated every note, so nothing showed up as a reminder in the next training. Same gap after just building a workout: edits couldn't be saved without performing it.
 
