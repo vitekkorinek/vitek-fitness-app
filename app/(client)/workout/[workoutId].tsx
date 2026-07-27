@@ -7414,8 +7414,10 @@ const styles = StyleSheet.create({
   previewHandleGrip: { alignSelf: 'stretch', alignItems: 'center', paddingTop: 10, paddingBottom: 4 },
   previewHandlePill: { width: 40, height: 5, borderRadius: 3, backgroundColor: '#d0d0cc' },
   previewHandleHint: { marginTop: 7, fontSize: 12, color: '#999', fontWeight: '500' },
-  kbdDoneBtn: { backgroundColor: 'rgba(255,255,255,0.92)', borderRadius: 14, paddingHorizontal: 16, paddingVertical: 7, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.18, shadowRadius: 4, elevation: 3 },
-  kbdDoneText: { color: '#24ac88', fontSize: 16, fontWeight: '700' },
+  // Filled ACCENT, white label — over the light keyboard a white pill with green text
+  // read as part of the keyboard chrome rather than a button (Vitek, July 27 2026).
+  kbdDoneBtn: { backgroundColor: ACCENT, borderRadius: 14, paddingHorizontal: 16, paddingVertical: 7, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.18, shadowRadius: 4, elevation: 3 },
+  kbdDoneText: { color: '#fff', fontSize: 16, fontWeight: '700' },
   previewStartBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: '#24ac88', borderRadius: 100, paddingVertical: 15, marginTop: 14, marginHorizontal: 16, alignSelf: 'stretch' },
   previewStartText: { color: '#fff', fontWeight: '700', fontSize: 16 },
   previewPlannedPill: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: '#f0f0ee', borderRadius: 100, paddingVertical: 15, marginTop: 14, marginHorizontal: 16, alignSelf: 'stretch' },

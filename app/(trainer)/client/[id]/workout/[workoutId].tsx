@@ -7350,8 +7350,10 @@ const styles = StyleSheet.create({
   bannerTitle: { color: '#fff', fontSize: 24, fontWeight: '700', letterSpacing: 0.2 },
   bannerCount: { color: 'rgba(255,255,255,0.72)', fontSize: 13, fontWeight: '600', marginTop: 3 },
   bannerCap: { position: 'absolute', bottom: 0, left: 0, right: 0, height: 26, backgroundColor: '#fff', borderTopLeftRadius: 26, borderTopRightRadius: 26 },
-  kbdDoneBtn: { backgroundColor: 'rgba(255,255,255,0.92)', borderRadius: 14, paddingHorizontal: 16, paddingVertical: 7, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.18, shadowRadius: 4, elevation: 3 },
-  kbdDoneText: { color: '#24ac88', fontSize: 16, fontWeight: '700' },
+  // Filled ACCENT, white label — over the light keyboard a white pill with green text
+  // read as part of the keyboard chrome rather than a button (Vitek, July 27 2026).
+  kbdDoneBtn: { backgroundColor: ACCENT, borderRadius: 14, paddingHorizontal: 16, paddingVertical: 7, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.18, shadowRadius: 4, elevation: 3 },
+  kbdDoneText: { color: '#fff', fontSize: 16, fontWeight: '700' },
   startBtn: { backgroundColor: '#24ac88', borderRadius: 20, paddingHorizontal: 14, paddingVertical: 8 },
   startBtnText: { color: '#fff', fontWeight: '700', fontSize: 13, letterSpacing: 0.4 },
   finishBtn: { backgroundColor: '#24ac88', borderRadius: 20, paddingHorizontal: 14, paddingVertical: 8 },
