@@ -29,6 +29,7 @@ import { useFocusEffect } from 'expo-router';
 import { useAuth } from '@/context/AuthContext';
 import { supabase } from '@/lib/supabase';
 import { BottomSheet } from '@/components/BottomSheet';
+import GlassPanel from '@/components/GlassPanel';
 import { GlassToggle } from '@/components/GlassToggle';
 // uuid v14 requires crypto.getRandomValues which is not available in Hermes
 function newId(): string {
@@ -405,12 +406,13 @@ function ZoneGraph({ data, segs, goal, range, unit }: {
 
 const goalModalStyles = StyleSheet.create({
   overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.52)', justifyContent: 'center', paddingHorizontal: 32 },
-  box: { backgroundColor: CARD, borderRadius: RADIUS, padding: 24, alignItems: 'center', gap: 12 },
+  glassShadow: { borderRadius: 38, shadowColor: '#000', shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.22, shadowRadius: 28, elevation: 12 },
+  glassBox: { borderRadius: 38, overflow: 'hidden', padding: 24, alignItems: 'center', gap: 12 },
   title: { fontSize: 15, fontWeight: '700', color: TEXT },
-  input: { alignSelf: 'stretch', backgroundColor: '#f5f5f3', borderRadius: 10, paddingHorizontal: 14, paddingVertical: 10, fontSize: 16, color: TEXT, textAlign: 'center' },
+  inputOnGlass: { alignSelf: 'stretch', backgroundColor: 'rgba(255,255,255,0.6)', borderWidth: 1, borderColor: 'rgba(0,0,0,0.12)', borderRadius: 10, paddingHorizontal: 14, paddingVertical: 10, fontSize: 16, color: TEXT, textAlign: 'center' },
   saveBtn: { backgroundColor: ACCENT, borderRadius: 100, paddingVertical: 13, alignSelf: 'stretch', alignItems: 'center' },
   saveBtnText: { color: '#fff', fontWeight: '700', fontSize: 15 },
-  cancel: { fontSize: 14, color: MUTED },
+  cancelOnGlass: { fontSize: 14, color: '#414b45', fontWeight: '600' },
 });
 
 // ─── Zone Bar Card ─────────────────────────────────────────────────────────────
@@ -535,15 +537,16 @@ function ZoneBarCard({ title, currentValue, goalValue, segs, data, unit, clientI
       <Modal visible={editingGoal} transparent animationType="fade" onRequestClose={() => setEditingGoal(false)}>
         <View style={goalModalStyles.overlay}>
           <Pressable style={StyleSheet.absoluteFill} onPress={() => setEditingGoal(false)} />
-          <View style={goalModalStyles.box}>
+          <View style={goalModalStyles.glassShadow}>
+          <GlassPanel style={goalModalStyles.glassBox}>
             <Text style={goalModalStyles.title}>{t.clientProfile.progress.goalTitle(title)}</Text>
             <TextInput
-              style={goalModalStyles.input}
+              style={goalModalStyles.inputOnGlass}
               value={goalInput}
               onChangeText={setGoalInput}
               keyboardType="decimal-pad"
               placeholder={`e.g. 20${displayUnit}`}
-              placeholderTextColor="#ccc"
+              placeholderTextColor="#8a938e"
               autoFocus
             />
             <TouchableOpacity style={[goalModalStyles.saveBtn, savingGoal && { opacity: 0.6 }]}
@@ -553,8 +556,9 @@ function ZoneBarCard({ title, currentValue, goalValue, segs, data, unit, clientI
               </Text>
             </TouchableOpacity>
             <TouchableOpacity onPress={() => setEditingGoal(false)} hitSlop={8}>
-              <Text style={goalModalStyles.cancel}>{t.common.cancel}</Text>
+              <Text style={goalModalStyles.cancelOnGlass}>{t.common.cancel}</Text>
             </TouchableOpacity>
+          </GlassPanel>
           </View>
         </View>
       </Modal>
@@ -802,15 +806,16 @@ function QuickEditModal({
     <Modal visible transparent animationType="fade" onRequestClose={onClose}>
       <View style={qStyles.overlay}>
         <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
-        <View style={qStyles.box}>
+        <View style={qStyles.glassShadow}>
+        <GlassPanel style={qStyles.glassBox}>
           <Text style={qStyles.title}>{label}{unit ? ` (${unit})` : ''}</Text>
           <TextInput
-            style={qStyles.input}
+            style={qStyles.inputOnGlass}
             value={val}
             onChangeText={setVal}
             keyboardType="decimal-pad"
             placeholder="—"
-            placeholderTextColor="#ccc"
+            placeholderTextColor="#8a938e"
             autoFocus
             onSubmitEditing={() => onSave(val)}
             returnKeyType="done"
@@ -819,8 +824,9 @@ function QuickEditModal({
             <Text style={qStyles.saveBtnText}>{t.clientProfile.progress.formSave}</Text>
           </TouchableOpacity>
           <TouchableOpacity onPress={onClose} hitSlop={8}>
-            <Text style={qStyles.cancel}>{t.common.cancel}</Text>
+            <Text style={qStyles.cancelOnGlass}>{t.common.cancel}</Text>
           </TouchableOpacity>
+        </GlassPanel>
         </View>
       </View>
     </Modal>
@@ -829,16 +835,17 @@ function QuickEditModal({
 
 const qStyles = StyleSheet.create({
   overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.52)', justifyContent: 'center', paddingHorizontal: 36 },
-  box: { backgroundColor: CARD, borderRadius: RADIUS, padding: 24, alignItems: 'center', gap: 12 },
+  glassShadow: { borderRadius: 38, shadowColor: '#000', shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.22, shadowRadius: 28, elevation: 12 },
+  glassBox: { borderRadius: 38, overflow: 'hidden', padding: 24, alignItems: 'center', gap: 12 },
   title: { fontSize: 15, fontWeight: '700', color: TEXT },
-  input: {
-    alignSelf: 'stretch', backgroundColor: '#f5f5f3', borderRadius: 10,
+  inputOnGlass: {
+    alignSelf: 'stretch', backgroundColor: 'rgba(255,255,255,0.6)', borderWidth: 1, borderColor: 'rgba(0,0,0,0.12)', borderRadius: 10,
     paddingHorizontal: 14, paddingVertical: 11, fontSize: 22, color: TEXT,
     textAlign: 'center', fontWeight: '600',
   },
   saveBtn: { backgroundColor: ACCENT, borderRadius: 100, paddingVertical: 13, alignSelf: 'stretch', alignItems: 'center' },
   saveBtnText: { color: '#fff', fontWeight: '700', fontSize: 15 },
-  cancel: { fontSize: 14, color: MUTED },
+  cancelOnGlass: { fontSize: 14, color: '#414b45', fontWeight: '600' },
 });
 
 // ─── Body Silhouette ──────────────────────────────────────────────────────────
@@ -1733,16 +1740,18 @@ function MeasurementsSubTab({ clientId, client }: { clientId: string; client: Us
       <Modal visible={confirmModal !== null} transparent animationType="fade" onRequestClose={() => setConfirmModal(null)}>
         <View style={cmStyles.overlay}>
           <Pressable style={StyleSheet.absoluteFill} onPress={() => setConfirmModal(null)} />
-          <View style={cmStyles.box}>
+          <View style={cmStyles.glassShadow}>
+          <GlassPanel style={cmStyles.glassBox}>
             <Text style={cmStyles.title}>{confirmModal?.title}</Text>
-            {confirmModal?.message && <Text style={cmStyles.msg}>{confirmModal.message}</Text>}
+            {confirmModal?.message && <Text style={cmStyles.msgOnGlass}>{confirmModal.message}</Text>}
             <TouchableOpacity style={cmStyles.confirmBtn} activeOpacity={0.85}
               onPress={() => { const cb = confirmModal?.onConfirm; setConfirmModal(null); cb?.(); }}>
               <Text style={cmStyles.confirmBtnText}>{t.clientProfile.progress.deleteEntry}</Text>
             </TouchableOpacity>
             <TouchableOpacity activeOpacity={0.7} hitSlop={8} onPress={() => setConfirmModal(null)}>
-              <Text style={cmStyles.cancelText}>{t.common.cancel}</Text>
+              <Text style={cmStyles.cancelOnGlass}>{t.common.cancel}</Text>
             </TouchableOpacity>
+          </GlassPanel>
           </View>
         </View>
       </Modal>
@@ -1802,12 +1811,13 @@ function HistoryRow({
 
 const cmStyles = StyleSheet.create({
   overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.52)', justifyContent: 'center', paddingHorizontal: 24 },
-  box: { backgroundColor: CARD, borderRadius: RADIUS, padding: 24, alignItems: 'center', gap: 14 },
+  glassShadow: { borderRadius: 38, shadowColor: '#000', shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.22, shadowRadius: 28, elevation: 12 },
+  glassBox: { borderRadius: 38, overflow: 'hidden', padding: 24, alignItems: 'center', gap: 14 },
   title: { fontSize: 16, fontWeight: '700', color: TEXT, textAlign: 'center' },
-  msg: { fontSize: 14, color: MUTED, textAlign: 'center', lineHeight: 20 },
+  msgOnGlass: { fontSize: 14, color: '#1f2823', fontWeight: '600', textAlign: 'center', lineHeight: 20 },
   confirmBtn: { backgroundColor: '#ef4444', borderRadius: 100, paddingVertical: 14, alignSelf: 'stretch', alignItems: 'center' },
   confirmBtnText: { color: '#fff', fontSize: 15, fontWeight: '700' },
-  cancelText: { fontSize: 14, color: MUTED },
+  cancelOnGlass: { fontSize: 14, color: '#414b45', fontWeight: '600' },
 });
 
 // ─── Most Improved Card ───────────────────────────────────────────────────────

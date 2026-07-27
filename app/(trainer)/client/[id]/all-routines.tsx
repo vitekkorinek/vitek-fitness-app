@@ -23,6 +23,7 @@ import { DARK_CARD_GRADIENT, DARK_CARD_FOOTER } from '@/components/WorkoutPaperC
 import { useCoverDark, useFooterDark } from '@/lib/cardVariant';
 import { supabase } from '@/lib/supabase';
 import { BottomSheet } from '@/components/BottomSheet';
+import GlassPanel from '@/components/GlassPanel';
 import { CATEGORY_COLORS } from '@/lib/workoutCategories';
 import type { WorkoutCategory } from '@/lib/workoutCategories';
 
@@ -364,9 +365,10 @@ export default function AllRoutinesScreen() {
       {confirmModal && (
         <Modal visible transparent animationType="fade" onRequestClose={() => setConfirmModal(null)} statusBarTranslucent>
           <Pressable style={confirmStyles.overlay} onPress={() => setConfirmModal(null)}>
-            <Pressable style={confirmStyles.sheet}>
+            <Pressable style={confirmStyles.glassShadow}>
+              <GlassPanel style={confirmStyles.glassBox}>
               <Text style={confirmStyles.title}>{confirmModal.title}</Text>
-              {!!confirmModal.message && <Text style={confirmStyles.message}>{confirmModal.message}</Text>}
+              {!!confirmModal.message && <Text style={confirmStyles.messageOnGlass}>{confirmModal.message}</Text>}
               <TouchableOpacity
                 style={[confirmStyles.btn, confirmModal.danger ? confirmStyles.btnDanger : confirmStyles.btnPrimary]}
                 onPress={() => confirmModal.onConfirm()}
@@ -375,8 +377,9 @@ export default function AllRoutinesScreen() {
                 <Text style={confirmStyles.btnText}>{confirmModal.confirmLabel}</Text>
               </TouchableOpacity>
               <TouchableOpacity onPress={() => setConfirmModal(null)} hitSlop={8} style={confirmStyles.cancelWrap}>
-                <Text style={confirmStyles.cancelText}>Cancel</Text>
+                <Text style={confirmStyles.cancelOnGlass}>Cancel</Text>
               </TouchableOpacity>
+              </GlassPanel>
             </Pressable>
           </Pressable>
         </Modal>
@@ -716,8 +719,12 @@ const menuStyles = StyleSheet.create({
 const confirmStyles = StyleSheet.create({
   overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'center', paddingHorizontal: 40 },
   sheet: { backgroundColor: CARD, borderRadius: 16, padding: 24, alignItems: 'center', gap: 8 },
+  glassShadow: { borderRadius: 38, shadowColor: '#000', shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.22, shadowRadius: 28, elevation: 12 },
+  glassBox: { borderRadius: 38, overflow: 'hidden', padding: 24, alignItems: 'center', gap: 8 },
   title: { fontSize: 17, fontWeight: '700', color: TEXT, textAlign: 'center' },
   message: { fontSize: 14, color: MUTED, textAlign: 'center', lineHeight: 20, marginBottom: 4 },
+  messageOnGlass: { fontSize: 14, color: '#1f2823', fontWeight: '600', textAlign: 'center', lineHeight: 20, marginBottom: 4 },
+  cancelOnGlass: { fontSize: 14, color: '#414b45', fontWeight: '600' },
   btn: { width: '100%', borderRadius: 100, paddingVertical: 14, alignItems: 'center', marginTop: 4 },
   btnPrimary: { backgroundColor: ACCENT },
   btnDanger: { backgroundColor: '#ef4444' },

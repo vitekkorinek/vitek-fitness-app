@@ -22,6 +22,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/context/AuthContext';
 import { BottomSheet } from '@/components/BottomSheet';
+import GlassPanel from '@/components/GlassPanel';
 import { useHeaderHeight } from '@/components/LightHeader';
 import { useTabBarHeight } from '@/components/FloatingTabBar';
 import { useCardVariant, CARD_VARIANTS, isCoverDark, isFooterDark, type CoverCardVariant } from '@/lib/cardVariant';
@@ -552,10 +553,11 @@ export default function MeScreen() {
       <Modal visible={!!fieldModal} transparent animationType="fade" onRequestClose={() => setFieldModal(null)} statusBarTranslucent>
         <View style={modal.overlay}>
           <Pressable style={StyleSheet.absoluteFill} onPress={() => setFieldModal(null)} />
-          <View style={[modal.box, { alignItems: 'stretch' }]}>
+          <View style={modal.glassShadow}>
+          <GlassPanel style={[modal.glassBox, { alignItems: 'stretch' }]}>
             <Text style={[modal.title, { textAlign: 'center' }]}>{fieldModal?.label}</Text>
             <TextInput
-              style={modal.input}
+              style={modal.inputOnGlass}
               value={fieldValue}
               onChangeText={setFieldValue}
               keyboardType={fieldModal?.keyboard ?? 'default'}
@@ -564,7 +566,7 @@ export default function MeScreen() {
               autoCorrect={false}
               returnKeyType="done"
               placeholder={fieldModal?.placeholder ?? ''}
-              placeholderTextColor="#ccc"
+              placeholderTextColor="#8a938e"
               onSubmitEditing={saveField}
               inputAccessoryViewID={Platform.OS === 'ios' ? 'profile-field-input' : undefined}
             />
@@ -575,8 +577,9 @@ export default function MeScreen() {
               }
             </TouchableOpacity>
             <TouchableOpacity onPress={() => setFieldModal(null)} hitSlop={8} style={{ alignSelf: 'center' }}>
-              <Text style={modal.cancel}>{t.common.cancel}</Text>
+              <Text style={[modal.cancel, modal.cancelOnGlass]}>{t.common.cancel}</Text>
             </TouchableOpacity>
+          </GlassPanel>
           </View>
         </View>
         {Platform.OS === 'ios' && (
@@ -662,14 +665,15 @@ export default function MeScreen() {
       <Modal visible={changePwdOpen} transparent animationType="fade" onRequestClose={() => setChangePwdOpen(false)} statusBarTranslucent>
         <View style={modal.overlay}>
           <Pressable style={StyleSheet.absoluteFill} onPress={() => setChangePwdOpen(false)} />
-          <View style={[modal.box, { alignItems: 'stretch' }]}>
+          <View style={modal.glassShadow}>
+          <GlassPanel style={[modal.glassBox, { alignItems: 'stretch' }]}>
             <Text style={[modal.title, { textAlign: 'center' }]}>{t.clientMe.changePasswordTitle}</Text>
             <TextInput
-              style={modal.input}
+              style={modal.inputOnGlass}
               value={newPwd}
               onChangeText={setNewPwd}
               placeholder={t.changePassword.newPasswordPlaceholder}
-              placeholderTextColor="#ccc"
+              placeholderTextColor="#8a938e"
               secureTextEntry
               autoFocus
               autoCapitalize="none"
@@ -678,11 +682,11 @@ export default function MeScreen() {
               inputAccessoryViewID={Platform.OS === 'ios' ? 'client-pwd-input' : undefined}
             />
             <TextInput
-              style={modal.input}
+              style={modal.inputOnGlass}
               value={confirmPwd}
               onChangeText={setConfirmPwd}
               placeholder={t.changePassword.confirmPasswordPlaceholder}
-              placeholderTextColor="#ccc"
+              placeholderTextColor="#8a938e"
               secureTextEntry
               autoCapitalize="none"
               autoCorrect={false}
@@ -697,8 +701,9 @@ export default function MeScreen() {
               }
             </TouchableOpacity>
             <TouchableOpacity onPress={() => setChangePwdOpen(false)} hitSlop={8} style={{ alignSelf: 'center' }}>
-              <Text style={modal.cancel}>{t.common.cancel}</Text>
+              <Text style={[modal.cancel, modal.cancelOnGlass]}>{t.common.cancel}</Text>
             </TouchableOpacity>
+          </GlassPanel>
           </View>
         </View>
         {Platform.OS === 'ios' && (
@@ -712,9 +717,10 @@ export default function MeScreen() {
       <Modal visible={signOutOpen} transparent animationType="fade" onRequestClose={() => setSignOutOpen(false)} statusBarTranslucent>
         <View style={modal.overlay}>
           <Pressable style={StyleSheet.absoluteFill} onPress={() => setSignOutOpen(false)} />
-          <View style={modal.box}>
+          <View style={modal.glassShadow}>
+          <GlassPanel style={modal.glassBox}>
             <Text style={modal.title}>{t.clientMe.signOutTitle}</Text>
-            <Text style={modal.message}>{t.clientMe.signOutMsg}</Text>
+            <Text style={[modal.message, modal.messageOnGlass]}>{t.clientMe.signOutMsg}</Text>
             <TouchableOpacity
               style={[modal.confirmBtn, { alignSelf: 'stretch' }]}
               onPress={handleSignOut}
@@ -727,8 +733,9 @@ export default function MeScreen() {
               }
             </TouchableOpacity>
             <TouchableOpacity onPress={() => setSignOutOpen(false)} hitSlop={8}>
-              <Text style={modal.cancel}>{t.common.cancel}</Text>
+              <Text style={[modal.cancel, modal.cancelOnGlass]}>{t.common.cancel}</Text>
             </TouchableOpacity>
+          </GlassPanel>
           </View>
         </View>
       </Modal>
@@ -862,6 +869,26 @@ const modal = StyleSheet.create({
   confirmBtn: { backgroundColor: ACCENT, borderRadius: 100, paddingVertical: 13, alignSelf: 'stretch', alignItems: 'center' },
   confirmBtnText: { color: '#fff', fontWeight: '700', fontSize: 15 },
   cancel:     { fontSize: 14, color: MUTED },
+  // Liquid Glass popup (sign-out confirm) — the Do Mode confirm-box family:
+  // radius-38 shadow wrapper + GlassPanel, texts darkened for glass legibility.
+  glassShadow: { borderRadius: 38, shadowColor: '#000', shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.22, shadowRadius: 28, elevation: 12 },
+  glassBox:   { borderRadius: 38, overflow: 'hidden', padding: 24, alignItems: 'center', gap: 14 },
+  messageOnGlass: { color: '#1f2823', fontWeight: '600' },
+  cancelOnGlass:  { color: '#414b45', fontWeight: '600' },
+  // TextInput on glass — translucent white fill + hairline border instead of the
+  // flat #f5f5f3 that goes muddy on glass (matches the trainer Account tab).
+  inputOnGlass: {
+    alignSelf: 'stretch',
+    backgroundColor: 'rgba(255,255,255,0.6)',
+    borderWidth: 1,
+    borderColor: 'rgba(0,0,0,0.12)',
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    fontSize: 18,
+    color: TEXT,
+    textAlign: 'center',
+  },
   sexOption:      { alignSelf: 'stretch', borderRadius: 100, paddingVertical: 13, alignItems: 'center', backgroundColor: '#fff', shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 3, elevation: 1 },
   sexOptionActive: { backgroundColor: ACCENT },
   sexOptionText:  { fontSize: 15, color: TEXT },

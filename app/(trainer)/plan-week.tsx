@@ -10,6 +10,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useAuth } from '@/context/AuthContext';
 import { supabase } from '@/lib/supabase';
 import { BottomSheet } from '@/components/BottomSheet';
+import GlassPanel from '@/components/GlassPanel';
 
 const BG     = '#faf9f7';
 const CARD   = '#ffffff';
@@ -1785,12 +1786,13 @@ function NewAppointmentSheet({
         <Modal transparent animationType="fade" onRequestClose={() => setShowNotesModal(false)}>
           <TouchableOpacity style={m.overlay} activeOpacity={1} onPress={() => setShowNotesModal(false)} />
           <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex:1, justifyContent:'flex-end' }}>
-            <View style={{ marginHorizontal:24, marginBottom:16, backgroundColor:CARD, borderRadius:16, padding:20 }}>
+            <View style={m.glassShadow}>
+            <GlassPanel style={m.glassBox}>
               <Text style={m.title}>Notes</Text>
               <TextInput
-                style={[sh2.textInput, { minHeight:100, textAlignVertical:'top', marginBottom:16 }]}
+                style={[sh2.textInput, { minHeight:100, textAlignVertical:'top', marginBottom:16, backgroundColor:'rgba(255,255,255,0.6)', borderWidth:1, borderColor:'rgba(0,0,0,0.12)' }]}
                 placeholder="Add a note…"
-                placeholderTextColor={MUTED}
+                placeholderTextColor="#8a938e"
                 value={notesDraft}
                 onChangeText={setNotesDraft}
                 multiline
@@ -1800,8 +1802,9 @@ function NewAppointmentSheet({
                 <Text style={sh2.saveBtnText}>Confirm</Text>
               </TouchableOpacity>
               <TouchableOpacity onPress={() => setShowNotesModal(false)} style={{ paddingTop:14, alignItems:'center' }}>
-                <Text style={{ color:MUTED, fontSize:15 }}>Cancel</Text>
+                <Text style={{ color:'#414b45', fontWeight:'600', fontSize:15 }}>Cancel</Text>
               </TouchableOpacity>
+            </GlassPanel>
             </View>
           </KeyboardAvoidingView>
         </Modal>
@@ -1975,6 +1978,8 @@ const dv = StyleSheet.create({
 
 const m = StyleSheet.create({
   overlay: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.45)' },
+  glassShadow: { marginHorizontal: 24, marginBottom: 16, borderRadius: 38, shadowColor: '#000', shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.22, shadowRadius: 28, elevation: 12 },
+  glassBox: { borderRadius: 38, overflow: 'hidden', padding: 20 },
   modal:   { position: 'absolute', top: '50%', left: 24, right: 24, backgroundColor: CARD, borderRadius: 16, padding: 20, transform: [{ translateY: -200 }] },
   title:   { fontSize: 17, fontWeight: '700', color: TEXT, textAlign: 'center', marginBottom: 4 },
   sub:     { fontSize: 13, color: MUTED, textAlign: 'center', marginBottom: 16 },

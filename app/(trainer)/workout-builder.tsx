@@ -27,6 +27,7 @@ import { useAuth } from '@/context/AuthContext';
 import { registerPickHandler } from '@/lib/exercisePicker';
 import { BottomSheet } from '@/components/BottomSheet';
 import { SessionResumeChip } from '@/components/SessionResumeChip';
+import GlassPanel from '@/components/GlassPanel';
 import { CATEGORY_OPTIONS, CATEGORY_COLORS, STRETCHING_CATEGORIES, STRETCHING_CATEGORY_TO_STRETCH_TYPE } from '@/lib/workoutCategories';
 import type { WorkoutCategory } from '@/lib/workoutCategories';
 import type { Exercise, Routine } from '@/types/database';
@@ -1251,7 +1252,8 @@ export default function WorkoutBuilderScreen() {
       {conflictModal && (
         <Modal visible transparent animationType="fade" statusBarTranslucent onRequestClose={() => setConflictModal(null)}>
           <Pressable style={conflictStyles.overlay} onPress={() => setConflictModal(null)}>
-            <Pressable style={conflictStyles.sheet}>
+            <Pressable style={conflictStyles.glassShadow}>
+            <GlassPanel style={conflictStyles.glassBox}>
               <Text style={conflictStyles.title}>Active Routine Exists</Text>
               <Text style={conflictStyles.body}>
                 {`"${conflictModal.name}" is currently active. A client can only have one active routine, so it will be deactivated (moved to Closed) when the new one starts.`}
@@ -1262,6 +1264,7 @@ export default function WorkoutBuilderScreen() {
               <TouchableOpacity onPress={() => setConflictModal(null)} hitSlop={8} style={conflictStyles.cancelWrap}>
                 <Text style={conflictStyles.cancelText}>Cancel</Text>
               </TouchableOpacity>
+            </GlassPanel>
             </Pressable>
           </Pressable>
         </Modal>
@@ -1958,12 +1961,14 @@ const styles = StyleSheet.create({
 const conflictStyles = StyleSheet.create({
   overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'center', paddingHorizontal: 32 },
   sheet: { backgroundColor: '#fff', borderRadius: 16, padding: 24, gap: 12 },
+  glassShadow: { borderRadius: 38, shadowColor: '#000', shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.22, shadowRadius: 28, elevation: 12 },
+  glassBox: { borderRadius: 38, overflow: 'hidden', padding: 24, gap: 12 },
   title: { fontSize: 17, fontWeight: '700', color: TEXT, textAlign: 'center' },
-  body: { fontSize: 14, color: MUTED, textAlign: 'center', lineHeight: 20 },
+  body: { fontSize: 14, color: '#1f2823', fontWeight: '600', textAlign: 'center', lineHeight: 20 },
   primaryBtn: { backgroundColor: ACCENT, borderRadius: 100, paddingVertical: 13, alignItems: 'center', marginTop: 4 },
   primaryBtnText: { color: '#fff', fontWeight: '700', fontSize: 14 },
   secondaryBtn: { backgroundColor: '#e8e8e4', borderRadius: 100, paddingVertical: 13, alignItems: 'center' },
   secondaryBtnText: { color: TEXT, fontWeight: '600', fontSize: 14 },
   cancelWrap: { alignItems: 'center', paddingVertical: 4 },
-  cancelText: { fontSize: 14, color: MUTED },
+  cancelText: { fontSize: 14, fontWeight: '600', color: '#414b45' },
 });

@@ -325,6 +325,7 @@ Replaced the two square tiles. Rendered directly on the `#faf9f7` tab background
 - On save: sync saved state, show "✓ Saved" 2s then revert
 - **Logo upload:** stubbed — shows Alert. `trainer-assets` bucket exists with INSERT policy.
 - Never import `uuid` — use `makeUUID()` helper defined at module level
+- **ACCOUNT section (July 27 2026 — mirrors the client Me tab; Vitek's screenshot-driven ask).** Below the Save button (Save stays ABOVE it, closing the editable Business Details area): `sectionLabel` "Account" + a `styles.card` with two `accountRow`s — **Change password** (lock icon, chevron) and **Sign out** (red `rectangle.portrait.and.arrow.right` + red label), split by `accountSep`. The old standalone sign-out pill (`signOutButton`/`signOutText`) is DELETED. **Change password is NEW on the trainer side** — full copy of the client flow: `handleChangePassword` (8-char min, mismatch check, `supabase.auth.updateUser`), Liquid Glass popup with two `inputOnGlass` fields, "Password updated" toast (`styles.toast`). **Sign out now CONFIRMS** via a Liquid Glass popup (it used to sign out instantly on tap) — `modalStyles.glassShadow`/`glassBox` + `GlassPanel`, strings `t.account.signOutTitle/Msg/accountSection/changePassword/changePasswordTitle/passwordUpdated`. All centered popups on this screen (incl. the field-edit modal) are on the glass family per the CLAUDE.md §2 convention.
 
 ### Banner photo editor (Account + Info tab)
 

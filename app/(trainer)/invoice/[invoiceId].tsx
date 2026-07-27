@@ -26,6 +26,7 @@ import { useAuth } from '@/context/AuthContext';
 const makeUUID = () => 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => { const r = Math.random() * 16 | 0; return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16); });
 import t from '@/i18n/en';
 import { BottomSheet } from '@/components/BottomSheet';
+import GlassPanel from '@/components/GlassPanel';
 import type { Invoice, LineItem } from '@/types/database';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -868,15 +869,16 @@ export default function InvoiceScreen() {
         <Modal visible transparent animationType="fade" onRequestClose={() => setMarkPaidOpen(false)} statusBarTranslucent>
           <KeyboardAvoidingView style={m.overlay} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
             <Pressable style={StyleSheet.absoluteFill} onPress={() => setMarkPaidOpen(false)} />
-            <View style={m.box}>
+            <View style={m.glassShadow}>
+            <GlassPanel style={m.glassBox}>
               <Text style={m.title}>{t.invoice.confirmPayment}</Text>
-              <Text style={[m.title, { fontSize: 13, fontWeight: '400', color: MUTED }]}>{t.invoice.paymentDate}</Text>
+              <Text style={[m.title, { fontSize: 13, fontWeight: '500', color: '#414b45' }]}>{t.invoice.paymentDate}</Text>
               <TextInput
-                style={[m.input, { alignSelf: 'stretch' }]}
+                style={[m.input, m.inputOnGlass, { alignSelf: 'stretch' }]}
                 value={paymentDateDraft}
                 onChangeText={setPaymentDateDraft}
                 placeholder="YYYY-MM-DD"
-                placeholderTextColor="#ccc"
+                placeholderTextColor="#8a938e"
                 autoFocus
                 autoCapitalize="none"
                 inputAccessoryViewID={Platform.OS === 'ios' ? 'mark-paid-date-input' : undefined}
@@ -893,8 +895,9 @@ export default function InvoiceScreen() {
                 }
               </TouchableOpacity>
               <TouchableOpacity onPress={() => setMarkPaidOpen(false)} hitSlop={8} style={{ alignSelf: 'center' }}>
-                <Text style={m.cancelText}>{t.common.cancel}</Text>
+                <Text style={[m.cancelText, m.cancelTextOnGlass]}>{t.common.cancel}</Text>
               </TouchableOpacity>
+            </GlassPanel>
             </View>
           </KeyboardAvoidingView>
           {Platform.OS === 'ios' && (
@@ -1425,6 +1428,10 @@ const totSt = StyleSheet.create({
 const m = StyleSheet.create({
   overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.52)', justifyContent: 'center', paddingHorizontal: 28 },
   box: { backgroundColor: CARD, borderRadius: 16, padding: 24, alignItems: 'center', gap: 14 },
+  glassShadow: { borderRadius: 38, shadowColor: '#000', shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.22, shadowRadius: 28, elevation: 12 },
+  glassBox: { borderRadius: 38, overflow: 'hidden', padding: 24, alignItems: 'center', gap: 14 },
+  inputOnGlass: { backgroundColor: 'rgba(255,255,255,0.6)', borderWidth: 1, borderColor: 'rgba(0,0,0,0.12)' },
+  cancelTextOnGlass: { fontWeight: '600', color: '#414b45' },
   sheetContent: { paddingHorizontal: 24, paddingTop: 8, paddingBottom: 12, alignItems: 'center', gap: 14 },
   title: { fontSize: 16, fontWeight: '700', color: TEXT },
   input: {

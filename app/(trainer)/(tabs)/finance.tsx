@@ -23,6 +23,7 @@ import { TrainerLogoButton } from '@/components/TrainerLogoButton';
 import { LightHeader, HeaderIcon, HEADER_ICON, useHeaderHeight } from '@/components/LightHeader';
 import { useTabBarHeight } from '@/components/FloatingTabBar';
 import { BottomSheet } from '@/components/BottomSheet';
+import GlassPanel from '@/components/GlassPanel';
 import t from '@/i18n/en';
 import type { FinanceManualEntry, Invoice, InvoiceStatus } from '@/types/database';
 
@@ -902,40 +903,41 @@ function ManualEntryModal({
     <Modal visible transparent animationType="fade" onRequestClose={onClose} statusBarTranslucent>
       <View style={modalSt.overlay}>
         <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
-        <View style={modalSt.box}>
+        <View style={modalSt.glassShadow}>
+        <GlassPanel style={modalSt.glassBox}>
           <Text style={modalSt.title}>{t.finance.manualEntryTitle}</Text>
 
           <View style={modalSt.fieldGroup}>
             <TextInput
-              style={modalSt.input}
+              style={modalSt.inputOnGlass}
               placeholder={t.finance.manualLabelPlaceholder}
-              placeholderTextColor="#ccc"
+              placeholderTextColor="#8a938e"
               value={label}
               onChangeText={setLabel}
               autoCapitalize="none"
             />
             <TextInput
-              style={modalSt.input}
+              style={modalSt.inputOnGlass}
               placeholder={t.finance.manualAmountPlaceholder}
-              placeholderTextColor="#ccc"
+              placeholderTextColor="#8a938e"
               value={amount}
               onChangeText={setAmount}
               keyboardType="decimal-pad"
             />
             <View style={modalSt.row}>
               <TextInput
-                style={[modalSt.input, { flex: 1 }]}
+                style={[modalSt.inputOnGlass, { flex: 1 }]}
                 placeholder={t.finance.manualMonthPlaceholder}
-                placeholderTextColor="#ccc"
+                placeholderTextColor="#8a938e"
                 value={month}
                 onChangeText={setMonth}
                 keyboardType="number-pad"
                 maxLength={2}
               />
               <TextInput
-                style={[modalSt.input, { flex: 1 }]}
+                style={[modalSt.inputOnGlass, { flex: 1 }]}
                 placeholder={t.finance.manualYearPlaceholder}
-                placeholderTextColor="#ccc"
+                placeholderTextColor="#8a938e"
                 value={year}
                 onChangeText={setYear}
                 keyboardType="number-pad"
@@ -955,8 +957,9 @@ function ManualEntryModal({
             </Text>
           </TouchableOpacity>
           <TouchableOpacity onPress={onClose} hitSlop={8}>
-            <Text style={modalSt.cancelText}>{t.common.cancel}</Text>
+            <Text style={modalSt.cancelOnGlass}>{t.common.cancel}</Text>
           </TouchableOpacity>
+        </GlassPanel>
         </View>
       </View>
     </Modal>
@@ -1132,6 +1135,21 @@ const modalSt = StyleSheet.create({
   },
   saveBtnText: { color: '#fff', fontWeight: '700', fontSize: 15 },
   cancelText: { fontSize: 14, color: MUTED },
+  // Liquid Glass popup — radius-38 shadow wrapper + GlassPanel, texts darkened
+  // for glass legibility (the account.tsx / Do Mode confirm-box family).
+  glassShadow: { borderRadius: 38, shadowColor: '#000', shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.22, shadowRadius: 28, elevation: 12 },
+  glassBox:   { borderRadius: 38, overflow: 'hidden', padding: 24, alignItems: 'center', gap: 14 },
+  cancelOnGlass: { fontSize: 14, color: '#414b45', fontWeight: '600' },
+  inputOnGlass: {
+    backgroundColor: 'rgba(255,255,255,0.6)',
+    borderWidth: 1,
+    borderColor: 'rgba(0,0,0,0.12)',
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 11,
+    fontSize: 15,
+    color: TEXT,
+  },
 });
 
 const invSt = StyleSheet.create({

@@ -18,6 +18,7 @@ import { SymbolView } from 'expo-symbols';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/context/AuthContext';
 import { LightHeader, useHeaderHeight } from '@/components/LightHeader';
+import GlassPanel from '@/components/GlassPanel';
 import t from '@/i18n/en';
 
 const ACCENT = '#24ac88';
@@ -153,7 +154,8 @@ export default function ChangePasswordScreen() {
         <Modal visible transparent animationType="fade" onRequestClose={() => setActiveField(null)} statusBarTranslucent>
           <View style={modal.overlay}>
             <Pressable style={StyleSheet.absoluteFill} onPress={() => setActiveField(null)} />
-            <View style={modal.box}>
+            <View style={modal.glassShadow}>
+            <GlassPanel style={modal.glassBox}>
               <Text style={modal.title}>{fieldLabel}</Text>
               <View style={modal.inputWrap}>
                 <TextInput
@@ -183,6 +185,7 @@ export default function ChangePasswordScreen() {
               <TouchableOpacity onPress={() => setActiveField(null)} hitSlop={8}>
                 <Text style={modal.cancel}>{t.common.cancel}</Text>
               </TouchableOpacity>
+            </GlassPanel>
             </View>
           </View>
           {Platform.OS === 'ios' && (
@@ -232,11 +235,15 @@ const styles = StyleSheet.create({
 
 const modal = StyleSheet.create({
   overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.52)', justifyContent: 'center', paddingHorizontal: 32 },
-  box: { backgroundColor: CARD, borderRadius: 16, padding: 24, alignItems: 'center', gap: 14 },
+  // Liquid Glass popup — radius-38 shadow wrapper + GlassPanel (the app-wide
+  // glass pop-up recipe; shadow lives on the wrapper, overflow clips it).
+  glassShadow: { borderRadius: 38, shadowColor: '#000', shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.22, shadowRadius: 28, elevation: 12 },
+  glassBox: { borderRadius: 38, overflow: 'hidden', padding: 24, alignItems: 'center', gap: 14 },
   title: { fontSize: 15, fontWeight: '700', color: TEXT },
   inputWrap: { alignSelf: 'stretch', position: 'relative', justifyContent: 'center' },
   input: {
-    alignSelf: 'stretch', borderWidth: 1, borderColor: BORDER, borderRadius: 10,
+    alignSelf: 'stretch', backgroundColor: 'rgba(255,255,255,0.6)',
+    borderWidth: 1, borderColor: 'rgba(0,0,0,0.12)', borderRadius: 10,
     paddingHorizontal: 14, paddingVertical: 12, fontSize: 18, color: TEXT, textAlign: 'center',
   },
   // Equal left/right padding keeps the centered text visually centered next to the eye.
@@ -244,5 +251,5 @@ const modal = StyleSheet.create({
   eyeButton: { position: 'absolute', right: 12, top: 0, bottom: 0, justifyContent: 'center' },
   confirmBtn: { backgroundColor: ACCENT, borderRadius: 100, paddingVertical: 13, alignSelf: 'stretch', alignItems: 'center' },
   confirmBtnText: { color: '#fff', fontWeight: '700', fontSize: 15 },
-  cancel: { fontSize: 14, color: MUTED },
+  cancel: { fontSize: 14, color: '#414b45', fontWeight: '600' },
 });

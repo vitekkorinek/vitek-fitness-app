@@ -23,6 +23,7 @@ import {
   type FoodPortion,
 } from '@/lib/foodApi';
 import type { FoodConfirmResult } from '@/components/FoodSearchModal';
+import GlassPanel from '@/components/GlassPanel';
 
 const ACCENT = '#24ac88';
 const HEADER = '#244e43';
@@ -300,7 +301,8 @@ export default function EditPortionSheet({ food, visible, onClose, onConfirm, on
       {showPortionPicker && (
         <Modal visible transparent animationType="fade" onRequestClose={() => setShowPortionPicker(false)}>
           <Pressable style={s.pickerOverlay} onPress={() => setShowPortionPicker(false)}>
-            <Pressable style={s.pickerCard} onPress={() => {}}>
+            <Pressable style={s.pickerGlassShadow} onPress={() => {}}>
+            <GlassPanel style={s.pickerGlassBox}>
               <Text style={s.pickerTitle}>Choose portion</Text>
               {portions.map(p => (
                 <TouchableOpacity
@@ -317,6 +319,7 @@ export default function EditPortionSheet({ food, visible, onClose, onConfirm, on
                   )}
                 </TouchableOpacity>
               ))}
+            </GlassPanel>
             </Pressable>
           </Pressable>
         </Modal>
@@ -504,10 +507,20 @@ const s = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  pickerCard: {
-    backgroundColor: '#fff',
-    borderRadius: 16,
-    padding: 20,
+  // Liquid Glass popup — radius-38 shadow wrapper + GlassPanel (the app-wide
+  // glass pop-up recipe; shadow must live on the wrapper, overflow clips it).
+  pickerGlassShadow: {
+    borderRadius: 38,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.22,
+    shadowRadius: 28,
+    elevation: 12,
+  },
+  pickerGlassBox: {
+    borderRadius: 38,
+    overflow: 'hidden',
+    padding: 24,
     width: SCREEN_W - 48,
   },
   pickerTitle: {
@@ -523,7 +536,7 @@ const s = StyleSheet.create({
     justifyContent: 'space-between',
     paddingVertical: 12,
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: BORDER,
+    borderTopColor: 'rgba(0,0,0,0.08)',
   },
   pickerRowActive: {},
   pickerRowText: {

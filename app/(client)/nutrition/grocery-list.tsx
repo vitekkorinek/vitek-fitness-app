@@ -18,6 +18,7 @@ import { useAuth } from '@/context/AuthContext';
 import { supabase } from '@/lib/supabase';
 import { VFIcon } from '@/components/VFIcon';
 import { BottomSheet } from '@/components/BottomSheet';
+import GlassPanel from '@/components/GlassPanel';
 import { useTabBarHeight } from '@/components/FloatingTabBar';
 import { LightHeader, HeaderIcon, HEADER_ICON, useHeaderHeight } from '@/components/LightHeader';
 
@@ -374,16 +375,20 @@ export default function GroceryListScreen() {
       {/* ── Delete confirmation modal ───────────────────────────────── */}
       <Modal visible={deleteTarget !== null} transparent animationType="fade" onRequestClose={() => setDeleteTarget(null)}>
         <TouchableOpacity style={s.overlay} onPress={() => setDeleteTarget(null)} activeOpacity={1}>
-          <TouchableOpacity style={s.modal} activeOpacity={1}>
+          <View style={s.glassShadow}>
+          <GlassPanel style={s.glassBox}>
+          <TouchableOpacity activeOpacity={1}>
             <Text style={s.modalTitle}>Remove item?</Text>
-            <Text style={s.modalSub}>"{deleteTarget?.name}" will be removed from your grocery list.</Text>
+            <Text style={[s.modalSub, s.messageOnGlass]}>"{deleteTarget?.name}" will be removed from your grocery list.</Text>
             <TouchableOpacity style={[s.confirmBtn, { backgroundColor: CORAL }]} onPress={deleteItem} activeOpacity={0.8}>
               <Text style={s.confirmBtnText}>Remove</Text>
             </TouchableOpacity>
             <TouchableOpacity style={s.cancelLink} onPress={() => setDeleteTarget(null)}>
-              <Text style={s.cancelText}>Cancel</Text>
+              <Text style={[s.cancelText, s.cancelOnGlass]}>Cancel</Text>
             </TouchableOpacity>
           </TouchableOpacity>
+          </GlassPanel>
+          </View>
         </TouchableOpacity>
       </Modal>
 
@@ -418,6 +423,11 @@ const s = StyleSheet.create({
 
   overlay:    { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'center', alignItems: 'center' },
   modal:      { backgroundColor: CARD, borderRadius: 16, padding: 24, width: '82%', maxWidth: 340 },
+  // Liquid Glass centered pop-up (delete confirm) — radius-38 shadow wrapper + GlassPanel
+  glassShadow: { width: '82%', maxWidth: 340, borderRadius: 38, shadowColor: '#000', shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.22, shadowRadius: 28, elevation: 12 },
+  glassBox:    { borderRadius: 38, overflow: 'hidden', padding: 24, width: '100%' },
+  messageOnGlass: { color: '#1f2823', fontWeight: '600' },
+  cancelOnGlass:  { color: '#414b45', fontWeight: '600' },
   modalTitle: { fontSize: 17, fontWeight: '700', color: TEXT, textAlign: 'center', marginBottom: 6 },
   modalSub:   { fontSize: 13, color: MUTED, textAlign: 'center', marginBottom: 16, lineHeight: 19 },
 

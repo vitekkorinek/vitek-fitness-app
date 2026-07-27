@@ -25,6 +25,7 @@ import { TrainerLogoButton } from '@/components/TrainerLogoButton';
 import { useTabBarHeight } from '@/components/FloatingTabBar';
 import { SymbolView } from 'expo-symbols';
 import { BottomSheet } from '@/components/BottomSheet';
+import GlassPanel from '@/components/GlassPanel';
 import { useCardVariant, CARD_VARIANTS, isCoverDark, isFooterDark, type CoverCardVariant } from '@/lib/cardVariant';
 import { DARK_CARD_FOOTER, DARK_CARD_GRADIENT } from '@/components/WorkoutPaperCover';
 import { nameInitial } from '@/lib/utils';
@@ -92,6 +93,39 @@ export default function AccountScreen() {
   const [saving, setSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [fieldModal, setFieldModal] = useState<FieldModal | null>(null);
+  const [signOutOpen, setSignOutOpen] = useState(false);
+  const [signingOut, setSigningOut] = useState(false);
+  const [changePwdOpen, setChangePwdOpen] = useState(false);
+  const [newPwd, setNewPwd] = useState('');
+  const [confirmPwd, setConfirmPwd] = useState('');
+  const [savingPwd, setSavingPwd] = useState(false);
+  const [pwdToast, setPwdToast] = useState(false);
+
+  // Mirrors the client Me tab's change-password flow.
+  const handleChangePassword = async () => {
+    const pwd  = newPwd.trim();
+    const conf = confirmPwd.trim();
+    if (pwd.length < 8) {
+      Alert.alert(t.common.error, t.changePassword.errorTooShort);
+      return;
+    }
+    if (pwd !== conf) {
+      Alert.alert(t.common.error, t.changePassword.errorMismatch);
+      return;
+    }
+    setSavingPwd(true);
+    const { error } = await supabase.auth.updateUser({ password: pwd });
+    setSavingPwd(false);
+    if (error) {
+      Alert.alert(t.common.error, t.changePassword.errorGeneric);
+      return;
+    }
+    setChangePwdOpen(false);
+    setNewPwd('');
+    setConfirmPwd('');
+    setPwdToast(true);
+    setTimeout(() => setPwdToast(false), 2500);
+  };
   const [fieldDraft, setFieldDraft] = useState('');
   // Workout card style (lib/cardVariant.ts) — device-local, applies instantly; shown in
   // the TRAINER CARDS APPEARANCE section below (after the client-home-banner section)
@@ -632,14 +666,28 @@ export default function AccountScreen() {
             )}
           </TouchableOpacity>
 
-          {/* Sign out */}
-          <TouchableOpacity
-            style={styles.signOutButton}
-            onPress={signOut}
-            activeOpacity={0.8}
-          >
-            <Text style={styles.signOutText}>{t.common.signOut}</Text>
-          </TouchableOpacity>
+          {/* ── Account (mirrors the client Me tab: rows in a card, Save stays above) ── */}
+          <Text style={styles.sectionLabel}>{t.account.accountSection}</Text>
+          <View style={styles.card}>
+            <TouchableOpacity
+              style={styles.accountRow}
+              onPress={() => { setNewPwd(''); setConfirmPwd(''); setChangePwdOpen(true); }}
+              activeOpacity={0.7}
+            >
+              <SymbolView name="lock" size={17} tintColor="#555" />
+              <Text style={styles.accountRowLabel}>{t.account.changePassword}</Text>
+              <SymbolView name="chevron.right" size={14} tintColor="#ccc" />
+            </TouchableOpacity>
+            <View style={styles.accountSep} />
+            <TouchableOpacity
+              style={styles.accountRow}
+              onPress={() => setSignOutOpen(true)}
+              activeOpacity={0.7}
+            >
+              <SymbolView name="rectangle.portrait.and.arrow.right" size={17} tintColor="#e53935" />
+              <Text style={[styles.accountRowLabel, styles.signOutLabel]}>{t.common.signOut}</Text>
+            </TouchableOpacity>
+          </View>
         </ScrollView>
       </View>
 
@@ -648,15 +696,16 @@ export default function AccountScreen() {
         <Modal visible transparent animationType="fade" onRequestClose={() => setFieldModal(null)} statusBarTranslucent>
           <View style={modalStyles.overlay}>
             <Pressable style={StyleSheet.absoluteFill} onPress={() => setFieldModal(null)} />
-            <View style={modalStyles.box}>
+            <View style={modalStyles.glassShadow}>
+            <GlassPanel style={modalStyles.glassBox}>
               <Text style={modalStyles.title}>{fieldModal.label}</Text>
               <TextInput
-                style={modalStyles.input}
+                style={[modalStyles.inputOnGlass, { fontSize: 18, textAlign: 'center' }]}
                 value={fieldDraft}
                 onChangeText={setFieldDraft}
                 keyboardType={fieldModal.keyboard}
                 placeholder={fieldModal.placeholder}
-                placeholderTextColor="#ccc"
+                placeholderTextColor="#8a938e"
                 autoFocus
                 autoCapitalize="none"
                 autoCorrect={false}
@@ -672,8 +721,9 @@ export default function AccountScreen() {
                 <Text style={modalStyles.confirmBtnText}>{t.common.confirm}</Text>
               </TouchableOpacity>
               <TouchableOpacity onPress={() => setFieldModal(null)} hitSlop={8}>
-                <Text style={modalStyles.cancel}>{t.common.cancel}</Text>
+                <Text style={modalStyles.cancelOnGlass}>{t.common.cancel}</Text>
               </TouchableOpacity>
+            </GlassPanel>
             </View>
           </View>
           {Platform.OS === 'ios' && (
@@ -682,6 +732,92 @@ export default function AccountScreen() {
             </InputAccessoryView>
           )}
         </Modal>
+      )}
+
+      {/* ── Sign-out confirm — Liquid Glass popup (mirrors the client Me tab) ── */}
+      <Modal visible={signOutOpen} transparent animationType="fade" onRequestClose={() => setSignOutOpen(false)} statusBarTranslucent>
+        <View style={modalStyles.overlay}>
+          <Pressable style={StyleSheet.absoluteFill} onPress={() => setSignOutOpen(false)} />
+          <View style={modalStyles.glassShadow}>
+          <GlassPanel style={modalStyles.glassBox}>
+            <Text style={modalStyles.title}>{t.account.signOutTitle}</Text>
+            <Text style={modalStyles.messageOnGlass}>{t.account.signOutMsg}</Text>
+            <TouchableOpacity
+              style={modalStyles.confirmBtn}
+              onPress={async () => { setSigningOut(true); await signOut(); }}
+              disabled={signingOut}
+              activeOpacity={0.85}
+            >
+              {signingOut
+                ? <ActivityIndicator color="#fff" />
+                : <Text style={modalStyles.confirmBtnText}>{t.common.signOut}</Text>
+              }
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => setSignOutOpen(false)} hitSlop={8}>
+              <Text style={modalStyles.cancelOnGlass}>{t.common.cancel}</Text>
+            </TouchableOpacity>
+          </GlassPanel>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ── Change password — Liquid Glass popup (mirrors the client Me tab) ── */}
+      <Modal visible={changePwdOpen} transparent animationType="fade" onRequestClose={() => setChangePwdOpen(false)} statusBarTranslucent>
+        <View style={modalStyles.overlay}>
+          <Pressable style={StyleSheet.absoluteFill} onPress={() => setChangePwdOpen(false)} />
+          <View style={modalStyles.glassShadow}>
+          <GlassPanel style={[modalStyles.glassBox, { alignItems: 'stretch' }]}>
+            <Text style={[modalStyles.title, { textAlign: 'center' }]}>{t.account.changePasswordTitle}</Text>
+            <TextInput
+              style={modalStyles.inputOnGlass}
+              value={newPwd}
+              onChangeText={setNewPwd}
+              placeholder={t.changePassword.newPasswordPlaceholder}
+              placeholderTextColor="#8a938e"
+              secureTextEntry
+              autoFocus
+              autoCapitalize="none"
+              autoCorrect={false}
+              returnKeyType="next"
+              inputAccessoryViewID={Platform.OS === 'ios' ? 'account-pwd-input' : undefined}
+            />
+            <TextInput
+              style={modalStyles.inputOnGlass}
+              value={confirmPwd}
+              onChangeText={setConfirmPwd}
+              placeholder={t.changePassword.confirmPasswordPlaceholder}
+              placeholderTextColor="#8a938e"
+              secureTextEntry
+              autoCapitalize="none"
+              autoCorrect={false}
+              returnKeyType="done"
+              onSubmitEditing={handleChangePassword}
+              inputAccessoryViewID={Platform.OS === 'ios' ? 'account-pwd-input' : undefined}
+            />
+            <TouchableOpacity style={modalStyles.confirmBtn} onPress={handleChangePassword} disabled={savingPwd} activeOpacity={0.85}>
+              {savingPwd
+                ? <ActivityIndicator color="#fff" />
+                : <Text style={modalStyles.confirmBtnText}>{t.common.confirm}</Text>
+              }
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => setChangePwdOpen(false)} hitSlop={8} style={{ alignSelf: 'center' }}>
+              <Text style={modalStyles.cancelOnGlass}>{t.common.cancel}</Text>
+            </TouchableOpacity>
+          </GlassPanel>
+          </View>
+        </View>
+        {Platform.OS === 'ios' && (
+          <InputAccessoryView nativeID="account-pwd-input">
+            <View style={{ height: 0 }} />
+          </InputAccessoryView>
+        )}
+      </Modal>
+
+      {/* ── Password updated toast ───────────────────────────────── */}
+      {pwdToast && (
+        <View style={styles.toast} pointerEvents="none">
+          <Text style={styles.toastText}>{t.account.passwordUpdated}</Text>
+        </View>
       )}
 
       {/* ── Workout card style sheet (mirrors the client Me tab picker) ── */}
@@ -920,13 +1056,14 @@ const styles = StyleSheet.create({
   saveButtonDimmed: { backgroundColor: '#a8d9cc' },
   saveButtonText: { fontSize: 16, fontWeight: '700', color: '#fff' },
 
-  signOutButton: {
-    backgroundColor: '#f5f5f3',
-    borderRadius: 100,
-    paddingVertical: 15,
-    alignItems: 'center',
-  },
-  signOutText: { fontSize: 16, fontWeight: '600', color: '#e53935' },
+  // Account card rows (mirror the client Me tab's ACCOUNT section — the old
+  // standalone sign-out pill is gone, Vitek wants the row look on both sides).
+  accountRow:      { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 15, gap: 12 },
+  accountRowLabel: { flex: 1, fontSize: 15, color: '#1a1a1a' },
+  signOutLabel:    { color: '#e53935' },
+  accountSep:      { height: 1, backgroundColor: '#f0f0f0', marginLeft: 16 },
+  toast:     { position: 'absolute', bottom: 80, left: 0, right: 0, alignItems: 'center' },
+  toastText: { backgroundColor: 'rgba(36,78,67,0.92)', color: '#fff', paddingHorizontal: 20, paddingVertical: 10, borderRadius: 100, fontSize: 14, fontWeight: '600', overflow: 'hidden' },
 });
 
 // One label per style, used by BOTH the Appearance row's value and the sheet's options
@@ -989,4 +1126,23 @@ const modalStyles = StyleSheet.create({
   },
   confirmBtnText: { color: '#fff', fontWeight: '700', fontSize: 15 },
   cancel: { fontSize: 14, color: '#999' },
+  // Liquid Glass popup (sign-out confirm) — the Do Mode confirm-box family:
+  // radius-38 shadow wrapper + GlassPanel, texts darkened for glass legibility.
+  glassShadow: { borderRadius: 38, shadowColor: '#000', shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.22, shadowRadius: 28, elevation: 12 },
+  glassBox:   { borderRadius: 38, overflow: 'hidden', padding: 24, alignItems: 'center', gap: 14 },
+  messageOnGlass: { fontSize: 14, color: '#1f2823', fontWeight: '600', textAlign: 'center' },
+  cancelOnGlass:  { fontSize: 14, color: '#414b45', fontWeight: '600' },
+  // TextInput on glass — the free-session-name modal's recipe (translucent white
+  // fill + hairline border) instead of the flat #f5f5f3 that goes muddy on glass.
+  inputOnGlass: {
+    alignSelf: 'stretch',
+    backgroundColor: 'rgba(255,255,255,0.6)',
+    borderWidth: 1,
+    borderColor: 'rgba(0,0,0,0.12)',
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    fontSize: 16,
+    color: '#1a1a1a',
+  },
 });

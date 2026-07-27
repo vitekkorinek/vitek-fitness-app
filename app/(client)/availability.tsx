@@ -12,6 +12,7 @@ import { smartBack } from '@/lib/navHistory';
 import { useAuth } from '@/context/AuthContext';
 import { VFIcon } from '@/components/VFIcon';
 import { BottomSheet } from '@/components/BottomSheet';
+import GlassPanel from '@/components/GlassPanel';
 import { supabase } from '@/lib/supabase';
 
 const HEADER = '#244e43';
@@ -578,9 +579,10 @@ export default function AvailabilityScreen() {
             onPress={() => setShowRecurringConfirm(false)}
           />
           <View style={sv.kvWrap} pointerEvents="box-none">
-            <View style={sv.modal}>
+            <View style={sv.glassShadow}>
+            <GlassPanel style={sv.glassBox}>
               <Text style={sv.title}>Update recurring availability?</Text>
-              <Text style={sv.recurConfirmSub}>You already have a saved recurring schedule. What would you like to do?</Text>
+              <Text style={[sv.recurConfirmSub, sv.messageOnGlass]}>You already have a saved recurring schedule. What would you like to do?</Text>
               <TouchableOpacity
                 style={sv.saveFillBtn}
                 onPress={() => { setShowRecurringConfirm(false); doSave(true); }}
@@ -596,8 +598,9 @@ export default function AvailabilityScreen() {
                 <Text style={sv.saveOutlineBtnText}>This week only</Text>
               </TouchableOpacity>
               <TouchableOpacity onPress={() => setShowRecurringConfirm(false)} style={sv.cancelLink}>
-                <Text style={sv.cancelLinkText}>Cancel</Text>
+                <Text style={[sv.cancelLinkText, sv.cancelOnGlass]}>Cancel</Text>
               </TouchableOpacity>
+            </GlassPanel>
             </View>
           </View>
         </Modal>
@@ -717,4 +720,9 @@ const sv = StyleSheet.create({
   cancelLink:   { paddingTop: 14, alignItems: 'center' },
   cancelLinkText:{ color: MUTED, fontSize: 15 },
   recurConfirmSub:{ fontSize: 13, color: MUTED, textAlign: 'center', marginBottom: 16, lineHeight: 19 },
+  // Liquid Glass centered pop-up (recurring confirm) — radius-38 shadow wrapper + GlassPanel
+  glassShadow: { marginHorizontal: 24, borderRadius: 38, shadowColor: '#000', shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.22, shadowRadius: 28, elevation: 12 },
+  glassBox:    { borderRadius: 38, overflow: 'hidden', padding: 24 },
+  messageOnGlass: { color: '#1f2823', fontWeight: '600' },
+  cancelOnGlass:  { color: '#414b45', fontWeight: '600' },
 });

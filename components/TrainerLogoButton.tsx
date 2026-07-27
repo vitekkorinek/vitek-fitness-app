@@ -8,6 +8,7 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/context/AuthContext';
 import { useSessionStore } from '@/store/sessionStore';
 import { VFIcon } from './VFIcon';
+import GlassPanel from './GlassPanel';
 
 const SCREEN_H = Dimensions.get('window').height;
 const ACCENT  = '#24ac88';
@@ -191,7 +192,8 @@ export function TrainerLogoButton({ light }: { light?: boolean } = {}) {
           activeOpacity={1}
           onPress={() => setShowModal(false)}
         />
-        <View style={ls.modal}>
+        <View style={ls.glassShadow}>
+        <GlassPanel style={ls.glassBox}>
           <Text style={ls.modalTitle}>Notifications</Text>
 
           {!hasSession && pendingCount === 0 ? (
@@ -332,6 +334,7 @@ export function TrainerLogoButton({ light }: { light?: boolean } = {}) {
           <TouchableOpacity onPress={() => setShowModal(false)} style={ls.closeBtn}>
             <Text style={ls.closeBtnText}>Close</Text>
           </TouchableOpacity>
+        </GlassPanel>
         </View>
       </Modal>
     </>
@@ -348,28 +351,32 @@ const ls = StyleSheet.create({
   // On a light header the badge gets a light hairline ring so it reads off the glass.
   badgeLight: { borderWidth: 1.5, borderColor: '#faf9f7' },
   overlay: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.45)' },
-  modal: {
+  // Liquid Glass popup — radius-38 shadow wrapper (carries the old modal's
+  // positioning) + GlassPanel. Shadow lives on the wrapper, overflow clips it.
+  glassShadow: {
     position: 'absolute', top: '50%', left: 20, right: 20,
-    backgroundColor: CARD, borderRadius: 16, padding: 20,
     transform: [{ translateY: -200 }],
+    borderRadius: 38,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.22, shadowRadius: 28, elevation: 12,
   },
+  glassBox: { borderRadius: 38, overflow: 'hidden', padding: 24 },
   modalTitle:    { fontSize: 17, fontWeight: '600', color: TEXT, textAlign: 'center', marginBottom: 16 },
-  empty:         { fontSize: 14, color: MUTED, textAlign: 'center', marginVertical: 20 },
-  divider:       { height: 0.5, backgroundColor: BORDER, marginVertical: 10 },
-  sectionHeader: { fontSize: 11, fontWeight: '700', color: MUTED, letterSpacing: 0.8, textTransform: 'uppercase', marginBottom: 8, marginTop: 4 },
-  sectionDivider:{ height: 1, backgroundColor: BORDER, marginVertical: 12 },
+  empty:         { fontSize: 14, color: '#1f2823', fontWeight: '600', textAlign: 'center', marginVertical: 20 },
+  divider:       { height: 0.5, backgroundColor: 'rgba(0,0,0,0.08)', marginVertical: 10 },
+  sectionHeader: { fontSize: 11, fontWeight: '700', color: '#414b45', letterSpacing: 0.8, textTransform: 'uppercase', marginBottom: 8, marginTop: 4 },
+  sectionDivider:{ height: 1, backgroundColor: 'rgba(0,0,0,0.08)', marginVertical: 12 },
   reqRow:     { paddingVertical: 2 },
   reqClient:  { fontSize: 14, fontWeight: '700', color: TEXT, marginBottom: 2 },
   reqKind:    { fontSize: 12, fontWeight: '700', marginBottom: 2 },
   reqAppt:    { fontSize: 13, color: TEXT },
-  reqNote:    { fontSize: 13, color: MUTED, marginTop: 4, lineHeight: 18 },
+  reqNote:    { fontSize: 13, color: '#414b45', marginTop: 4, lineHeight: 18 },
   reqBtns:    { flexDirection: 'row', gap: 8, marginTop: 10 },
   doneBtn:    { paddingVertical: 8, paddingHorizontal: 16, borderRadius: 100, backgroundColor: ACCENT },
   doneBtnText:{ color: '#fff', fontSize: 13, fontWeight: '600' },
   viewBtn:    { paddingVertical: 8, paddingHorizontal: 16, borderRadius: 100, borderWidth: 1.5, borderColor: HEADER },
   viewBtnText:{ color: HEADER, fontSize: 13, fontWeight: '600' },
   closeBtn:   { paddingTop: 16, alignItems: 'center' },
-  closeBtnText: { color: MUTED, fontSize: 15 },
+  closeBtnText: { color: '#414b45', fontSize: 15, fontWeight: '600' },
   // Session in progress
   sessionRow: {
     flexDirection: 'row', alignItems: 'center', gap: 12,

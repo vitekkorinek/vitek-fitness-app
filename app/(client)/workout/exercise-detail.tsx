@@ -34,6 +34,7 @@ import Svg, {
 } from 'react-native-svg';
 
 import { supabase } from '@/lib/supabase';
+import GlassPanel from '@/components/GlassPanel';
 import { useAuth } from '@/context/AuthContext';
 import {
   getBridgedExercises,
@@ -1599,7 +1600,8 @@ export default function ExerciseDetailScreen() {
       <Modal visible={hardBlockModal} transparent animationType="fade" onRequestClose={() => setHardBlockModal(false)}>
         <View style={styles.centeredRoot}>
           <Pressable style={StyleSheet.absoluteFill} onPress={() => setHardBlockModal(false)} />
-          <View style={styles.hardBlockBox}>
+          <View style={styles.confirmBoxShadow}>
+          <GlassPanel style={styles.hardBlockBox}>
             <Text style={styles.hardBlockTitle}>You must start the workout to do this</Text>
             <TouchableOpacity
               style={styles.hardBlockStartBtn}
@@ -1619,6 +1621,7 @@ export default function ExerciseDetailScreen() {
             <TouchableOpacity onPress={() => setHardBlockModal(false)} activeOpacity={0.7} hitSlop={8}>
               <Text style={styles.hardBlockCancelText}>Cancel</Text>
             </TouchableOpacity>
+          </GlassPanel>
           </View>
         </View>
       </Modal>
@@ -1627,7 +1630,8 @@ export default function ExerciseDetailScreen() {
       <Modal visible={confirmModal !== null} transparent animationType="fade" onRequestClose={() => setConfirmModal(null)}>
         <View style={styles.centeredRoot}>
           <Pressable style={StyleSheet.absoluteFill} onPress={() => { confirmModal?.onCancel?.(); setConfirmModal(null); }} />
-          <View style={styles.confirmBox}>
+          <View style={styles.confirmBoxShadow}>
+          <GlassPanel style={styles.confirmBox}>
             <Text style={styles.confirmTitle}>{confirmModal?.title}</Text>
             {confirmModal?.message ? <Text style={styles.confirmMessage}>{confirmModal.message}</Text> : null}
             <TouchableOpacity
@@ -1648,6 +1652,7 @@ export default function ExerciseDetailScreen() {
             >
               <Text style={styles.confirmCancelText}>{confirmModal?.cancelText}</Text>
             </TouchableOpacity>
+          </GlassPanel>
           </View>
         </View>
       </Modal>
@@ -1661,7 +1666,8 @@ export default function ExerciseDetailScreen() {
       >
         <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.centeredRoot}>
           <Pressable style={StyleSheet.absoluteFill} onPress={() => { if (restRef.current) clearInterval(restRef.current); setRestRunning(false); setRestOvertimeSecs(0); setRestVisible(false); }} />
-          <View style={styles.restModal}>
+          <View style={styles.confirmBoxShadow}>
+          <GlassPanel style={styles.restModal}>
             <Text style={styles.restLabel}>REST</Text>
             {restRunning ? (
               <>
@@ -1737,6 +1743,7 @@ export default function ExerciseDetailScreen() {
                 </TouchableOpacity>
               </>
             )}
+          </GlassPanel>
           </View>
         </KeyboardAvoidingView>
       </Modal>
@@ -1797,7 +1804,8 @@ export default function ExerciseDetailScreen() {
         <Modal visible transparent animationType="fade" onRequestClose={() => setTooltipPoint(null)}>
           <View style={styles.centeredRoot}>
             <Pressable style={StyleSheet.absoluteFill} onPress={() => setTooltipPoint(null)} />
-            <View style={[styles.centeredModal, styles.tooltipModal]}>
+            <View style={styles.confirmBoxShadow}>
+            <GlassPanel style={[styles.glassCenteredBox, styles.tooltipModal]}>
               <Text style={styles.tooltipDate}>{formatDate(tooltipPoint.date)}</Text>
               {tooltipPoint.workoutName != null && (
                 <Text style={styles.tooltipWorkoutName}>{tooltipPoint.workoutName}</Text>
@@ -1825,6 +1833,7 @@ export default function ExerciseDetailScreen() {
               >
                 <Text style={styles.centeredModalDoneBtnText}>{en.common.ok}</Text>
               </TouchableOpacity>
+            </GlassPanel>
             </View>
           </View>
         </Modal>
@@ -1877,7 +1886,8 @@ function DetailMachineBrandModal({
   return (
     <Modal visible transparent animationType="fade" onRequestClose={onClose} statusBarTranslucent>
       <Pressable style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.52)' }]} onPress={onClose} />
-      <View style={styles.brandModal}>
+      <View style={[styles.brandModalWrap, styles.confirmBoxShadow]}>
+      <GlassPanel style={styles.brandModal}>
         <Text style={styles.centeredModalTitle}>{en.machineSelector.moreBrandsTitle}</Text>
         <ScrollView bounces={false} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} style={{ marginBottom: 12 }} contentContainerStyle={{ gap: 8 }}>
           {PRESET_BRANDS.map(brand => (
@@ -1913,6 +1923,7 @@ function DetailMachineBrandModal({
         <TouchableOpacity style={[styles.centeredModalDoneBtn, { marginTop: 8 }]} onPress={onClose} activeOpacity={0.85}>
           <Text style={styles.centeredModalDoneBtnText}>{en.common.cancel}</Text>
         </TouchableOpacity>
+      </GlassPanel>
       </View>
     </Modal>
   );
@@ -2216,7 +2227,8 @@ function DetailSetNoteModal({
     <Modal visible transparent animationType="fade" onRequestClose={onClose} statusBarTranslucent>
       <View style={styles.centeredRoot}>
         <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
-        <View style={[styles.centeredModal, { padding: 20 }]}>
+        <View style={styles.confirmBoxShadow}>
+        <GlassPanel style={styles.glassCenteredBox}>
           <Text style={styles.centeredModalTitle}>{title}</Text>
           <ScrollView bounces={false} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} style={{ maxHeight: SCREEN_H * 0.5 }}>
             <Text style={styles.noteLabel}>{en.exerciseDetail.trainerLabel}</Text>
@@ -2250,7 +2262,7 @@ function DetailSetNoteModal({
               </View>
             )}
             <View style={styles.noteSep} />
-            <Text style={[styles.noteLabel, { color: MUTED }]}>{en.exerciseDetail.clientLabel}</Text>
+            <Text style={[styles.noteLabel, { color: '#414b45' }]}>{en.exerciseDetail.clientLabel}</Text>
             {[...clientNotes].reverse().map(n => (
               <View key={n.id} style={[styles.noteEntry, styles.clientNoteEntry, n.isDeleted && styles.noteEntryDeleted]}>
                 <View style={styles.noteEntryBody}>
@@ -2290,6 +2302,7 @@ function DetailSetNoteModal({
           <TouchableOpacity style={styles.centeredModalDoneBtn} onPress={onClose} activeOpacity={0.85}>
             <Text style={styles.centeredModalDoneBtnText}>{en.exerciseDetail.done}</Text>
           </TouchableOpacity>
+        </GlassPanel>
         </View>
       </View>
     </Modal>
@@ -2671,7 +2684,8 @@ function SetHistoryModal({ workoutExerciseId, highlightSetNum, onClose }: {
     <Modal visible transparent animationType="fade" onRequestClose={onClose} statusBarTranslucent>
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.centeredRoot}>
         <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
-        <View style={styles.centeredModal}>
+        <View style={styles.confirmBoxShadow}>
+        <GlassPanel style={styles.glassCenteredBox}>
           <Text style={styles.centeredModalTitle}>{en.doMode.setHistory.title}</Text>
           <ScrollView bounces={false} showsVerticalScrollIndicator={false}>
             {loading ? (
@@ -2710,6 +2724,7 @@ function SetHistoryModal({ workoutExerciseId, highlightSetNum, onClose }: {
           <TouchableOpacity style={styles.centeredModalDoneBtn} onPress={onClose} activeOpacity={0.85}>
             <Text style={styles.centeredModalDoneBtnText}>{en.exerciseDetail.done}</Text>
           </TouchableOpacity>
+        </GlassPanel>
         </View>
       </KeyboardAvoidingView>
     </Modal>
@@ -2718,12 +2733,12 @@ function SetHistoryModal({ workoutExerciseId, highlightSetNum, onClose }: {
 
 const setHistStyles = StyleSheet.create({
   sessionBlock: { marginBottom: 16 },
-  sessionLabel: { fontSize: 12, fontWeight: '800', color: '#aaa', letterSpacing: 0.5, marginBottom: 6 },
+  sessionLabel: { fontSize: 12, fontWeight: '800', color: '#414b45', letterSpacing: 0.5, marginBottom: 6 },
   setRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 5, paddingHorizontal: 8, borderRadius: 8 },
   setRowHighlight: { backgroundColor: '#e8f7f3' },
-  setNumText: { fontSize: 13, fontWeight: '700', color: '#bbb', width: 20, textAlign: 'center' },
+  setNumText: { fontSize: 13, fontWeight: '700', color: '#414b45', width: 20, textAlign: 'center' },
   setDataText: { fontSize: 14, fontWeight: '600', color: '#1a1a1a' },
-  emptyText: { fontSize: 14, color: '#bbb', marginBottom: 4 },
+  emptyText: { fontSize: 14, color: '#414b45', marginBottom: 4 },
 });
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
@@ -2866,13 +2881,14 @@ const styles = StyleSheet.create({
   barOptionTextPeeking: { color: '#c8a800' },
   barCustomInput: { fontSize: 13, fontWeight: '600', color: TEXT, minWidth: 44, textAlign: 'center', padding: 0 },
 
-  brandModal: { position: 'absolute', top: SCREEN_H * 0.18, left: 24, right: 24, maxHeight: SCREEN_H * 0.65, backgroundColor: CARD, borderRadius: 20, padding: 20 },
-  brandPickerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 13, paddingHorizontal: 16, borderRadius: 10, borderWidth: 1, borderColor: '#e0e0dc', backgroundColor: '#f9f9f7' },
+  brandModalWrap: { position: 'absolute', top: SCREEN_H * 0.18, left: 24, right: 24 },
+  brandModal: { borderRadius: 38, overflow: 'hidden', maxHeight: SCREEN_H * 0.65, padding: 20 },
+  brandPickerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 13, paddingHorizontal: 16, borderRadius: 10, borderWidth: 1, borderColor: 'rgba(0,0,0,0.12)', backgroundColor: 'rgba(255,255,255,0.6)' },
   brandPickerRowActive: { backgroundColor: ACCENT, borderColor: ACCENT },
   brandPickerText: { fontSize: 15, fontWeight: '500', color: TEXT },
   brandPickerTextActive: { color: '#fff', fontWeight: '600' },
   brandCustomRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 4 },
-  brandCustomInput: { flex: 1, fontSize: 15, color: TEXT, borderWidth: 1, borderColor: '#e0e0dc', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, backgroundColor: '#f9f9f7' },
+  brandCustomInput: { flex: 1, fontSize: 15, color: TEXT, borderWidth: 1, borderColor: 'rgba(0,0,0,0.12)', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, backgroundColor: 'rgba(255,255,255,0.6)' },
   brandCustomSetBtn: { paddingHorizontal: 16, paddingVertical: 10, borderRadius: 100, backgroundColor: ACCENT },
   brandCustomSetBtnDisabled: { backgroundColor: '#ccc' },
   brandCustomSetBtnText: { color: '#fff', fontSize: 14, fontWeight: '600' },
@@ -3028,26 +3044,30 @@ const styles = StyleSheet.create({
 
   // Modals
   centeredRoot: { flex: 1, backgroundColor: 'rgba(0,0,0,0.52)', justifyContent: 'center', paddingHorizontal: 24 },
-  hardBlockBox: { backgroundColor: CARD, borderRadius: 16, padding: 24, alignItems: 'center', gap: 16 },
+  // Liquid Glass popup family (matches the Do Mode confirmBoxShadow/confirmBox look):
+  // shadow lives on the wrapper — the glass box is overflow:'hidden' and would clip it.
+  confirmBoxShadow: { borderRadius: 38, shadowColor: '#000', shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.22, shadowRadius: 28, elevation: 12 },
+  hardBlockBox: { borderRadius: 38, overflow: 'hidden', padding: 24, alignItems: 'center', gap: 16 },
   hardBlockTitle: { fontSize: 16, fontWeight: '700', color: TEXT, textAlign: 'center' },
   hardBlockStartBtn: { backgroundColor: ACCENT, borderRadius: 100, paddingVertical: 14, paddingHorizontal: 32 },
   hardBlockStartText: { color: '#fff', fontSize: 15, fontWeight: '700' },
-  hardBlockCancelText: { fontSize: 14, color: MUTED },
-  confirmBox: { backgroundColor: CARD, borderRadius: 16, padding: 24, alignItems: 'center', gap: 16 },
+  hardBlockCancelText: { fontSize: 14, color: '#414b45', fontWeight: '600' },
+  confirmBox: { borderRadius: 38, overflow: 'hidden', padding: 24, alignItems: 'center', gap: 16 },
   confirmTitle: { fontSize: 16, fontWeight: '700', color: TEXT, textAlign: 'center' },
-  confirmMessage: { fontSize: 14, color: MUTED, textAlign: 'center', lineHeight: 20, marginTop: -6 },
+  confirmMessage: { fontSize: 14, color: '#1f2823', fontWeight: '600', textAlign: 'center', lineHeight: 20, marginTop: -6 },
   confirmBtn: { backgroundColor: ACCENT, borderRadius: 100, paddingVertical: 14, paddingHorizontal: 32, alignSelf: 'stretch', alignItems: 'center' },
   confirmBtnText: { color: '#fff', fontSize: 15, fontWeight: '700' },
-  confirmCancelText: { fontSize: 14, color: MUTED },
+  confirmCancelText: { fontSize: 14, color: '#414b45', fontWeight: '600' },
   centeredModal: { backgroundColor: CARD, borderRadius: 20, padding: 20, maxHeight: SCREEN_H * 0.78 },
+  glassCenteredBox: { borderRadius: 38, overflow: 'hidden', padding: 20, maxHeight: SCREEN_H * 0.78 },
   centeredModalTitle: { fontSize: 16, fontWeight: '700', color: TEXT, marginBottom: 14 },
   centeredModalDoneBtn: { backgroundColor: ACCENT, borderRadius: 100, paddingVertical: 13, alignItems: 'center', marginTop: 14 },
   centeredModalDoneBtnText: { color: '#fff', fontWeight: '700', fontSize: 15 },
 
 
   // Set notes
-  noteLabel: { fontSize: 10, fontWeight: '800', color: '#bbb', letterSpacing: 0.9, marginBottom: 6, marginTop: 4 },
-  noteEntry: { flexDirection: 'row', alignItems: 'flex-start', backgroundColor: '#f9f9f7', borderRadius: 10, padding: 10, marginBottom: 6, gap: 8 },
+  noteLabel: { fontSize: 10, fontWeight: '800', color: '#414b45', letterSpacing: 0.9, marginBottom: 6, marginTop: 4 },
+  noteEntry: { flexDirection: 'row', alignItems: 'flex-start', backgroundColor: 'rgba(255,255,255,0.55)', borderRadius: 10, padding: 10, marginBottom: 6, gap: 8 },
   noteEntryDeleted: { opacity: 0.4 },
   noteDeletedText: { textDecorationLine: 'line-through' },
   clientNoteEntry: { backgroundColor: '#f0f8f5', borderWidth: 1, borderColor: '#d0eee6' },
@@ -3055,32 +3075,32 @@ const styles = StyleSheet.create({
   noteDateLabel: { fontSize: 11, fontWeight: '700', color: '#aaa' },
   noteBodyText: { fontSize: 14, color: TEXT, lineHeight: 20 },
   noteAddRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 4 },
-  noteAddInput: { flex: 1, backgroundColor: '#f5f5f3', borderRadius: 10, padding: 10, fontSize: 14, color: TEXT, minHeight: 44, textAlignVertical: 'top' },
+  noteAddInput: { flex: 1, backgroundColor: 'rgba(255,255,255,0.6)', borderWidth: 1, borderColor: 'rgba(0,0,0,0.12)', borderRadius: 10, padding: 10, fontSize: 14, color: TEXT, minHeight: 44, textAlignVertical: 'top' },
   noteAddBtn: { backgroundColor: ACCENT, borderRadius: 100, paddingHorizontal: 14, paddingVertical: 10 },
   noteAddBtnDisabled: { backgroundColor: '#d4d4d0' },
   noteAddBtnText: { color: '#fff', fontWeight: '700', fontSize: 14 },
-  noteSep: { height: 1, backgroundColor: '#f0f0f0', marginVertical: 10 },
+  noteSep: { height: 1, backgroundColor: 'rgba(0,0,0,0.08)', marginVertical: 10 },
 
   // Dot tooltip
   tooltipModal: { padding: 24, alignItems: 'center', gap: 4 },
-  tooltipDate: { fontSize: 12, color: MUTED, fontWeight: '500' },
+  tooltipDate: { fontSize: 12, color: '#414b45', fontWeight: '500' },
   tooltipWorkoutName: { fontSize: 13, color: TEXT, fontWeight: '600', marginBottom: 8, textAlign: 'center' },
   tooltipMainRow: { flexDirection: 'row', alignItems: 'baseline', gap: 8 },
   tooltipWeight: { fontSize: 30, fontWeight: '700', color: TEXT },
-  tooltipReps: { fontSize: 16, color: MUTED, fontWeight: '500' },
-  tooltipMeta: { fontSize: 13, color: MUTED, marginTop: 2 },
+  tooltipReps: { fontSize: 16, color: '#414b45', fontWeight: '500' },
+  tooltipMeta: { fontSize: 13, color: '#414b45', marginTop: 2 },
 
   // Rest timer
-  restModal: { backgroundColor: CARD, borderRadius: 20, padding: 24, alignItems: 'center', gap: 12 },
-  restLabel: { fontSize: 12, fontWeight: '700', color: MUTED, letterSpacing: 0.8 },
+  restModal: { borderRadius: 38, overflow: 'hidden', padding: 24, alignItems: 'center', gap: 12 },
+  restLabel: { fontSize: 12, fontWeight: '700', color: '#414b45', letterSpacing: 0.8 },
   restRingWrap: { position: 'relative', alignItems: 'center', justifyContent: 'center' },
   restRingCenter: { position: 'absolute', alignItems: 'center', justifyContent: 'center' },
-  restRingSecsLabel: { fontSize: 12, fontWeight: '500', color: MUTED, letterSpacing: 0.5, marginTop: 2 },
+  restRingSecsLabel: { fontSize: 12, fontWeight: '500', color: '#414b45', letterSpacing: 0.5, marginTop: 2 },
   restTimer: { fontSize: 46, fontWeight: '300', color: TEXT, fontVariant: ['tabular-nums'], lineHeight: 50 },
   restTimerDone: { color: '#e53935' },
   restTimerInput: { fontSize: 46, fontWeight: '300', color: TEXT, fontVariant: ['tabular-nums'], textAlign: 'center', minWidth: 100, lineHeight: 50 },
   restButtons: { flexDirection: 'row', gap: 16, marginTop: 0 },
-  restAdjBtn: { backgroundColor: '#f0f0ee', borderRadius: 10, paddingHorizontal: 20, paddingVertical: 10 },
+  restAdjBtn: { backgroundColor: 'rgba(255,255,255,0.6)', borderWidth: 1, borderColor: 'rgba(0,0,0,0.12)', borderRadius: 10, paddingHorizontal: 20, paddingVertical: 10 },
   restAdjText: { fontSize: 15, fontWeight: '600', color: TEXT },
   restSkipBtn: { backgroundColor: ACCENT, borderRadius: 100, paddingHorizontal: 32, paddingVertical: 11 },
   restSkipText: { fontSize: 15, fontWeight: '700', color: '#fff' },

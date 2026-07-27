@@ -30,6 +30,7 @@ import type { FoodLogEntry } from '@/lib/nutritionInsights';
 import type { FoodConfirmResult } from '@/components/FoodSearchModal';
 import EditPortionSheet from '@/components/EditPortionSheet';
 import { BottomSheet } from '@/components/BottomSheet';
+import GlassPanel from '@/components/GlassPanel';
 import { useTabBarHeight } from '@/components/FloatingTabBar';
 import { LightHeader, HeaderIcon, HEADER_ICON, useHeaderHeight } from '@/components/LightHeader';
 import type { FoodResult } from '@/lib/foodApi';
@@ -1373,7 +1374,8 @@ export default function FavouritesScreen() {
       {/* ── Recommendation detail modal ──────────────────────────────── */}
       <Modal visible={!!selectedRecomm} transparent animationType="fade" onRequestClose={() => setSelectedRecomm(null)}>
         <Pressable style={s.overlay} onPress={() => setSelectedRecomm(null)}>
-          <Pressable style={[s.modal, { padding: 0, overflow: 'hidden' }]} onPress={() => {}}>
+          <Pressable style={s.glassShadow} onPress={() => {}}>
+          <GlassPanel style={[s.glassBox, { padding: 0 }]}>
             <LinearGradient
               colors={selectedRecomm?.category === 'supplement' ? ['#c87820', '#e89840'] : ['#3a7d6b', '#244e43']}
               style={s.recommModalTop}
@@ -1391,15 +1393,16 @@ export default function FavouritesScreen() {
                 <Text style={{ fontSize: 13, color: ACCENT, marginBottom: 8 }} numberOfLines={1}>{selectedRecomm.link_url}</Text>
               )}
               {!!selectedRecomm?.body && (
-                <Text style={{ fontSize: 14, color: MUTED, lineHeight: 20 }}>{selectedRecomm.body}</Text>
+                <Text style={{ fontSize: 14, color: '#1f2823', fontWeight: '600', lineHeight: 20 }}>{selectedRecomm.body}</Text>
               )}
             </View>
             <TouchableOpacity
-              style={{ borderTopWidth: 1, borderTopColor: BORDER, paddingVertical: 14, alignItems: 'center' }}
+              style={{ borderTopWidth: 1, borderTopColor: 'rgba(0,0,0,0.08)', paddingVertical: 14, alignItems: 'center' }}
               onPress={() => setSelectedRecomm(null)}
             >
-              <Text style={{ fontSize: 15, fontWeight: '600', color: MUTED }}>Close</Text>
+              <Text style={{ fontSize: 15, fontWeight: '600', color: '#414b45' }}>Close</Text>
             </TouchableOpacity>
+          </GlassPanel>
           </Pressable>
         </Pressable>
       </Modal>
@@ -1449,12 +1452,13 @@ export default function FavouritesScreen() {
       {/* ── Use Day Modal ───────────────────────────────────────────── */}
       <Modal visible={!!useDayModal} transparent animationType="fade" onRequestClose={() => setUseDayModal(null)}>
         <Pressable style={s.overlay} onPress={() => setUseDayModal(null)}>
-          <Pressable style={s.modal} onPress={() => {}}>
+          <Pressable style={s.glassShadow} onPress={() => {}}>
+          <GlassPanel style={s.glassBox}>
             <Text style={s.modalTitle}>Use this day</Text>
-            <Text style={s.modalSub}>{useDayModal?.name}</Text>
+            <Text style={[s.modalSub, s.messageOnGlass]}>{useDayModal?.name}</Text>
 
-            <Text style={s.fieldLabel}>Log to which date?</Text>
-            <View style={s.datePicker}>
+            <Text style={[s.fieldLabel, s.metaOnGlass]}>Log to which date?</Text>
+            <View style={[s.datePicker, s.fillOnGlass]}>
               <TouchableOpacity onPress={() => setUseDayDate(d => addDays(d, -1))} hitSlop={8} style={s.dateArrow}>
                 <SymbolView name="chevron.left" size={18} tintColor={HEADER} />
               </TouchableOpacity>
@@ -1464,7 +1468,7 @@ export default function FavouritesScreen() {
               </TouchableOpacity>
             </View>
 
-            <Text style={s.useDayNote}>
+            <Text style={[s.useDayNote, s.metaOnGlass]}>
               All {useDayModal?.snapshot_json.length} items will be logged keeping their original meal categories.
             </Text>
 
@@ -1475,8 +1479,9 @@ export default function FavouritesScreen() {
               <Text style={s.confirmBtnText}>{usingDay ? 'Logging…' : 'Log all items'}</Text>
             </TouchableOpacity>
             <TouchableOpacity style={{ marginTop: 8, alignSelf: 'center' }} onPress={() => setUseDayModal(null)}>
-              <Text style={{ fontSize: 14, color: MUTED }}>Cancel</Text>
+              <Text style={{ fontSize: 14, color: '#414b45', fontWeight: '600' }}>Cancel</Text>
             </TouchableOpacity>
+          </GlassPanel>
           </Pressable>
         </Pressable>
       </Modal>
@@ -1484,9 +1489,10 @@ export default function FavouritesScreen() {
       {/* ── Confirm Modal ───────────────────────────────────────────── */}
       <Modal visible={!!confirmModal} transparent animationType="fade" onRequestClose={() => setConfirmModal(null)}>
         <Pressable style={s.overlay} onPress={() => setConfirmModal(null)}>
-          <Pressable style={s.modal} onPress={() => {}}>
+          <Pressable style={s.glassShadow} onPress={() => {}}>
+          <GlassPanel style={s.glassBox}>
             <Text style={s.modalTitle}>{confirmModal?.title}</Text>
-            {confirmModal?.message && <Text style={s.modalSub}>{confirmModal.message}</Text>}
+            {confirmModal?.message && <Text style={[s.modalSub, s.messageOnGlass]}>{confirmModal.message}</Text>}
             <TouchableOpacity
               style={[s.confirmBtn, confirmModal?.danger && s.confirmBtnDanger]}
               onPress={confirmModal?.onConfirm} activeOpacity={0.8}
@@ -1494,8 +1500,9 @@ export default function FavouritesScreen() {
               <Text style={s.confirmBtnText}>{confirmModal?.confirmLabel}</Text>
             </TouchableOpacity>
             <TouchableOpacity style={{ marginTop: 8, alignSelf: 'center' }} onPress={() => setConfirmModal(null)}>
-              <Text style={{ fontSize: 14, color: MUTED }}>Cancel</Text>
+              <Text style={{ fontSize: 14, color: '#414b45', fontWeight: '600' }}>Cancel</Text>
             </TouchableOpacity>
+          </GlassPanel>
           </Pressable>
         </Pressable>
       </Modal>
@@ -1503,11 +1510,12 @@ export default function FavouritesScreen() {
       {/* ── Insert Day Modal (from food log "Insert day" button) ─────── */}
       <Modal visible={!!insertDayModal} transparent animationType="fade" onRequestClose={() => setInsertDayModal(null)}>
         <Pressable style={s.overlay} onPress={() => setInsertDayModal(null)}>
-          <Pressable style={s.modal} onPress={() => {}}>
+          <Pressable style={s.glassShadow} onPress={() => {}}>
+          <GlassPanel style={s.glassBox}>
             <Text style={s.modalTitle}>Use this day?</Text>
-            <Text style={s.modalSub}>{insertDayModal?.name}</Text>
+            <Text style={[s.modalSub, s.messageOnGlass]}>{insertDayModal?.name}</Text>
             {insertDayModal && (
-              <Text style={s.useDayNote}>
+              <Text style={[s.useDayNote, s.metaOnGlass]}>
                 {dayTotals(insertDayModal).kcal} kcal · {insertDayModal.snapshot_json.length} items will be added to {formatDateLabel(insertDayDate)}, keeping their original meal categories.
               </Text>
             )}
@@ -1518,8 +1526,9 @@ export default function FavouritesScreen() {
               <Text style={s.confirmBtnText}>{insertingDay ? 'Inserting…' : 'Insert'}</Text>
             </TouchableOpacity>
             <TouchableOpacity style={{ marginTop: 8, alignSelf: 'center' }} onPress={() => setInsertDayModal(null)}>
-              <Text style={{ fontSize: 14, color: MUTED }}>Cancel</Text>
+              <Text style={{ fontSize: 14, color: '#414b45', fontWeight: '600' }}>Cancel</Text>
             </TouchableOpacity>
+          </GlassPanel>
           </Pressable>
         </Pressable>
       </Modal>
@@ -1631,6 +1640,12 @@ const s = StyleSheet.create({
 
   overlay:    { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'center', alignItems: 'center' },
   modal:      { backgroundColor: CARD, borderRadius: 16, padding: 24, width: '82%', maxWidth: 340 },
+  // Liquid Glass centered pop-ups — radius-38 shadow wrapper + GlassPanel
+  glassShadow: { width: '82%', maxWidth: 340, borderRadius: 38, shadowColor: '#000', shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.22, shadowRadius: 28, elevation: 12 },
+  glassBox:    { borderRadius: 38, overflow: 'hidden', padding: 24, width: '100%' },
+  messageOnGlass: { color: '#1f2823', fontWeight: '600' },
+  metaOnGlass:    { color: '#414b45' },
+  fillOnGlass:    { backgroundColor: 'rgba(255,255,255,0.6)' },
   modalTitle: { fontSize: 17, fontWeight: '700', color: TEXT, textAlign: 'center', marginBottom: 4 },
   modalSub:   { fontSize: 13, color: MUTED, textAlign: 'center', marginBottom: 12 },
   fieldLabel: { fontSize: 11, fontWeight: '700', color: MUTED, letterSpacing: 0.5, marginBottom: 8, textTransform: 'uppercase' },

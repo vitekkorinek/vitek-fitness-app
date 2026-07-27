@@ -25,6 +25,7 @@ import { supabase } from '@/lib/supabase';
 import FoodSearchModal from '@/components/FoodSearchModal';
 import type { FoodConfirmResult } from '@/components/FoodSearchModal';
 import { BottomSheet } from '@/components/BottomSheet';
+import GlassPanel from '@/components/GlassPanel';
 import { LightHeader, HeaderIcon, HEADER_ICON, useHeaderHeight } from '@/components/LightHeader';
 
 const BG     = '#faf9f7';
@@ -554,18 +555,19 @@ export default function MealEditorScreen() {
             pointerEvents="box-none"
           >
             <Pressable style={StyleSheet.absoluteFillObject} onPress={() => setIngEditIdx(null)} />
-            <View style={[s.modal, { zIndex: 1 }]}>
+            <View style={[s.glassShadow, { zIndex: 1 }]}>
+            <GlassPanel style={s.glassBox}>
               <Text style={s.modalTitle} numberOfLines={2}>{ingDisplayName(ing)}</Text>
               <View style={s.editAmountRow}>
                 <TextInput
-                  style={s.editAmountInput}
+                  style={[s.editAmountInput, s.inputOnGlass]}
                   value={ingEditAmount}
                   onChangeText={setIngEditAmount}
                   keyboardType="decimal-pad"
                   autoFocus
                   selectTextOnFocus
                 />
-                <Text style={s.editUnit}>{ing.unit}</Text>
+                <Text style={[s.editUnit, s.metaOnGlass]}>{ing.unit}</Text>
               </View>
               <View style={s.editNutrRow}>
                 {[
@@ -576,7 +578,7 @@ export default function MealEditorScreen() {
                 ].map(c => (
                   <View key={c.label} style={s.editNutrCell}>
                     <Text style={[s.editNutrVal, { color: c.color }]}>{c.val}</Text>
-                    <Text style={s.editNutrLabel}>{c.label}</Text>
+                    <Text style={[s.editNutrLabel, s.metaOnGlass]}>{c.label}</Text>
                   </View>
                 ))}
               </View>
@@ -584,12 +586,13 @@ export default function MealEditorScreen() {
                 <Text style={s.confirmBtnText}>Update</Text>
               </TouchableOpacity>
               <TouchableOpacity style={s.cancelLink} onPress={() => setIngEditIdx(null)}>
-                <Text style={s.cancelText}>Cancel</Text>
+                <Text style={[s.cancelText, s.cancelOnGlass]}>Cancel</Text>
               </TouchableOpacity>
               <TouchableOpacity style={s.editDeleteBtn} onPress={removeIngFromEdit}>
                 <SymbolView name="trash" size={13} tintColor={CORAL} />
                 <Text style={s.editDeleteText}>Remove from meal</Text>
               </TouchableOpacity>
+            </GlassPanel>
             </View>
           </KeyboardAvoidingView>
         );
@@ -598,12 +601,13 @@ export default function MealEditorScreen() {
       {/* Log meal modal */}
       <Modal visible={logModal} transparent animationType="fade" onRequestClose={() => setLogModal(false)}>
         <Pressable style={s.centeredOverlay} onPress={() => setLogModal(false)}>
-          <Pressable style={s.modal} onPress={() => {}}>
+          <Pressable style={s.glassShadow} onPress={() => {}}>
+          <GlassPanel style={s.glassBox}>
             <Text style={s.modalTitle}>Log this meal</Text>
-            <Text style={s.modalSub}>{meal?.ingredients.length ?? 0} items · {totals.kcal} kcal</Text>
+            <Text style={[s.modalSub, s.messageOnGlass]}>{meal?.ingredients.length ?? 0} items · {totals.kcal} kcal</Text>
 
-            <Text style={s.fieldLabel}>Date</Text>
-            <View style={s.datePicker}>
+            <Text style={[s.fieldLabel, s.metaOnGlass]}>Date</Text>
+            <View style={[s.datePicker, s.fillOnGlass]}>
               <TouchableOpacity onPress={() => setLogDate(d => addDays(d, -1))} hitSlop={8} style={s.dateArrow}>
                 <SymbolView name="chevron.left" size={18} tintColor={HEADER} />
               </TouchableOpacity>
@@ -613,12 +617,12 @@ export default function MealEditorScreen() {
               </TouchableOpacity>
             </View>
 
-            <Text style={[s.fieldLabel, { marginTop: 12 }]}>Meal</Text>
+            <Text style={[s.fieldLabel, s.metaOnGlass, { marginTop: 12 }]}>Meal</Text>
             <View style={s.catRow}>
               {MEAL_CATS.map(cat => (
                 <TouchableOpacity
                   key={cat.key}
-                  style={[s.catPill, logCat === cat.key && s.catPillActive]}
+                  style={[s.catPill, s.fillOnGlass, logCat === cat.key && s.catPillActive]}
                   onPress={() => setLogCat(cat.key)}
                 >
                   <Text style={[s.catPillText, logCat === cat.key && s.catPillTextActive]}>{cat.label}</Text>
@@ -630,8 +634,9 @@ export default function MealEditorScreen() {
               <Text style={s.confirmBtnText}>{loggingMeal ? 'Logging…' : 'Log meal'}</Text>
             </TouchableOpacity>
             <TouchableOpacity style={s.cancelLink} onPress={() => setLogModal(false)}>
-              <Text style={s.cancelText}>Cancel</Text>
+              <Text style={[s.cancelText, s.cancelOnGlass]}>Cancel</Text>
             </TouchableOpacity>
+          </GlassPanel>
           </Pressable>
         </Pressable>
       </Modal>
@@ -639,15 +644,17 @@ export default function MealEditorScreen() {
       {/* Delete confirm */}
       <Modal visible={confirmDelete} transparent animationType="fade" onRequestClose={() => setConfirmDelete(false)}>
         <Pressable style={s.centeredOverlay} onPress={() => setConfirmDelete(false)}>
-          <Pressable style={s.modal} onPress={() => {}}>
+          <Pressable style={s.glassShadow} onPress={() => {}}>
+          <GlassPanel style={s.glassBox}>
             <Text style={s.modalTitle}>Delete meal?</Text>
-            <Text style={s.modalSub}>"{meal?.name.trim() || 'This meal'}" will be permanently removed.</Text>
+            <Text style={[s.modalSub, s.messageOnGlass]}>"{meal?.name.trim() || 'This meal'}" will be permanently removed.</Text>
             <TouchableOpacity style={[s.confirmBtn, { backgroundColor: CORAL }]} onPress={doDelete} activeOpacity={0.85}>
               <Text style={s.confirmBtnText}>Delete</Text>
             </TouchableOpacity>
             <TouchableOpacity style={s.cancelLink} onPress={() => setConfirmDelete(false)}>
-              <Text style={s.cancelText}>Cancel</Text>
+              <Text style={[s.cancelText, s.cancelOnGlass]}>Cancel</Text>
             </TouchableOpacity>
+          </GlassPanel>
           </Pressable>
         </Pressable>
       </Modal>
@@ -742,6 +749,14 @@ const s = StyleSheet.create({
   // Modals
   centeredOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center', padding: 24 },
   modal:      { backgroundColor: CARD, borderRadius: 16, padding: 22, width: '100%', maxWidth: 360 },
+  // Liquid Glass centered pop-ups — radius-38 shadow wrapper + GlassPanel
+  glassShadow: { width: '100%', maxWidth: 360, borderRadius: 38, shadowColor: '#000', shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.22, shadowRadius: 28, elevation: 12 },
+  glassBox:    { borderRadius: 38, overflow: 'hidden', padding: 24, width: '100%' },
+  messageOnGlass: { color: '#1f2823', fontWeight: '600' },
+  metaOnGlass:    { color: '#414b45' },
+  cancelOnGlass:  { color: '#414b45', fontWeight: '600' },
+  fillOnGlass:    { backgroundColor: 'rgba(255,255,255,0.6)' },
+  inputOnGlass:   { backgroundColor: 'rgba(255,255,255,0.6)', borderWidth: 1, borderColor: 'rgba(0,0,0,0.12)' },
   modalTitle: { fontSize: 17, fontWeight: '700', color: TEXT, textAlign: 'center' },
   modalSub:   { fontSize: 13, color: MUTED, textAlign: 'center', marginTop: 4 },
   textInput:  { backgroundColor: '#f5f5f3', borderRadius: 10, padding: 12, fontSize: 15, color: TEXT, marginBottom: 4 },

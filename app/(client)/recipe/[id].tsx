@@ -19,6 +19,7 @@ import { useAuth } from '@/context/AuthContext';
 import { supabase } from '@/lib/supabase';
 import { VFIcon } from '@/components/VFIcon';
 import { BottomSheet } from '@/components/BottomSheet';
+import GlassPanel from '@/components/GlassPanel';
 import { LightHeader, HeaderIcon, HEADER_ICON, useHeaderHeight } from '@/components/LightHeader';
 
 const BG     = '#faf9f7';
@@ -269,12 +270,13 @@ export default function RecipeDetailScreen() {
       {/* ── Log modal (centered) ───────────────────────────────────── */}
       <Modal visible={logModal} transparent animationType="fade" onRequestClose={() => setLogModal(false)}>
         <Pressable style={s.overlay} onPress={() => setLogModal(false)}>
-          <Pressable style={s.modalCard} onPress={() => {}}>
+          <Pressable style={s.glassShadow} onPress={() => {}}>
+          <GlassPanel style={s.glassBox}>
             <Text style={s.modalTitle}>Add to meal</Text>
             {MEALS.map(m => (
               <TouchableOpacity
                 key={m.key}
-                style={s.mealOption}
+                style={[s.mealOption, s.mealOptionOnGlass]}
                 onPress={() => setLogMeal(m.key)}
               >
                 <Text style={[s.mealOptionText, logMeal === m.key && s.mealOptionTextActive]}>
@@ -291,8 +293,9 @@ export default function RecipeDetailScreen() {
               <Text style={s.confirmBtnText}>{logging ? 'Adding…' : 'Add to diary'}</Text>
             </TouchableOpacity>
             <TouchableOpacity onPress={() => setLogModal(false)} style={s.cancelLink}>
-              <Text style={s.cancelText}>Cancel</Text>
+              <Text style={[s.cancelText, s.cancelOnGlass]}>Cancel</Text>
             </TouchableOpacity>
+          </GlassPanel>
           </Pressable>
         </Pressable>
       </Modal>
@@ -336,15 +339,17 @@ export default function RecipeDetailScreen() {
       {/* ── Delete confirm (centered) ──────────────────────────────── */}
       <Modal visible={confirmDelete} transparent animationType="fade" onRequestClose={() => setConfirmDelete(false)}>
         <Pressable style={s.overlay} onPress={() => setConfirmDelete(false)}>
-          <Pressable style={s.modalCard} onPress={() => {}}>
+          <Pressable style={s.glassShadow} onPress={() => {}}>
+          <GlassPanel style={s.glassBox}>
             <Text style={s.modalTitle}>Delete recipe?</Text>
-            <Text style={s.modalSub}>"{recipe?.name.trim() || 'This recipe'}" will be permanently deleted.</Text>
+            <Text style={[s.modalSub, s.messageOnGlass]}>"{recipe?.name.trim() || 'This recipe'}" will be permanently deleted.</Text>
             <TouchableOpacity style={[s.confirmBtn, { backgroundColor: CORAL }]} onPress={doDelete} activeOpacity={0.85}>
               <Text style={s.confirmBtnText}>Delete</Text>
             </TouchableOpacity>
             <TouchableOpacity onPress={() => setConfirmDelete(false)} style={s.cancelLink}>
-              <Text style={s.cancelText}>Cancel</Text>
+              <Text style={[s.cancelText, s.cancelOnGlass]}>Cancel</Text>
             </TouchableOpacity>
+          </GlassPanel>
           </Pressable>
         </Pressable>
       </Modal>
@@ -393,6 +398,12 @@ const s = StyleSheet.create({
 
   overlay:    { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', alignItems: 'center', justifyContent: 'center', padding: 24 },
   modalCard:  { backgroundColor: CARD, borderRadius: 16, padding: 20, width: '100%', maxWidth: 360 },
+  // Liquid Glass centered pop-ups — radius-38 shadow wrapper + GlassPanel
+  glassShadow: { width: '100%', maxWidth: 360, borderRadius: 38, shadowColor: '#000', shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.22, shadowRadius: 28, elevation: 12 },
+  glassBox:    { borderRadius: 38, overflow: 'hidden', padding: 24, width: '100%' },
+  messageOnGlass: { color: '#1f2823', fontWeight: '600' },
+  cancelOnGlass:  { color: '#414b45', fontWeight: '600' },
+  mealOptionOnGlass: { borderBottomColor: 'rgba(0,0,0,0.08)' },
   modalTitle: { fontSize: 16, fontWeight: '700', color: TEXT, textAlign: 'center', marginBottom: 6 },
   modalSub:   { fontSize: 13, color: MUTED, textAlign: 'center', marginBottom: 8 },
 

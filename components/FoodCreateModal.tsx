@@ -26,6 +26,7 @@ import {
   type FoodResult,
   type PortionUnit,
 } from '@/lib/foodApi';
+import GlassPanel from '@/components/GlassPanel';
 
 const ACCENT  = '#24ac88';
 const HEADER  = '#244e43';
@@ -299,7 +300,8 @@ export default function FoodCreateModal({
       statusBarTranslucent
     >
       <Pressable style={s.overlay} onPress={onClose}>
-        <Pressable style={[s.card, { width: SCREEN_W - 48 }]} onPress={() => {}}>
+        <Pressable style={s.glassShadow} onPress={() => {}}>
+        <GlassPanel style={[s.glassBox, { width: SCREEN_W - 48 }]}>
           <Text style={s.title}>
             {isEdit ? 'Edit Food' : 'New Food'}
           </Text>
@@ -351,7 +353,7 @@ export default function FoodCreateModal({
               value={name}
               onChangeText={setName}
               placeholder="e.g. Greek Yogurt"
-              placeholderTextColor={MUTED}
+              placeholderTextColor="#8a938e"
             />
 
             {/* Name auf Deutsch — trainer mode only */}
@@ -363,7 +365,7 @@ export default function FoodCreateModal({
                   value={nameDe}
                   onChangeText={setNameDe}
                   placeholder="z.B. Griechischer Joghurt"
-                  placeholderTextColor={MUTED}
+                  placeholderTextColor="#8a938e"
                 />
               </>
             )}
@@ -377,7 +379,7 @@ export default function FoodCreateModal({
                   value={brand}
                   onChangeText={setBrand}
                   placeholder="e.g. Chobani"
-                  placeholderTextColor={MUTED}
+                  placeholderTextColor="#8a938e"
                 />
               </>
             )}
@@ -399,7 +401,7 @@ export default function FoodCreateModal({
                       onChangeText={setCalories}
                       keyboardType="decimal-pad"
                       placeholder="0"
-                      placeholderTextColor={MUTED}
+                      placeholderTextColor="#8a938e"
                     />
                   </View>
                   <View style={s.fieldHalf}>
@@ -410,7 +412,7 @@ export default function FoodCreateModal({
                       onChangeText={setProtein}
                       keyboardType="decimal-pad"
                       placeholder="0"
-                      placeholderTextColor={MUTED}
+                      placeholderTextColor="#8a938e"
                     />
                   </View>
                 </View>
@@ -424,7 +426,7 @@ export default function FoodCreateModal({
                       onChangeText={setCarbs}
                       keyboardType="decimal-pad"
                       placeholder="0"
-                      placeholderTextColor={MUTED}
+                      placeholderTextColor="#8a938e"
                     />
                   </View>
                   <View style={s.fieldHalf}>
@@ -435,7 +437,7 @@ export default function FoodCreateModal({
                       onChangeText={setFat}
                       keyboardType="decimal-pad"
                       placeholder="0"
-                      placeholderTextColor={MUTED}
+                      placeholderTextColor="#8a938e"
                     />
                   </View>
                 </View>
@@ -449,7 +451,7 @@ export default function FoodCreateModal({
                       onChangeText={setFiber}
                       keyboardType="decimal-pad"
                       placeholder="0"
-                      placeholderTextColor={MUTED}
+                      placeholderTextColor="#8a938e"
                     />
                   </View>
                   <View style={s.fieldHalf}>
@@ -460,7 +462,7 @@ export default function FoodCreateModal({
                       onChangeText={setSugar}
                       keyboardType="decimal-pad"
                       placeholder="0"
-                      placeholderTextColor={MUTED}
+                      placeholderTextColor="#8a938e"
                     />
                   </View>
                 </View>
@@ -472,7 +474,7 @@ export default function FoodCreateModal({
                   onChangeText={setSalt}
                   keyboardType="decimal-pad"
                   placeholder="0"
-                  placeholderTextColor={MUTED}
+                  placeholderTextColor="#8a938e"
                 />
               </>
             )}
@@ -523,7 +525,7 @@ export default function FoodCreateModal({
                     onChangeText={setServingGrams}
                     keyboardType="decimal-pad"
                     placeholder="— g"
-                    placeholderTextColor={MUTED}
+                    placeholderTextColor="#8a938e"
                   />
                   <Text style={s.portionRowUnit}>g per serving</Text>
                 </View>
@@ -537,7 +539,7 @@ export default function FoodCreateModal({
                     onChangeText={setPieceGrams}
                     keyboardType="decimal-pad"
                     placeholder="— g"
-                    placeholderTextColor={MUTED}
+                    placeholderTextColor="#8a938e"
                   />
                   <Text style={s.portionRowUnit}>g per piece</Text>
                 </View>
@@ -549,7 +551,7 @@ export default function FoodCreateModal({
                     value={customLabel}
                     onChangeText={setCustomLabel}
                     placeholder="Can, Tub…"
-                    placeholderTextColor={MUTED}
+                    placeholderTextColor="#8a938e"
                   />
                   <TextInput
                     style={s.portionInput}
@@ -557,7 +559,7 @@ export default function FoodCreateModal({
                     onChangeText={setCustomGrams}
                     keyboardType="decimal-pad"
                     placeholder="— g"
-                    placeholderTextColor={MUTED}
+                    placeholderTextColor="#8a938e"
                   />
                   <Text style={s.portionRowUnit}>g per unit</Text>
                 </View>
@@ -571,7 +573,7 @@ export default function FoodCreateModal({
                   onChangeText={setPortionAmount}
                   keyboardType="decimal-pad"
                   placeholder="100"
-                  placeholderTextColor={MUTED}
+                  placeholderTextColor="#8a938e"
                 />
                 <View style={s.unitRow}>
                   {PORTION_UNITS.map(u => (
@@ -614,6 +616,7 @@ export default function FoodCreateModal({
           <TouchableOpacity style={s.cancelLink} onPress={onClose}>
             <Text style={s.cancelLinkText}>Cancel</Text>
           </TouchableOpacity>
+        </GlassPanel>
         </Pressable>
       </Pressable>
 
@@ -638,15 +641,20 @@ const s = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  card: {
-    backgroundColor: '#fff',
-    borderRadius: 16,
-    padding: 20,
+  // Liquid Glass popup — radius-38 shadow wrapper + GlassPanel (the app-wide
+  // glass pop-up recipe; shadow lives on the wrapper, overflow clips it).
+  glassShadow: {
+    borderRadius: 38,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.18,
-    shadowRadius: 20,
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.22,
+    shadowRadius: 28,
     elevation: 12,
+  },
+  glassBox: {
+    borderRadius: 38,
+    overflow: 'hidden',
+    padding: 24,
   },
   title: {
     fontSize: 17,
@@ -683,12 +691,14 @@ const s = StyleSheet.create({
   },
   fieldLabel: {
     fontSize: 12,
-    color: MUTED,
+    color: '#414b45',
     marginBottom: 4,
     marginTop: 8,
   },
   fieldInput: {
-    backgroundColor: '#f5f5f3',
+    backgroundColor: 'rgba(255,255,255,0.6)',
+    borderWidth: 1,
+    borderColor: 'rgba(0,0,0,0.12)',
     borderRadius: 8,
     paddingHorizontal: 10,
     paddingVertical: 8,
@@ -710,7 +720,7 @@ const s = StyleSheet.create({
   },
   groupPill: {
     borderRadius: 100,
-    backgroundColor: '#fff',
+    backgroundColor: 'rgba(255,255,255,0.6)',
     paddingHorizontal: 12,
     paddingVertical: 5,
     shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 3, elevation: 1,
@@ -721,7 +731,7 @@ const s = StyleSheet.create({
   groupPillText: {
     fontSize: 12,
     fontWeight: '600',
-    color: MUTED,
+    color: '#414b45',
   },
   groupPillTextActive: {
     color: '#fff',
@@ -734,7 +744,7 @@ const s = StyleSheet.create({
   },
   unitPill: {
     borderRadius: 100,
-    backgroundColor: '#fff',
+    backgroundColor: 'rgba(255,255,255,0.6)',
     paddingHorizontal: 14,
     paddingVertical: 6,
     shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 3, elevation: 1,
@@ -745,7 +755,7 @@ const s = StyleSheet.create({
   unitText: {
     fontSize: 13,
     fontWeight: '600',
-    color: MUTED,
+    color: '#414b45',
   },
   unitTextActive: {
     color: '#fff',
@@ -782,7 +792,8 @@ const s = StyleSheet.create({
   },
   cancelLinkText: {
     fontSize: 14,
-    color: MUTED,
+    color: '#414b45',
+    fontWeight: '600',
   },
   sectionToggle: {
     flexDirection: 'row',
@@ -793,7 +804,7 @@ const s = StyleSheet.create({
   },
   portionHint: {
     fontSize: 11,
-    color: MUTED,
+    color: '#414b45',
     marginTop: 4,
     marginBottom: 8,
     fontStyle: 'italic',
@@ -812,7 +823,9 @@ const s = StyleSheet.create({
   },
   portionCustomLabel: {
     flex: 1,
-    backgroundColor: '#f5f5f3',
+    backgroundColor: 'rgba(255,255,255,0.6)',
+    borderWidth: 1,
+    borderColor: 'rgba(0,0,0,0.12)',
     borderRadius: 8,
     paddingHorizontal: 10,
     paddingVertical: 8,
@@ -821,7 +834,9 @@ const s = StyleSheet.create({
   },
   portionInput: {
     width: 72,
-    backgroundColor: '#f5f5f3',
+    backgroundColor: 'rgba(255,255,255,0.6)',
+    borderWidth: 1,
+    borderColor: 'rgba(0,0,0,0.12)',
     borderRadius: 8,
     paddingHorizontal: 10,
     paddingVertical: 8,
@@ -831,7 +846,7 @@ const s = StyleSheet.create({
   },
   portionRowUnit: {
     fontSize: 11,
-    color: MUTED,
+    color: '#414b45',
     width: 72,
   },
   kbDoneBtn: {

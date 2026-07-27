@@ -19,6 +19,7 @@ import { smartBack } from '@/lib/navHistory';
 import { SymbolView } from 'expo-symbols';
 import { VFIcon } from '@/components/VFIcon';
 import { LightHeader, HeaderIcon, HEADER_ICON, useHeaderHeight } from '@/components/LightHeader';
+import GlassPanel from '@/components/GlassPanel';
 import { useTabBarHeight } from '@/components/FloatingTabBar';
 import { SessionDetailsSheet } from '@/components/SessionDetailsSheet';
 import { supabase } from '@/lib/supabase';
@@ -348,19 +349,21 @@ export default function AllWorkoutsScreen() {
       {donePromptWorkout && (
         <Modal visible transparent animationType="fade" onRequestClose={() => setDonePromptWorkout(null)} statusBarTranslucent>
           <Pressable style={donePromptStyles.overlay} onPress={() => setDonePromptWorkout(null)}>
-            <Pressable style={donePromptStyles.box}>
-              <Text style={donePromptStyles.title}>This workout is marked as done</Text>
-              <Text style={donePromptStyles.body}>{donePromptWorkout.name}</Text>
-              <TouchableOpacity
-                style={donePromptStyles.primaryBtn}
-                onPress={() => { setDonePromptWorkout(null); router.push(`/(client)/workout/${donePromptWorkout.id}` as any); }}
-                activeOpacity={0.8}
-              >
-                <Text style={donePromptStyles.primaryBtnText}>Open for this session</Text>
-              </TouchableOpacity>
-              <TouchableOpacity onPress={() => setDonePromptWorkout(null)} style={donePromptStyles.cancelBtn}>
-                <Text style={donePromptStyles.cancelText}>Cancel</Text>
-              </TouchableOpacity>
+            <Pressable style={donePromptStyles.glassShadow}>
+              <GlassPanel style={donePromptStyles.glassBox}>
+                <Text style={donePromptStyles.title}>This workout is marked as done</Text>
+                <Text style={donePromptStyles.body}>{donePromptWorkout.name}</Text>
+                <TouchableOpacity
+                  style={donePromptStyles.primaryBtn}
+                  onPress={() => { setDonePromptWorkout(null); router.push(`/(client)/workout/${donePromptWorkout.id}` as any); }}
+                  activeOpacity={0.8}
+                >
+                  <Text style={donePromptStyles.primaryBtnText}>Open for this session</Text>
+                </TouchableOpacity>
+                <TouchableOpacity onPress={() => setDonePromptWorkout(null)} style={donePromptStyles.cancelBtn}>
+                  <Text style={donePromptStyles.cancelText}>Cancel</Text>
+                </TouchableOpacity>
+              </GlassPanel>
             </Pressable>
           </Pressable>
         </Modal>
@@ -618,11 +621,14 @@ const styles = StyleSheet.create({
 
 const donePromptStyles = StyleSheet.create({
   overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', paddingHorizontal: 32 },
-  box: { backgroundColor: '#fff', borderRadius: 16, overflow: 'hidden', padding: 24, alignItems: 'center' },
+  // Liquid Glass popup — radius-38 shadow wrapper + GlassPanel (the Do Mode
+  // confirm-box family), texts darkened for glass legibility.
+  glassShadow: { borderRadius: 38, shadowColor: '#000', shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.22, shadowRadius: 28, elevation: 12 },
+  glassBox: { borderRadius: 38, overflow: 'hidden', padding: 24, alignItems: 'center' },
   title: { fontSize: 16, fontWeight: '700', color: TEXT, textAlign: 'center', marginBottom: 6 },
-  body: { fontSize: 14, color: MUTED, textAlign: 'center', marginBottom: 20 },
+  body: { fontSize: 14, color: '#1f2823', fontWeight: '600', textAlign: 'center', marginBottom: 20 },
   primaryBtn: { backgroundColor: HEADER, borderRadius: 100, paddingVertical: 13, paddingHorizontal: 24, alignSelf: 'stretch', alignItems: 'center' },
   primaryBtnText: { color: '#fff', fontSize: 15, fontWeight: '700' },
   cancelBtn: { paddingVertical: 12 },
-  cancelText: { color: MUTED, fontSize: 14 },
+  cancelText: { color: '#414b45', fontWeight: '600', fontSize: 14 },
 });

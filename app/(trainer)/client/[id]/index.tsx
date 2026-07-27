@@ -28,6 +28,7 @@ import { supabase } from '@/lib/supabase';
 import { VFIcon } from '@/components/VFIcon';
 import { SessionDetailsSheet } from '@/components/SessionDetailsSheet';
 import { BottomSheet } from '@/components/BottomSheet';
+import GlassPanel from '@/components/GlassPanel';
 import { useAuth } from '@/context/AuthContext';
 import { fetchClientTraining } from '@/lib/clientTraining';
 import NutritionTab from './nutrition-tab';
@@ -783,14 +784,15 @@ function PlanWorkoutFlow({ clientId, initialDate, onClose, onDone }: {
       {planStep === 'pick' && (
         <Modal visible transparent animationType="fade" onRequestClose={onClose} statusBarTranslucent>
           <Pressable style={addPopStyles.overlay} onPress={onClose}>
-            <Pressable style={[addPopStyles.card, { paddingBottom: 12 }]} onPress={() => {}}>
-              <Text style={addPopStyles.heading}>Plan a Workout</Text>
+            <Pressable style={addPopStyles.cardShadow} onPress={() => {}}>
+            <GlassPanel style={[addPopStyles.card, { paddingBottom: 12 }]}>
+              <Text style={[addPopStyles.heading, addPopStyles.headingOnGlass]}>Plan a Workout</Text>
               {planLoadingWorkouts ? (
                 <ActivityIndicator color={ACCENT} style={{ marginVertical: 20 }} />
               ) : planWorkoutsForPicker.length === 0 ? (
                 <View style={addPopStyles.emptyWrap}>
-                  <Text style={addPopStyles.emptyText}>No active workouts</Text>
-                  <Text style={addPopStyles.emptySub}>Create a workout first</Text>
+                  <Text style={[addPopStyles.emptyText, addPopStyles.emptyTextOnGlass]}>No active workouts</Text>
+                  <Text style={[addPopStyles.emptySub, addPopStyles.emptySubOnGlass]}>Create a workout first</Text>
                 </View>
               ) : (
                 <ScrollView
@@ -824,8 +826,9 @@ function PlanWorkoutFlow({ clientId, initialDate, onClose, onDone }: {
                 </ScrollView>
               )}
               <TouchableOpacity style={addPopStyles.cancelBtn} onPress={onClose}>
-                <Text style={addPopStyles.cancelText}>Cancel</Text>
+                <Text style={[addPopStyles.cancelText, addPopStyles.cancelTextOnGlass]}>Cancel</Text>
               </TouchableOpacity>
+            </GlassPanel>
             </Pressable>
           </Pressable>
         </Modal>
@@ -834,8 +837,9 @@ function PlanWorkoutFlow({ clientId, initialDate, onClose, onDone }: {
       {planStep === 'schedule' && (
         <Modal visible transparent animationType="fade" onRequestClose={() => setPlanStep('pick')} statusBarTranslucent>
           <View style={addPopStyles.overlay}>
-            <View style={[addPopStyles.card, { paddingHorizontal: 20, paddingBottom: 16, width: '100%' }]}>
-              <Text style={addPopStyles.heading}>Schedule</Text>
+            <View style={[addPopStyles.cardShadow, { width: '100%' }]}>
+            <GlassPanel style={[addPopStyles.card, { paddingHorizontal: 20, paddingBottom: 16 }]}>
+              <Text style={[addPopStyles.heading, addPopStyles.headingOnGlass]}>Schedule</Text>
               <Text style={planStyles.workoutName} numberOfLines={1}>{planPickedName}</Text>
 
               <View style={planStyles.dateRow}>
@@ -927,9 +931,10 @@ function PlanWorkoutFlow({ clientId, initialDate, onClose, onDone }: {
                   <Text style={[addPopStyles.cancelText, { color: ACCENT }]}>← Change workout</Text>
                 </TouchableOpacity>
                 <TouchableOpacity onPress={onClose} style={{ paddingVertical: 10 }}>
-                  <Text style={addPopStyles.cancelText}>Cancel</Text>
+                  <Text style={[addPopStyles.cancelText, addPopStyles.cancelTextOnGlass]}>Cancel</Text>
                 </TouchableOpacity>
               </View>
+            </GlassPanel>
             </View>
           </View>
         </Modal>
@@ -1766,15 +1771,17 @@ function TrainingTab({
             <Modal visible transparent animationType="fade" onRequestClose={() => setDeleteSessionConfirm(null)} statusBarTranslucent>
               <View style={cmStyles.overlay}>
                 <Pressable style={StyleSheet.absoluteFill} onPress={() => setDeleteSessionConfirm(null)} />
-                <View style={cmStyles.box}>
+                <View style={cmStyles.glassShadow}>
+                <GlassPanel style={cmStyles.glassBox}>
                   <Text style={cmStyles.title}>Delete session?</Text>
-                  <Text style={cmStyles.message}>This removes the session from the calendar. The workout is not deleted.</Text>
+                  <Text style={cmStyles.messageOnGlass}>This removes the session from the calendar. The workout is not deleted.</Text>
                   <TouchableOpacity style={[cmStyles.actionBtn, { backgroundColor: '#ef4444' }]} onPress={deleteSession} disabled={deletingSession} activeOpacity={0.85}>
                     <Text style={cmStyles.actionBtnText}>{deletingSession ? '…' : 'Delete'}</Text>
                   </TouchableOpacity>
                   <TouchableOpacity onPress={() => setDeleteSessionConfirm(null)} hitSlop={8}>
-                    <Text style={cmStyles.cancelText}>Cancel</Text>
+                    <Text style={cmStyles.cancelOnGlass}>Cancel</Text>
                   </TouchableOpacity>
+                </GlassPanel>
                 </View>
               </View>
             </Modal>
@@ -2194,27 +2201,28 @@ function WeekStripCard({
       {noSessModal && (
         <Modal visible transparent animationType="fade" onRequestClose={() => setNoSessModal(false)} statusBarTranslucent>
           <Pressable style={addPopStyles.overlay} onPress={() => setNoSessModal(false)}>
-            <Pressable style={addPopStyles.card} onPress={() => {}}>
-              <Text style={addPopStyles.heading}>Add Session</Text>
+            <Pressable style={addPopStyles.cardShadow} onPress={() => {}}>
+            <GlassPanel style={addPopStyles.card}>
+              <Text style={[addPopStyles.heading, addPopStyles.headingOnGlass]}>Add Session</Text>
               <TouchableOpacity style={addPopStyles.option} activeOpacity={0.7}
                 onPress={() => { setNoSessModal(false); router.push(`/(trainer)/workout-builder?clientId=${clientId}&scheduleDate=${selectedDate}` as any); }}>
                 <SymbolView name="square.and.pencil" size={18} tintColor="#244e43" />
                 <Text style={addPopStyles.optionText}>Create new workout</Text>
               </TouchableOpacity>
-              <View style={addPopStyles.divider} />
+              <View style={[addPopStyles.divider, addPopStyles.dividerOnGlass]} />
               <TouchableOpacity style={addPopStyles.option} activeOpacity={0.7}
                 onPress={() => { setNoSessModal(false); router.push(`/(trainer)/client/${clientId}/add-workout?date=${selectedDate}` as any); }}>
                 <SymbolView name="plus.rectangle.on.rectangle" size={18} tintColor="#244e43" />
                 <Text style={addPopStyles.optionText}>Add workout to this day</Text>
               </TouchableOpacity>
-              <View style={addPopStyles.divider} />
+              <View style={[addPopStyles.divider, addPopStyles.dividerOnGlass]} />
               <TouchableOpacity style={addPopStyles.option} activeOpacity={0.7} onPress={() => { setNoSessModal(false); setPlanOpen(true); }}>
                 <SymbolView name="calendar" size={18} tintColor="#244e43" />
                 <Text style={addPopStyles.optionText}>Plan a workout</Text>
               </TouchableOpacity>
               {activeRoutine && (
                 <>
-                  <View style={addPopStyles.divider} />
+                  <View style={[addPopStyles.divider, addPopStyles.dividerOnGlass]} />
                   <TouchableOpacity style={addPopStyles.option} activeOpacity={0.7}
                     onPress={() => { setNoSessModal(false); router.push(`/(trainer)/client/${clientId}/routine/${activeRoutine.id}` as any); }}>
                     <SymbolView name="arrow.triangle.2.circlepath" size={18} tintColor="#244e43" />
@@ -2222,15 +2230,16 @@ function WeekStripCard({
                   </TouchableOpacity>
                 </>
               )}
-              <View style={addPopStyles.divider} />
+              <View style={[addPopStyles.divider, addPopStyles.dividerOnGlass]} />
               <TouchableOpacity style={addPopStyles.option} activeOpacity={0.7}
                 onPress={() => { setNoSessModal(false); router.push(`/(trainer)/client/${clientId}/workout/free` as any); }}>
                 <SymbolView name="timer" size={18} tintColor="#24ac88" />
                 <Text style={[addPopStyles.optionText, { color: '#24ac88' }]}>Start Free Session</Text>
               </TouchableOpacity>
               <TouchableOpacity style={addPopStyles.cancelBtn} onPress={() => setNoSessModal(false)}>
-                <Text style={addPopStyles.cancelText}>Cancel</Text>
+                <Text style={[addPopStyles.cancelText, addPopStyles.cancelTextOnGlass]}>Cancel</Text>
               </TouchableOpacity>
+            </GlassPanel>
             </Pressable>
           </Pressable>
         </Modal>
@@ -2349,32 +2358,34 @@ function ScheduledSessionMenu({
   return (
     <Modal visible transparent animationType="fade" onRequestClose={onClose} statusBarTranslucent>
       <Pressable style={menuStyles.overlay} onPress={onClose}>
-        <Pressable style={menuStyles.sheet}>
-          <Text style={menuStyles.sheetTitle} numberOfLines={1}>{workoutName}</Text>
-          <View style={menuStyles.sheetDivider} />
+        <Pressable style={menuStyles.sheetShadow}>
+        <GlassPanel style={menuStyles.sheet}>
+          <Text style={[menuStyles.sheetTitle, { color: '#414b45' }]} numberOfLines={1}>{workoutName}</Text>
+          <View style={[menuStyles.sheetDivider, { backgroundColor: 'rgba(0,0,0,0.08)' }]} />
           <TouchableOpacity style={menuStyles.option} onPress={onViewDetails} activeOpacity={0.7}>
             <SymbolView name="list.bullet.rectangle" size={16} tintColor={TEXT} />
             <Text style={menuStyles.optionText}>View details</Text>
           </TouchableOpacity>
-          <View style={menuStyles.optionDivider} />
+          <View style={[menuStyles.optionDivider, { backgroundColor: 'rgba(0,0,0,0.08)' }]} />
           {status === 'scheduled' && (
             <>
               <TouchableOpacity style={menuStyles.option} onPress={onEditWorkout} activeOpacity={0.7}>
                 <SymbolView name="pencil" size={16} tintColor={TEXT} />
                 <Text style={menuStyles.optionText}>Edit workout</Text>
               </TouchableOpacity>
-              <View style={menuStyles.optionDivider} />
+              <View style={[menuStyles.optionDivider, { backgroundColor: 'rgba(0,0,0,0.08)' }]} />
             </>
           )}
           <TouchableOpacity style={menuStyles.option} onPress={onMove} activeOpacity={0.7}>
             <SymbolView name="calendar" size={16} tintColor={TEXT} />
             <Text style={menuStyles.optionText}>Move training</Text>
           </TouchableOpacity>
-          <View style={menuStyles.optionDivider} />
+          <View style={[menuStyles.optionDivider, { backgroundColor: 'rgba(0,0,0,0.08)' }]} />
           <TouchableOpacity style={menuStyles.option} onPress={onDelete} activeOpacity={0.7}>
             <SymbolView name="trash" size={16} tintColor="#ef4444" />
             <Text style={[menuStyles.optionText, menuStyles.deleteText]}>Delete</Text>
           </TouchableOpacity>
+        </GlassPanel>
         </Pressable>
       </Pressable>
     </Modal>
@@ -2396,15 +2407,16 @@ function LogWorkoutModal({
     <Modal visible transparent animationType="fade" onRequestClose={onClose} statusBarTranslucent>
       <View style={cmStyles.overlay}>
         <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
-        <View style={[cmStyles.box, { paddingHorizontal: 0, paddingTop: 20, paddingBottom: 8, maxHeight: '75%', alignSelf: 'stretch', marginHorizontal: 20 }]}>
+        <View style={[cmStyles.glassShadow, { alignSelf: 'stretch', marginHorizontal: 20 }]}>
+        <GlassPanel style={[cmStyles.glassBox, { paddingHorizontal: 0, paddingTop: 20, paddingBottom: 8, maxHeight: '75%' }]}>
           <Text style={[cmStyles.title, { paddingHorizontal: 24, marginBottom: 12 }]}>Choose a workout</Text>
           <ScrollView showsVerticalScrollIndicator={false} style={{ alignSelf: 'stretch' }}>
             {workouts.length === 0 ? (
-              <Text style={[cmStyles.message, { paddingVertical: 20 }]}>No workouts found</Text>
+              <Text style={[cmStyles.messageOnGlass, { paddingVertical: 20 }]}>No workouts found</Text>
             ) : (
               workouts.map((w, i) => (
                 <View key={w.id}>
-                  {i > 0 && <View style={[styles.sep, { marginLeft: 0 }]} />}
+                  {i > 0 && <View style={[styles.sep, { marginLeft: 0, backgroundColor: 'rgba(0,0,0,0.08)' }]} />}
                   <TouchableOpacity
                     style={{ paddingHorizontal: 24, paddingVertical: 14 }}
                     onPress={() => onPick(w.id)}
@@ -2417,8 +2429,9 @@ function LogWorkoutModal({
             )}
           </ScrollView>
           <TouchableOpacity style={{ paddingVertical: 14, alignItems: 'center' }} onPress={onClose} hitSlop={8}>
-            <Text style={{ fontSize: 15, fontWeight: '600', color: MUTED }}>Cancel</Text>
+            <Text style={{ fontSize: 15, fontWeight: '600', color: '#414b45' }}>Cancel</Text>
           </TouchableOpacity>
+        </GlassPanel>
         </View>
       </View>
     </Modal>
@@ -3057,9 +3070,10 @@ function SessionsTab({
         <Modal visible transparent animationType="fade" onRequestClose={() => setConfirmClose(false)} statusBarTranslucent>
           <View style={cmStyles.overlay}>
             <Pressable style={StyleSheet.absoluteFill} onPress={() => setConfirmClose(false)} />
-            <View style={cmStyles.box}>
+            <View style={cmStyles.glassShadow}>
+            <GlassPanel style={cmStyles.glassBox}>
               <Text style={cmStyles.title}>{t.clientProfile.sessions.closeEarlyTitle}</Text>
-              <Text style={cmStyles.message}>
+              <Text style={cmStyles.messageOnGlass}>
                 {t.clientProfile.sessions.closeEarlyMsg(activePackage.sessions_used, activePackage.total_sessions)}
               </Text>
               <TouchableOpacity
@@ -3073,8 +3087,9 @@ function SessionsTab({
                 </Text>
               </TouchableOpacity>
               <TouchableOpacity onPress={() => setConfirmClose(false)} hitSlop={8}>
-                <Text style={cmStyles.cancelText}>{t.common.cancel}</Text>
+                <Text style={cmStyles.cancelOnGlass}>{t.common.cancel}</Text>
               </TouchableOpacity>
+            </GlassPanel>
             </View>
           </View>
         </Modal>
@@ -3278,14 +3293,15 @@ function NewPackageModal({
         <Modal visible transparent animationType="fade" onRequestClose={() => setDateModalOpen(false)} statusBarTranslucent>
           <View style={infoFieldStyles.overlay}>
             <Pressable style={StyleSheet.absoluteFill} onPress={() => setDateModalOpen(false)} />
-            <View style={infoFieldStyles.box}>
+            <View style={infoFieldStyles.glassShadow}>
+            <GlassPanel style={infoFieldStyles.glassBox}>
               <Text style={infoFieldStyles.title}>{t.clientProfile.sessions.validUntilLabel}</Text>
               <TextInput
-                style={infoFieldStyles.input}
+                style={infoFieldStyles.inputOnGlass}
                 value={dateDraft}
                 onChangeText={setDateDraft}
                 placeholder={t.clientProfile.sessions.validUntilPlaceholder}
-                placeholderTextColor="#ccc"
+                placeholderTextColor="#8a938e"
                 autoFocus
                 autoCapitalize="none"
                 autoCorrect={false}
@@ -3298,8 +3314,9 @@ function NewPackageModal({
                 <Text style={infoFieldStyles.confirmBtnText}>{t.common.confirm}</Text>
               </TouchableOpacity>
               <TouchableOpacity onPress={() => setDateModalOpen(false)} hitSlop={8}>
-                <Text style={infoFieldStyles.cancel}>{t.common.cancel}</Text>
+                <Text style={infoFieldStyles.cancelOnGlass}>{t.common.cancel}</Text>
               </TouchableOpacity>
+            </GlassPanel>
             </View>
           </View>
           {Platform.OS === 'ios' && (
@@ -3318,7 +3335,8 @@ function AllSessionsModal({ sessions, onClose }: { sessions: SessionRow[]; onClo
     <Modal visible transparent animationType="fade" onRequestClose={onClose} statusBarTranslucent>
       <View style={cmStyles.overlay}>
         <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
-        <View style={[cmStyles.box, { paddingHorizontal: 0, paddingTop: 20, paddingBottom: 8, maxHeight: '80%', alignSelf: 'stretch', marginHorizontal: 20 }]}>
+        <View style={[cmStyles.glassShadow, { alignSelf: 'stretch', marginHorizontal: 20 }]}>
+        <GlassPanel style={[cmStyles.glassBox, { paddingHorizontal: 0, paddingTop: 20, paddingBottom: 8, maxHeight: '80%' }]}>
           <Text style={[cmStyles.title, { paddingHorizontal: 24, marginBottom: 12 }]}>
             {t.clientProfile.sessions.allSessionsTitle}
           </Text>
@@ -3326,7 +3344,7 @@ function AllSessionsModal({ sessions, onClose }: { sessions: SessionRow[]; onClo
             {sessions.map((s, i) => (
               <View key={s.id}>
                 <SessionHistoryRow session={s} />
-                {i < sessions.length - 1 && <View style={[styles.sep, { marginLeft: 0 }]} />}
+                {i < sessions.length - 1 && <View style={[styles.sep, { marginLeft: 0, backgroundColor: 'rgba(0,0,0,0.08)' }]} />}
               </View>
             ))}
           </ScrollView>
@@ -3337,6 +3355,7 @@ function AllSessionsModal({ sessions, onClose }: { sessions: SessionRow[]; onClo
           >
             <Text style={{ fontSize: 15, fontWeight: '600', color: ACCENT }}>{t.common.ok}</Text>
           </TouchableOpacity>
+        </GlassPanel>
         </View>
       </View>
     </Modal>
@@ -3927,15 +3946,16 @@ function InfoTab({
         <Modal visible transparent animationType="fade" onRequestClose={() => setFieldModal(null)} statusBarTranslucent>
           <View style={infoFieldStyles.overlay}>
             <Pressable style={StyleSheet.absoluteFill} onPress={() => setFieldModal(null)} />
-            <View style={infoFieldStyles.box}>
+            <View style={infoFieldStyles.glassShadow}>
+            <GlassPanel style={infoFieldStyles.glassBox}>
               <Text style={infoFieldStyles.title}>{fieldModal.label}</Text>
               <TextInput
-                style={infoFieldStyles.input}
+                style={infoFieldStyles.inputOnGlass}
                 value={fieldDraft}
                 onChangeText={setFieldDraft}
                 keyboardType={fieldModal.keyboard}
                 placeholder={fieldModal.placeholder}
-                placeholderTextColor="#ccc"
+                placeholderTextColor="#8a938e"
                 autoFocus
                 autoCapitalize="none"
                 autoCorrect={false}
@@ -3949,8 +3969,9 @@ function InfoTab({
                 <Text style={infoFieldStyles.confirmBtnText}>{t.common.confirm}</Text>
               </TouchableOpacity>
               <TouchableOpacity onPress={() => setFieldModal(null)} hitSlop={8}>
-                <Text style={infoFieldStyles.cancel}>{t.common.cancel}</Text>
+                <Text style={infoFieldStyles.cancelOnGlass}>{t.common.cancel}</Text>
               </TouchableOpacity>
+            </GlassPanel>
             </View>
           </View>
           {/* Suppress iOS keyboard Done toolbar — Confirm button in modal is sufficient */}
@@ -3966,14 +3987,15 @@ function InfoTab({
       <Modal visible={setPwdOpen} transparent animationType="fade" onRequestClose={() => setSetPwdOpen(false)} statusBarTranslucent>
         <View style={infoFieldStyles.overlay}>
           <Pressable style={StyleSheet.absoluteFill} onPress={() => setSetPwdOpen(false)} />
-          <View style={[infoFieldStyles.box, { alignItems: 'stretch' }]}>
+          <View style={infoFieldStyles.glassShadow}>
+          <GlassPanel style={[infoFieldStyles.glassBox, { alignItems: 'stretch' }]}>
             <Text style={[infoFieldStyles.title, { textAlign: 'center' }]}>{t.clientProfile.info.setPassword}</Text>
             <TextInput
-              style={infoFieldStyles.input}
+              style={infoFieldStyles.inputOnGlass}
               value={setPwdNew}
               onChangeText={setSetPwdNew}
               placeholder={t.clientProfile.info.setPasswordNewPlaceholder}
-              placeholderTextColor="#ccc"
+              placeholderTextColor="#8a938e"
               secureTextEntry
               autoFocus
               autoCapitalize="none"
@@ -3982,11 +4004,11 @@ function InfoTab({
               inputAccessoryViewID={Platform.OS === 'ios' ? 'set-pwd-input' : undefined}
             />
             <TextInput
-              style={infoFieldStyles.input}
+              style={infoFieldStyles.inputOnGlass}
               value={setPwdConfirm}
               onChangeText={setSetPwdConfirm}
               placeholder={t.clientProfile.info.setPasswordConfirmPlaceholder}
-              placeholderTextColor="#ccc"
+              placeholderTextColor="#8a938e"
               secureTextEntry
               autoCapitalize="none"
               autoCorrect={false}
@@ -4006,8 +4028,9 @@ function InfoTab({
               }
             </TouchableOpacity>
             <TouchableOpacity onPress={() => setSetPwdOpen(false)} hitSlop={8} style={{ alignSelf: 'center' }}>
-              <Text style={infoFieldStyles.cancel}>{t.common.cancel}</Text>
+              <Text style={infoFieldStyles.cancelOnGlass}>{t.common.cancel}</Text>
             </TouchableOpacity>
+          </GlassPanel>
           </View>
         </View>
         {Platform.OS === 'ios' && (
@@ -4427,14 +4450,22 @@ const styles = StyleSheet.create({
 const infoFieldStyles = StyleSheet.create({
   overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.52)', justifyContent: 'center', paddingHorizontal: 32 },
   box: { backgroundColor: CARD, borderRadius: 16, padding: 24, alignItems: 'center', gap: 14 },
+  // Liquid Glass popup — radius-38 shadow wrapper + GlassPanel (the account.tsx family).
+  glassShadow: { borderRadius: 38, shadowColor: '#000', shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.22, shadowRadius: 28, elevation: 12 },
+  glassBox: { borderRadius: 38, overflow: 'hidden', padding: 24, alignItems: 'center', gap: 14 },
   title: { fontSize: 15, fontWeight: '700', color: TEXT },
   input: {
     alignSelf: 'stretch', backgroundColor: '#f5f5f3', borderRadius: 10,
     paddingHorizontal: 14, paddingVertical: 12, fontSize: 18, color: TEXT, textAlign: 'center',
   },
+  inputOnGlass: {
+    alignSelf: 'stretch', backgroundColor: 'rgba(255,255,255,0.6)', borderWidth: 1, borderColor: 'rgba(0,0,0,0.12)', borderRadius: 10,
+    paddingHorizontal: 14, paddingVertical: 12, fontSize: 18, color: TEXT, textAlign: 'center',
+  },
   confirmBtn: { backgroundColor: ACCENT, borderRadius: 100, paddingVertical: 13, alignSelf: 'stretch', alignItems: 'center' },
   confirmBtnText: { color: '#fff', fontWeight: '700', fontSize: 15 },
   cancel: { fontSize: 14, color: MUTED },
+  cancelOnGlass: { fontSize: 14, color: '#414b45', fontWeight: '600' },
   bannerThumb: { width: 64, height: 36, borderRadius: 6 },
   bannerPreviewSection: { paddingHorizontal: 16, paddingTop: 12, paddingBottom: 16 },
   bannerPreviewLabel: { fontSize: 11, fontWeight: '700', color: '#999', letterSpacing: 0.6, textTransform: 'uppercase', marginBottom: 8 },
@@ -4473,7 +4504,8 @@ const infoFieldStyles = StyleSheet.create({
 const menuStyles = StyleSheet.create({
   sheetContent: { paddingBottom: 4 },
   overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'center', paddingHorizontal: 40 },
-  sheet: { backgroundColor: CARD, borderRadius: 16, overflow: 'hidden' },
+  sheetShadow: { borderRadius: 38, shadowColor: '#000', shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.22, shadowRadius: 28, elevation: 12 },
+  sheet: { borderRadius: 38, overflow: 'hidden' },
   sheetTitle: {
     fontSize: 13, fontWeight: '600', color: MUTED,
     paddingHorizontal: 16, paddingVertical: 14, textAlign: 'center',
@@ -4573,8 +4605,13 @@ const pkgStyles = StyleSheet.create({
 const cmStyles = StyleSheet.create({
   overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.52)', justifyContent: 'center', paddingHorizontal: 32 },
   box: { backgroundColor: CARD, borderRadius: 16, padding: 24, alignItems: 'center', gap: 12 },
+  // Liquid Glass popup — radius-38 shadow wrapper + GlassPanel (the account.tsx family).
+  glassShadow: { borderRadius: 38, shadowColor: '#000', shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.22, shadowRadius: 28, elevation: 12 },
+  glassBox: { borderRadius: 38, overflow: 'hidden', padding: 24, alignItems: 'center', gap: 12 },
   title: { fontSize: 16, fontWeight: '700', color: TEXT },
   message: { fontSize: 14, color: MUTED, textAlign: 'center' },
+  messageOnGlass: { fontSize: 14, color: '#1f2823', fontWeight: '600', textAlign: 'center' },
+  cancelOnGlass: { fontSize: 14, color: '#414b45', fontWeight: '600' },
   actionBtn: {
     backgroundColor: ACCENT, borderRadius: 100, paddingVertical: 13,
     alignSelf: 'stretch', alignItems: 'center',
@@ -4660,13 +4697,24 @@ const addPopStyles = StyleSheet.create({
     flex: 1, backgroundColor: 'rgba(0,0,0,0.45)',
     alignItems: 'center', justifyContent: 'center', padding: 32,
   },
+  // Glass popup card (radius-38 GlassPanel family): shadow lives on cardShadow,
+  // the OnGlass twins darken the shared muted styles ONLY at popup call sites
+  // (heading/divider/cancelText etc. are also used by the white BottomSheets).
   card: {
-    backgroundColor: '#fff', borderRadius: 16,
+    borderRadius: 38, overflow: 'hidden',
     width: '100%', paddingTop: 20, paddingBottom: 8,
     alignItems: 'center',
-    shadowColor: '#000', shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.15, shadowRadius: 20, elevation: 10,
   },
+  cardShadow: {
+    borderRadius: 38, width: '100%',
+    shadowColor: '#000', shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.22, shadowRadius: 28, elevation: 12,
+  },
+  headingOnGlass: { color: '#414b45' },
+  dividerOnGlass: { backgroundColor: 'rgba(0,0,0,0.08)' },
+  cancelTextOnGlass: { color: '#414b45', fontWeight: '600' },
+  emptyTextOnGlass: { color: '#1f2823' },
+  emptySubOnGlass: { color: '#414b45' },
   heading: {
     fontSize: 13, fontWeight: '700', color: '#aaa',
     letterSpacing: 0.6, textTransform: 'uppercase', marginBottom: 8,

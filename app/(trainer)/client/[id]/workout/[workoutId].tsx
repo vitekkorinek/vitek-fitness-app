@@ -4172,7 +4172,8 @@ export default function TrainerWorkoutSessionScreen() {
       <Modal visible={!!hardBlockModal} transparent animationType="fade" onRequestClose={() => setHardBlockModal(null)}>
         <View style={styles.centeredRoot}>
           <Pressable style={StyleSheet.absoluteFill} onPress={() => setHardBlockModal(null)} />
-          <View style={styles.hardBlockBox}>
+          <View style={styles.confirmBoxShadow}>
+          <GlassPanel style={styles.confirmBox}>
             <Text style={styles.hardBlockTitle}>You must start the workout to do this</Text>
             <TouchableOpacity
               style={styles.hardBlockStartBtn}
@@ -4192,6 +4193,7 @@ export default function TrainerWorkoutSessionScreen() {
             <TouchableOpacity onPress={() => setHardBlockModal(null)} activeOpacity={0.7} hitSlop={8}>
               <Text style={styles.hardBlockCancelText}>Cancel</Text>
             </TouchableOpacity>
+          </GlassPanel>
           </View>
         </View>
       </Modal>
@@ -4233,14 +4235,15 @@ export default function TrainerWorkoutSessionScreen() {
         <Modal visible transparent animationType="fade" onRequestClose={() => setLastSessionNotesModal(null)}>
           <View style={styles.centeredRoot}>
             <Pressable style={StyleSheet.absoluteFill} onPress={() => setLastSessionNotesModal(null)} />
-            <View style={styles.centeredModal}>
+            <View style={styles.confirmBoxShadow}>
+            <GlassPanel style={styles.notesPopupBox}>
               <Text style={styles.centeredModalTitle}>Notes from last session</Text>
               <ScrollView bounces={false} showsVerticalScrollIndicator={false} style={{ maxHeight: SCREEN_H * 0.5 }}>
                 {lastSessionNotesModal.trainer.length > 0 && (
                   <>
                     <Text style={[styles.infoLabel, { color: ACCENT }]}>TRAINER NOTE</Text>
                     {lastSessionNotesModal.trainer.map(n => (
-                      <View key={n.id} style={styles.noteEntry}>
+                      <View key={n.id} style={[styles.noteEntry, styles.noteEntryOnGlass]}>
                         <View style={styles.noteEntryBody}>
                           <Text style={styles.noteDateLabel}>{n.date}</Text>
                           <Text style={styles.noteBodyText}>{n.text}</Text>
@@ -4253,7 +4256,7 @@ export default function TrainerWorkoutSessionScreen() {
                   <>
                     <Text style={[styles.infoLabel, { color: MUTED }]}>CLIENT NOTE</Text>
                     {lastSessionNotesModal.client.map(n => (
-                      <View key={n.id} style={[styles.noteEntry, styles.clientNoteEntry]}>
+                      <View key={n.id} style={[styles.noteEntry, styles.clientNoteEntry, styles.noteEntryOnGlassClient]}>
                         <View style={styles.noteEntryBody}>
                           <Text style={[styles.noteDateLabel, styles.clientNoteDateLabel]}>{n.date}</Text>
                           <Text style={[styles.noteBodyText, styles.clientNoteBodyText]}>{n.text}</Text>
@@ -4267,6 +4270,7 @@ export default function TrainerWorkoutSessionScreen() {
               <TouchableOpacity style={styles.centeredModalDoneBtn} onPress={() => setLastSessionNotesModal(null)} activeOpacity={0.85}>
                 <Text style={styles.centeredModalDoneBtnText}>Got it</Text>
               </TouchableOpacity>
+            </GlassPanel>
             </View>
           </View>
         </Modal>
@@ -4277,7 +4281,8 @@ export default function TrainerWorkoutSessionScreen() {
         <Modal visible transparent animationType="fade" onRequestClose={() => setOrderMismatchModal(null)}>
           <View style={styles.centeredRoot}>
             <Pressable style={StyleSheet.absoluteFill} onPress={() => setOrderMismatchModal(null)} />
-            <View style={styles.centeredModal}>
+            <View style={styles.confirmBoxShadow}>
+            <GlassPanel style={styles.notesPopupBox}>
               <Text style={styles.centeredModalTitle}>Different order last time</Text>
               <ScrollView bounces={false} showsVerticalScrollIndicator={false} style={{ maxHeight: SCREEN_H * 0.5 }}>
                 <Text style={styles.orderMismatchSub}>Last session, some exercises were done in a different order than programmed:</Text>
@@ -4292,6 +4297,7 @@ export default function TrainerWorkoutSessionScreen() {
               <TouchableOpacity style={styles.centeredModalDoneBtn} onPress={() => setOrderMismatchModal(null)} activeOpacity={0.85}>
                 <Text style={styles.centeredModalDoneBtnText}>Got it</Text>
               </TouchableOpacity>
+            </GlassPanel>
             </View>
           </View>
         </Modal>
@@ -6406,14 +6412,16 @@ function ExerciseProgressSheet({ exerciseId, workoutId: progWorkoutId, profileId
         <Modal visible transparent animationType="fade" onRequestClose={() => setTooltipPoint(null)}>
           <View style={styles.centeredRoot}>
             <Pressable style={StyleSheet.absoluteFill} onPress={() => setTooltipPoint(null)} />
-            <View style={[styles.centeredModal, { padding: 20 }]}>
+            <View style={styles.confirmBoxShadow}>
+            <GlassPanel style={[styles.notesPopupBox, { padding: 20 }]}>
               <Text style={[styles.centeredModalTitle, { marginBottom: 6 }]}>{formatShortDate(tooltipPoint.date)}</Text>
-              {tooltipPoint.workoutName && <Text style={{ fontSize: 12, color: MUTED, marginBottom: 8 }}>{tooltipPoint.workoutName}</Text>}
+              {tooltipPoint.workoutName && <Text style={{ fontSize: 12, color: '#414b45', marginBottom: 8 }}>{tooltipPoint.workoutName}</Text>}
               <Text style={{ fontSize: 22, fontWeight: '700', color: TEXT, marginBottom: 4 }}>{tooltipPoint.weightKg} kg</Text>
-              {tooltipPoint.reps != null && <Text style={{ fontSize: 14, color: MUTED }}>{tooltipPoint.reps} reps</Text>}
+              {tooltipPoint.reps != null && <Text style={{ fontSize: 14, color: '#414b45' }}>{tooltipPoint.reps} reps</Text>}
               <TouchableOpacity style={[styles.centeredModalDoneBtn, { marginTop: 16, alignSelf: 'stretch' }]} onPress={() => setTooltipPoint(null)} activeOpacity={0.85}>
                 <Text style={styles.centeredModalDoneBtnText}>{en.common.ok}</Text>
               </TouchableOpacity>
+            </GlassPanel>
             </View>
           </View>
         </Modal>
@@ -6672,9 +6680,10 @@ function ReplacementHistoryModal({ workoutId, slotNumber, exerciseName, onReplac
     <Modal visible transparent animationType="fade" onRequestClose={onClose} statusBarTranslucent>
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.centeredRoot}>
         <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
-        <View style={styles.centeredModal}>
+        <View style={styles.confirmBoxShadow}>
+        <GlassPanel style={styles.notesPopupBox}>
           <Text style={styles.centeredModalTitle}>{exerciseName}</Text>
-          <Text style={styles.infoLabel}>REPLACEMENT HISTORY</Text>
+          <Text style={[styles.infoLabel, { color: '#414b45' }]}>REPLACEMENT HISTORY</Text>
           {history.length === 0
             ? <Text style={replStyles.historyEmpty}>No replacements yet</Text>
             : history.map((h, i) => (
@@ -6684,7 +6693,7 @@ function ReplacementHistoryModal({ workoutId, slotNumber, exerciseName, onReplac
                 </View>
               ))
           }
-          <View style={styles.infoSep} />
+          <View style={[styles.infoSep, { backgroundColor: 'rgba(0,0,0,0.08)' }]} />
           <TouchableOpacity style={replStyles.replaceRow} onPress={onReplacePress} activeOpacity={0.7}>
             <Plus size={15} color={ACCENT} strokeWidth={2.5} />
             <Text style={replStyles.replaceRowText}>Replace with different exercise</Text>
@@ -6692,6 +6701,7 @@ function ReplacementHistoryModal({ workoutId, slotNumber, exerciseName, onReplac
           <TouchableOpacity style={styles.centeredModalDoneBtn} onPress={onClose} activeOpacity={0.85}>
             <Text style={styles.centeredModalDoneBtnText}>Done</Text>
           </TouchableOpacity>
+        </GlassPanel>
         </View>
       </KeyboardAvoidingView>
     </Modal>
@@ -7233,9 +7243,15 @@ const styles = StyleSheet.create({
   hardBlockTitle: { fontSize: 16, fontWeight: '700', color: TEXT, textAlign: 'center' },
   hardBlockStartBtn: { backgroundColor: ACCENT, borderRadius: 100, paddingVertical: 14, paddingHorizontal: 32 },
   hardBlockStartText: { color: '#fff', fontSize: 15, fontWeight: '700' },
-  hardBlockCancelText: { fontSize: 14, color: MUTED },
+  hardBlockCancelText: { fontSize: 14, fontWeight: '600', color: '#414b45' },
   confirmBoxShadow: { borderRadius: 38, shadowColor: '#000', shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.22, shadowRadius: 28, elevation: 12 },
   confirmBox: { borderRadius: 38, overflow: 'hidden', padding: 24, alignItems: 'center', gap: 14 },
+  // Wider glass popup for list/notes-style content — rides the confirm-box glass
+  // family; note entries get translucent fills so they don't sit on the glass as
+  // opaque stickers.
+  notesPopupBox: { borderRadius: 38, overflow: 'hidden', padding: 24, maxHeight: SCREEN_H * 0.78 },
+  noteEntryOnGlass: { backgroundColor: 'rgba(255,255,255,0.55)' },
+  noteEntryOnGlassClient: { backgroundColor: 'rgba(240,248,245,0.8)' },
   confirmTitle: { fontSize: 16, fontWeight: '700', color: TEXT, textAlign: 'center' },
   confirmMessage: { fontSize: 14, color: '#1f2823', fontWeight: '600', textAlign: 'center', lineHeight: 20, marginTop: -4 },
   confirmPrimaryBtn: { backgroundColor: ACCENT, borderRadius: 100, paddingVertical: 14, alignSelf: 'stretch', alignItems: 'center' },
@@ -7256,10 +7272,10 @@ const styles = StyleSheet.create({
   dragHandleLine: { width: 14, height: 1.5, backgroundColor: '#bbb', borderRadius: 1 },
 
 
-  orderMismatchSub: { fontSize: 13, color: MUTED, marginBottom: 10, lineHeight: 18 },
-  orderMismatchRow: { paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: '#f0f0f0', gap: 2 },
+  orderMismatchSub: { fontSize: 13, color: '#1f2823', fontWeight: '600', marginBottom: 10, lineHeight: 18 },
+  orderMismatchRow: { paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: 'rgba(0,0,0,0.08)', gap: 2 },
   orderMismatchName: { fontSize: 14, fontWeight: '600', color: TEXT },
-  orderMismatchMeta: { fontSize: 12, color: MUTED },
+  orderMismatchMeta: { fontSize: 12, color: '#414b45' },
 
   // Free session
   freeAddBtn: {
@@ -7331,10 +7347,10 @@ const pickerStyles = StyleSheet.create({
 const replStyles = StyleSheet.create({
   replaceRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 13, paddingHorizontal: 16, borderRadius: 12, borderWidth: 1.5, borderColor: ACCENT, marginTop: 12 },
   replaceRowText: { fontSize: 14, fontWeight: '600', color: ACCENT },
-  historyEmpty: { fontSize: 14, color: '#bbb', marginBottom: 4 },
-  historyRow: { paddingVertical: 7, borderBottomWidth: 1, borderBottomColor: '#f0f0f0', gap: 2 },
+  historyEmpty: { fontSize: 14, color: '#414b45', marginBottom: 4 },
+  historyRow: { paddingVertical: 7, borderBottomWidth: 1, borderBottomColor: 'rgba(0,0,0,0.08)', gap: 2 },
   historyName: { fontSize: 14, fontWeight: '600', color: TEXT },
-  historyDate: { fontSize: 12, color: MUTED },
+  historyDate: { fontSize: 12, color: '#414b45' },
 });
 
 const histStyles = StyleSheet.create({

@@ -6,6 +6,7 @@ import { SymbolView } from 'expo-symbols';
 // Muscle → slug mapping, focus points and the front/back rule live in the shared
 // module so the Do Mode banner silhouette can't drift from this thumbnail.
 import { toSlugs, getThumbFocus } from '../lib/muscleSilhouette';
+import GlassPanel from './GlassPanel';
 
 interface MuscleThumbProps {
   muscleGroups: string[];
@@ -76,7 +77,8 @@ export default function MuscleThumb({ muscleGroups, secondaryMuscleGroups = [], 
         <TouchableWithoutFeedback onPress={() => setExpanded(false)}>
           <View style={styles.overlay}>
             <TouchableWithoutFeedback>
-              <View style={[styles.card, { width: cardWidth }]}>
+              <View style={styles.glassShadow}>
+              <GlassPanel style={[styles.glassBox, { width: cardWidth }]}>
 
                 {/* Muscle labels */}
                 <View style={styles.labelsArea}>
@@ -109,6 +111,7 @@ export default function MuscleThumb({ muscleGroups, secondaryMuscleGroups = [], 
                   </Text>
                 </TouchableOpacity>
 
+              </GlassPanel>
               </View>
             </TouchableWithoutFeedback>
           </View>
@@ -129,17 +132,23 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  card: {
-    backgroundColor: '#fff',
-    borderRadius: 16,
+  // Liquid Glass popup — radius-38 shadow wrapper + GlassPanel (the app-wide
+  // glass pop-up recipe). Horizontal padding stays 16 — the body-scale math
+  // above (cardHPad) depends on it.
+  glassShadow: {
+    borderRadius: 38,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.22,
+    shadowRadius: 28,
+    elevation: 12,
+  },
+  glassBox: {
+    borderRadius: 38,
+    overflow: 'hidden',
     paddingHorizontal: 16,
     paddingTop: 16,
     paddingBottom: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.18,
-    shadowRadius: 16,
-    elevation: 8,
   },
   labelsArea: {
     alignItems: 'center',
@@ -154,7 +163,7 @@ const styles = StyleSheet.create({
   },
   secondaryLabel: {
     fontSize: 12,
-    color: '#999',
+    color: '#414b45',
     textAlign: 'center',
   },
   bodyWrap: {

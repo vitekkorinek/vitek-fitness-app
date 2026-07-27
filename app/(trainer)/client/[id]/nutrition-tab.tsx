@@ -9,6 +9,7 @@ import { supabase } from '@/lib/supabase';
 import type { ClientNutritionTargets, FoodLogEntry } from '@/lib/nutritionInsights';
 import type { User } from '@/types/database';
 import { GlassToggle } from '@/components/GlassToggle';
+import GlassPanel from '@/components/GlassPanel';
 
 const ACCENT    = '#24ac88';
 const HEADER    = '#244e43';
@@ -1038,7 +1039,8 @@ export default function NutritionTab({ clientId, trainerId, client }: {
       {/* Diet modal */}
       <Modal visible={dietModal} transparent animationType="fade" onRequestClose={()=>setDietModal(false)}>
         <Pressable style={s.overlay} onPress={()=>setDietModal(false)}>
-          <Pressable style={s.modal} onPress={()=>{}}>
+          <Pressable style={s.glassShadow} onPress={()=>{}}>
+            <GlassPanel style={s.glassBox}>
             <Text style={s.modalTitle}>Diet Type</Text>
             <View style={s.dietGrid}>
               {DIET_OPTIONS.map(opt=>{const active=targets?.diet_type===opt.key;return(
@@ -1047,8 +1049,9 @@ export default function NutritionTab({ clientId, trainerId, client }: {
                 </TouchableOpacity>
               );})}
             </View>
-            {targets?.diet_type!=null&&<TouchableOpacity style={{marginTop:8,alignSelf:'center'}} onPress={async()=>{await patchTargets({diet_type:null});setDietModal(false);}}><Text style={{fontSize:13,color:MUTED}}>Clear</Text></TouchableOpacity>}
-            <TouchableOpacity style={{marginTop:14,alignSelf:'center'}} onPress={()=>setDietModal(false)}><Text style={{fontSize:14,color:MUTED}}>Cancel</Text></TouchableOpacity>
+            {targets?.diet_type!=null&&<TouchableOpacity style={{marginTop:8,alignSelf:'center'}} onPress={async()=>{await patchTargets({diet_type:null});setDietModal(false);}}><Text style={[s.cancelOnGlass,{fontSize:13}]}>Clear</Text></TouchableOpacity>}
+            <TouchableOpacity style={{marginTop:14,alignSelf:'center'}} onPress={()=>setDietModal(false)}><Text style={s.cancelOnGlass}>Cancel</Text></TouchableOpacity>
+            </GlassPanel>
           </Pressable>
         </Pressable>
       </Modal>
@@ -1056,12 +1059,14 @@ export default function NutritionTab({ clientId, trainerId, client }: {
       {/* Field edit modal */}
       <Modal visible={!!fieldModal} transparent animationType="fade" onRequestClose={()=>setFieldModal(null)}>
         <Pressable style={s.overlay} onPress={()=>setFieldModal(null)}>
-          <Pressable style={s.modal} onPress={()=>{}}>
+          <Pressable style={s.glassShadow} onPress={()=>{}}>
+            <GlassPanel style={s.glassBox}>
             <Text style={s.modalTitle}>{fieldModal?.label}</Text>
-            <Text style={s.modalSub}>{fieldModal?.key==='water_target_ml'?'Enter in ml (e.g. 2000 = 2 L/day)':fieldModal?.key==='calories'?'kcal per day':'per day'}</Text>
-            <TextInput style={s.fieldInput} value={fieldDraft} onChangeText={setFieldDraft} keyboardType="number-pad" placeholder="—" placeholderTextColor={MUTED} inputAccessoryViewID={INPUT_ID} autoFocus selectTextOnFocus/>
+            <Text style={s.modalSubOnGlass}>{fieldModal?.key==='water_target_ml'?'Enter in ml (e.g. 2000 = 2 L/day)':fieldModal?.key==='calories'?'kcal per day':'per day'}</Text>
+            <TextInput style={[s.fieldInput,s.fieldInputOnGlass]} value={fieldDraft} onChangeText={setFieldDraft} keyboardType="number-pad" placeholder="—" placeholderTextColor="#8a938e" inputAccessoryViewID={INPUT_ID} autoFocus selectTextOnFocus/>
             <TouchableOpacity style={s.confirmBtn} onPress={confirmField} activeOpacity={0.8}><Text style={s.confirmBtnText}>Confirm</Text></TouchableOpacity>
-            <TouchableOpacity style={{marginTop:8,alignSelf:'center'}} onPress={()=>setFieldModal(null)}><Text style={{fontSize:14,color:MUTED}}>Cancel</Text></TouchableOpacity>
+            <TouchableOpacity style={{marginTop:8,alignSelf:'center'}} onPress={()=>setFieldModal(null)}><Text style={s.cancelOnGlass}>Cancel</Text></TouchableOpacity>
+            </GlassPanel>
           </Pressable>
         </Pressable>
         {Platform.OS==='ios'&&<InputAccessoryView nativeID={INPUT_ID}/>}
@@ -1070,19 +1075,21 @@ export default function NutritionTab({ clientId, trainerId, client }: {
       {/* Macro % modal */}
       <Modal visible={!!macroModal} transparent animationType="fade" onRequestClose={()=>setMacroModal(null)}>
         <Pressable style={s.overlay} onPress={()=>setMacroModal(null)}>
-          <Pressable style={s.modal} onPress={()=>{}}>
+          <Pressable style={s.glassShadow} onPress={()=>{}}>
+            <GlassPanel style={s.glassBox}>
             <Text style={s.modalTitle}>{macroModal==='protein'?'Protein':macroModal==='carbs'?'Carbs':'Fat'} percentage</Text>
-            <Text style={s.modalSub}>% of calorie target · other macros auto-adjust{calTarget?`\n(${calTarget} kcal)`:''}</Text>
+            <Text style={s.modalSubOnGlass}>% of calorie target · other macros auto-adjust{calTarget?`\n(${calTarget} kcal)`:''}</Text>
             <TextInput
-              style={[s.fieldInput,{color:macroModal==='protein'?COL_PROT:macroModal==='carbs'?COL_CARB:COL_FAT}]}
-              value={macroDraft} onChangeText={setMacroDraft} keyboardType="number-pad" placeholder="—" placeholderTextColor={MUTED}
+              style={[s.fieldInput,s.fieldInputOnGlass,{color:macroModal==='protein'?COL_PROT:macroModal==='carbs'?COL_CARB:COL_FAT}]}
+              value={macroDraft} onChangeText={setMacroDraft} keyboardType="number-pad" placeholder="—" placeholderTextColor="#8a938e"
               inputAccessoryViewID={INPUT_ID} autoFocus selectTextOnFocus
             />
             {calTarget!=null&&macroDraft!==''&&!isNaN(parseFloat(macroDraft))&&(
-              <Text style={s.macroPreview}>≈ {macroModal==='fat'?Math.round(calTarget*parseFloat(macroDraft)/100/9):Math.round(calTarget*parseFloat(macroDraft)/100/4)} g</Text>
+              <Text style={s.macroPreviewOnGlass}>≈ {macroModal==='fat'?Math.round(calTarget*parseFloat(macroDraft)/100/9):Math.round(calTarget*parseFloat(macroDraft)/100/4)} g</Text>
             )}
             <TouchableOpacity style={s.confirmBtn} onPress={confirmMacro} activeOpacity={0.8}><Text style={s.confirmBtnText}>Confirm</Text></TouchableOpacity>
-            <TouchableOpacity style={{marginTop:8,alignSelf:'center'}} onPress={()=>setMacroModal(null)}><Text style={{fontSize:14,color:MUTED}}>Cancel</Text></TouchableOpacity>
+            <TouchableOpacity style={{marginTop:8,alignSelf:'center'}} onPress={()=>setMacroModal(null)}><Text style={s.cancelOnGlass}>Cancel</Text></TouchableOpacity>
+            </GlassPanel>
           </Pressable>
         </Pressable>
         {Platform.OS==='ios'&&<InputAccessoryView nativeID={INPUT_ID}/>}
@@ -1091,11 +1098,12 @@ export default function NutritionTab({ clientId, trainerId, client }: {
       {/* Calculator modal */}
       <Modal visible={calcModal} transparent animationType="fade" onRequestClose={()=>{setCalcModal(false);setCalcSubModal(null);}}>
         <Pressable style={s.overlay} onPress={()=>{setCalcModal(false);setCalcSubModal(null);}}>
-          <Pressable style={[s.modal,{paddingBottom:20}]} onPress={()=>{}}>
+          <Pressable style={s.glassShadow} onPress={()=>{}}>
+            <GlassPanel style={[s.glassBox,{paddingBottom:20}]}>
             {calcStep===1&&(
               <>
                 <Text style={s.modalTitle}>Calculate targets</Text>
-                <Text style={[s.modalSub,{marginBottom:8}]}>Tap any row to edit</Text>
+                <Text style={[s.modalSubOnGlass,{marginBottom:8}]}>Tap any row to edit</Text>
                 <View style={s.calcCard}>
                   {[
                     {label:'Weight',val:calcWeight!==''?`${calcWeight} kg`:null,sub:recentWeightDate&&calcWeight===String(recentWeight)?'from measurements':null,onPress:()=>{setCalcSubDraft(calcWeight);setCalcSubModal('weight');}},
@@ -1118,7 +1126,7 @@ export default function NutritionTab({ clientId, trainerId, client }: {
                 <TouchableOpacity style={[s.confirmBtn,!calcCanRun&&s.confirmBtnDisabled]} onPress={runCalc} disabled={!calcCanRun} activeOpacity={0.8}>
                   <Text style={s.confirmBtnText}>Calculate</Text>
                 </TouchableOpacity>
-                <TouchableOpacity style={{marginTop:10,alignSelf:'center'}} onPress={()=>setCalcModal(false)}><Text style={{fontSize:14,color:MUTED}}>Cancel</Text></TouchableOpacity>
+                <TouchableOpacity style={{marginTop:10,alignSelf:'center'}} onPress={()=>setCalcModal(false)}><Text style={s.cancelOnGlass}>Cancel</Text></TouchableOpacity>
               </>
             )}
             {calcStep===2&&calcResult&&(
@@ -1142,24 +1150,26 @@ export default function NutritionTab({ clientId, trainerId, client }: {
                     </View>
                   ))}
                 </View>
-                <Text style={s.calcNote}>Values will be applied to the macro split</Text>
+                <Text style={s.calcNoteOnGlass}>Values will be applied to the macro split</Text>
                 <TouchableOpacity style={s.confirmBtn} onPress={applyCalcResult} activeOpacity={0.8}><Text style={s.confirmBtnText}>Use these values</Text></TouchableOpacity>
-                <TouchableOpacity style={{marginTop:10,alignSelf:'center'}} onPress={()=>setCalcModal(false)}><Text style={{fontSize:14,color:MUTED}}>Cancel</Text></TouchableOpacity>
+                <TouchableOpacity style={{marginTop:10,alignSelf:'center'}} onPress={()=>setCalcModal(false)}><Text style={s.cancelOnGlass}>Cancel</Text></TouchableOpacity>
               </>
             )}
+            </GlassPanel>
           </Pressable>
         </Pressable>
         {/* Calc sub-modals */}
         <Modal visible={calcSubModal!==null} transparent animationType="fade" onRequestClose={()=>setCalcSubModal(null)}>
           <Pressable style={s.overlay} onPress={()=>setCalcSubModal(null)}>
-            <Pressable style={s.modal} onPress={()=>{}}>
+            <Pressable style={s.glassShadow} onPress={()=>{}}>
+              <GlassPanel style={s.glassBox}>
               {(calcSubModal==='weight'||calcSubModal==='height')&&(
                 <>
                   <Text style={s.modalTitle}>{calcSubModal==='weight'?'Weight':'Height'}</Text>
-                  <Text style={s.modalSub}>{calcSubModal==='weight'?'in kg':'in cm'}</Text>
-                  <TextInput style={s.fieldInput} value={calcSubDraft} onChangeText={setCalcSubDraft} keyboardType="decimal-pad" placeholder={calcSubModal==='weight'?'e.g. 77':'e.g. 178'} placeholderTextColor={MUTED} autoFocus selectTextOnFocus inputAccessoryViewID={INPUT_ID}/>
+                  <Text style={s.modalSubOnGlass}>{calcSubModal==='weight'?'in kg':'in cm'}</Text>
+                  <TextInput style={[s.fieldInput,s.fieldInputOnGlass]} value={calcSubDraft} onChangeText={setCalcSubDraft} keyboardType="decimal-pad" placeholder={calcSubModal==='weight'?'e.g. 77':'e.g. 178'} placeholderTextColor="#8a938e" autoFocus selectTextOnFocus inputAccessoryViewID={INPUT_ID}/>
                   <TouchableOpacity style={s.confirmBtn} onPress={confirmCalcSub} activeOpacity={0.8}><Text style={s.confirmBtnText}>Confirm</Text></TouchableOpacity>
-                  <TouchableOpacity style={{marginTop:8,alignSelf:'center'}} onPress={()=>setCalcSubModal(null)}><Text style={{fontSize:14,color:MUTED}}>Cancel</Text></TouchableOpacity>
+                  <TouchableOpacity style={{marginTop:8,alignSelf:'center'}} onPress={()=>setCalcSubModal(null)}><Text style={s.cancelOnGlass}>Cancel</Text></TouchableOpacity>
                 </>
               )}
               {calcSubModal==='sex'&&(<>
@@ -1167,22 +1177,23 @@ export default function NutritionTab({ clientId, trainerId, client }: {
                 <View style={{gap:8,marginTop:8,alignSelf:'stretch'}}>
                   {SEX_OPTIONS.map(o=><TouchableOpacity key={o.key} style={[s.optPill,calcSex===o.key&&s.optPillActive]} onPress={()=>selCalcSex(o.key)} activeOpacity={0.7}><Text style={[s.optPillText,calcSex===o.key&&s.optPillTextActive]}>{o.label}</Text></TouchableOpacity>)}
                 </View>
-                <TouchableOpacity style={{marginTop:14,alignSelf:'center'}} onPress={()=>setCalcSubModal(null)}><Text style={{fontSize:14,color:MUTED}}>Cancel</Text></TouchableOpacity>
+                <TouchableOpacity style={{marginTop:14,alignSelf:'center'}} onPress={()=>setCalcSubModal(null)}><Text style={s.cancelOnGlass}>Cancel</Text></TouchableOpacity>
               </>)}
               {calcSubModal==='activity'&&(<>
                 <Text style={s.modalTitle}>Activity level</Text>
                 <View style={{gap:8,marginTop:8,alignSelf:'stretch'}}>
                   {ACTIVITY_OPTIONS.map(o=><TouchableOpacity key={o.key} style={[s.optPill,calcActivity===o.key&&s.optPillActive]} onPress={()=>selCalcActivity(o.key)} activeOpacity={0.7}><Text style={[s.optPillText,calcActivity===o.key&&s.optPillTextActive]}>{o.label}</Text></TouchableOpacity>)}
                 </View>
-                <TouchableOpacity style={{marginTop:14,alignSelf:'center'}} onPress={()=>setCalcSubModal(null)}><Text style={{fontSize:14,color:MUTED}}>Cancel</Text></TouchableOpacity>
+                <TouchableOpacity style={{marginTop:14,alignSelf:'center'}} onPress={()=>setCalcSubModal(null)}><Text style={s.cancelOnGlass}>Cancel</Text></TouchableOpacity>
               </>)}
               {calcSubModal==='goal'&&(<>
                 <Text style={s.modalTitle}>Goal</Text>
                 <View style={{gap:8,marginTop:8,alignSelf:'stretch'}}>
                   {GOAL_OPTIONS.map(o=><TouchableOpacity key={o.key} style={[s.optPill,calcGoal===o.key&&s.optPillActive]} onPress={()=>selCalcGoal(o.key)} activeOpacity={0.7}><Text style={[s.optPillText,calcGoal===o.key&&s.optPillTextActive]}>{o.label}</Text></TouchableOpacity>)}
                 </View>
-                <TouchableOpacity style={{marginTop:14,alignSelf:'center'}} onPress={()=>setCalcSubModal(null)}><Text style={{fontSize:14,color:MUTED}}>Cancel</Text></TouchableOpacity>
+                <TouchableOpacity style={{marginTop:14,alignSelf:'center'}} onPress={()=>setCalcSubModal(null)}><Text style={s.cancelOnGlass}>Cancel</Text></TouchableOpacity>
               </>)}
+              </GlassPanel>
             </Pressable>
           </Pressable>
           {Platform.OS==='ios'&&<InputAccessoryView nativeID={INPUT_ID}/>}
@@ -1299,10 +1310,18 @@ const s = StyleSheet.create({
 
   overlay:{ flex:1, backgroundColor:'rgba(0,0,0,0.45)', justifyContent:'center', alignItems:'center' },
   modal:{ backgroundColor:CARD, borderRadius:16, padding:24, width:'84%', maxWidth:360 },
+  // Liquid Glass popup — radius-38 shadow wrapper + GlassPanel (the account.tsx family).
+  glassShadow:{ borderRadius:38, width:'84%', maxWidth:360, shadowColor:'#000', shadowOffset:{width:0,height:10}, shadowOpacity:0.22, shadowRadius:28, elevation:12 },
+  glassBox:{ borderRadius:38, overflow:'hidden', padding:24 },
   modalTitle:{ fontSize:17, fontWeight:'700', color:TEXT, textAlign:'center', marginBottom:2 },
   modalSub:{ fontSize:12, color:MUTED, textAlign:'center', marginBottom:12 },
+  modalSubOnGlass:{ fontSize:12, color:'#414b45', fontWeight:'600', textAlign:'center', marginBottom:12 },
+  cancelOnGlass:{ fontSize:14, color:'#414b45', fontWeight:'600' },
+  fieldInputOnGlass:{ backgroundColor:'rgba(255,255,255,0.6)', borderWidth:1, borderColor:'rgba(0,0,0,0.12)' },
+  macroPreviewOnGlass:{ fontSize:13, color:'#414b45', fontWeight:'600', textAlign:'center', marginBottom:12, marginTop:-8 },
+  calcNoteOnGlass:{ fontSize:11, color:'#414b45', fontWeight:'600', textAlign:'center', marginBottom:12 },
   dietGrid:{ flexDirection:'row', flexWrap:'wrap', gap:8, justifyContent:'center', marginTop:12, marginBottom:4 },
-  dietPill:{ borderRadius:100, backgroundColor:'#fff', paddingHorizontal:14, paddingVertical:7, shadowColor:'#000', shadowOffset:{width:0,height:1}, shadowOpacity:0.05, shadowRadius:3, elevation:1 },
+  dietPill:{ borderRadius:100, backgroundColor:'rgba(255,255,255,0.6)', paddingHorizontal:14, paddingVertical:7, shadowColor:'#000', shadowOffset:{width:0,height:1}, shadowOpacity:0.05, shadowRadius:3, elevation:1 },
   dietPillActive:{ backgroundColor:ACCENT },
   dietPillText:{ fontSize:13, fontWeight:'600', color:MUTED },
   dietPillTextActive:{ color:'#fff' },
@@ -1310,15 +1329,15 @@ const s = StyleSheet.create({
   confirmBtn:{ backgroundColor:ACCENT, borderRadius:100, paddingVertical:12, alignItems:'center', alignSelf:'stretch' },
   confirmBtnDisabled:{ opacity:0.4 },
   confirmBtnText:{ fontSize:15, fontWeight:'700', color:'#fff' },
-  calcCard:{ alignSelf:'stretch', borderRadius:12, backgroundColor:'#f9f9f7', overflow:'hidden', marginBottom:14 },
+  calcCard:{ alignSelf:'stretch', borderRadius:12, backgroundColor:'rgba(255,255,255,0.6)', overflow:'hidden', marginBottom:14 },
   calcRow:{ flexDirection:'row', alignItems:'center', paddingHorizontal:14, paddingVertical:11 },
-  calcRowBorder:{ borderBottomWidth:1, borderBottomColor:BORDER },
+  calcRowBorder:{ borderBottomWidth:1, borderBottomColor:'rgba(0,0,0,0.08)' },
   calcLabel:{ flex:1, fontSize:13, fontWeight:'500', color:TEXT },
   calcValue:{ fontSize:13, fontWeight:'600', color:HEADER },
   calcMissing:{ fontSize:12, color:ACCENT, fontStyle:'italic' },
   calcMeta:{ fontSize:10, color:MUTED },
   calcNote:{ fontSize:11, color:MUTED, textAlign:'center', marginBottom:12 },
-  optPill:{ alignSelf:'stretch', paddingVertical:11, paddingHorizontal:14, borderRadius:10, backgroundColor:'#f9f9f7', alignItems:'center', shadowColor:'#000', shadowOffset:{width:0,height:1}, shadowOpacity:0.05, shadowRadius:3, elevation:1 },
+  optPill:{ alignSelf:'stretch', paddingVertical:11, paddingHorizontal:14, borderRadius:10, backgroundColor:'rgba(255,255,255,0.6)', alignItems:'center', shadowColor:'#000', shadowOffset:{width:0,height:1}, shadowOpacity:0.05, shadowRadius:3, elevation:1 },
   optPillActive:{ backgroundColor:ACCENT },
   optPillText:{ fontSize:14, fontWeight:'600', color:MUTED },
   optPillTextActive:{ color:'#fff' },

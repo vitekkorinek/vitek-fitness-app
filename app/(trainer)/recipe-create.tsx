@@ -21,6 +21,7 @@ import { useAuth } from '@/context/AuthContext';
 import { supabase } from '@/lib/supabase';
 import FoodSearchModal from '@/components/FoodSearchModal';
 import { SessionResumeChip } from '@/components/SessionResumeChip';
+import GlassPanel from '@/components/GlassPanel';
 import type { FoodConfirmResult } from '@/components/FoodSearchModal';
 
 const BG     = '#faf9f7';
@@ -331,14 +332,15 @@ export default function TrainerCreateRecipeScreen() {
       {/* ── Name modal ────────────────────────────────────────────── */}
       <Modal visible={nameModal} transparent animationType="fade">
         <TouchableOpacity style={s.overlay} onPress={() => setNameModal(false)} activeOpacity={1}>
-          <TouchableOpacity activeOpacity={1} style={s.modalCard}>
+          <TouchableOpacity activeOpacity={1} style={s.glassShadow}>
+          <GlassPanel style={s.glassBox}>
             <Text style={s.modalTitle}>Recipe name</Text>
             <TextInput
               style={s.modalInput}
               value={nameDraft}
               onChangeText={setNameDraft}
               placeholder="Recipe name"
-              placeholderTextColor={MUTED}
+              placeholderTextColor="#8a938e"
               autoFocus
               returnKeyType="done"
               onSubmitEditing={() => { setName(nameDraft); setNameModal(false); }}
@@ -353,6 +355,7 @@ export default function TrainerCreateRecipeScreen() {
             <TouchableOpacity onPress={() => setNameModal(false)} style={s.cancelLink}>
               <Text style={s.cancelText}>Cancel</Text>
             </TouchableOpacity>
+          </GlassPanel>
           </TouchableOpacity>
         </TouchableOpacity>
       </Modal>
@@ -360,7 +363,8 @@ export default function TrainerCreateRecipeScreen() {
       {/* ── Portions modal ────────────────────────────────────────── */}
       <Modal visible={portionsModal} transparent animationType="fade">
         <TouchableOpacity style={s.overlay} onPress={() => setPortionsModal(false)} activeOpacity={1}>
-          <TouchableOpacity activeOpacity={1} style={s.modalCard}>
+          <TouchableOpacity activeOpacity={1} style={s.glassShadow}>
+          <GlassPanel style={s.glassBox}>
             <Text style={s.modalTitle}>Number of portions</Text>
             <TextInput
               style={s.modalInput}
@@ -379,6 +383,7 @@ export default function TrainerCreateRecipeScreen() {
             <TouchableOpacity onPress={() => setPortionsModal(false)} style={s.cancelLink}>
               <Text style={s.cancelText}>Cancel</Text>
             </TouchableOpacity>
+          </GlassPanel>
           </TouchableOpacity>
         </TouchableOpacity>
       </Modal>
@@ -458,12 +463,14 @@ const s = StyleSheet.create({
 
   overlay:     { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', alignItems: 'center', justifyContent: 'center' },
   modalCard:   { backgroundColor: CARD, borderRadius: 16, padding: 20, width: '84%' },
+  glassShadow: { width: '84%', borderRadius: 38, shadowColor: '#000', shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.22, shadowRadius: 28, elevation: 12 },
+  glassBox:    { borderRadius: 38, overflow: 'hidden', padding: 20 },
   modalTitle:  { fontSize: 16, fontWeight: '700', color: TEXT, textAlign: 'center', marginBottom: 14 },
-  modalInput:  { backgroundColor: '#f5f5f3', borderRadius: 10, paddingHorizontal: 14, paddingVertical: 11, fontSize: 15, color: TEXT, marginBottom: 14 },
+  modalInput:  { backgroundColor: 'rgba(255,255,255,0.6)', borderWidth: 1, borderColor: 'rgba(0,0,0,0.12)', borderRadius: 10, paddingHorizontal: 14, paddingVertical: 11, fontSize: 15, color: TEXT, marginBottom: 14 },
   confirmBtn:  { backgroundColor: ACCENT, borderRadius: 100, paddingVertical: 13, alignItems: 'center' },
   confirmBtnText: { fontSize: 15, fontWeight: '700', color: '#fff' },
   cancelLink:  { alignSelf: 'center', marginTop: 12 },
-  cancelText:  { fontSize: 14, color: MUTED },
+  cancelText:  { fontSize: 14, fontWeight: '600', color: '#414b45' },
 
   instrModalRoot:   { flex: 1, backgroundColor: CARD },
   instrModalHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: BORDER },

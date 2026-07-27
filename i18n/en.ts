@@ -664,6 +664,12 @@ const en = {
   // Trainer — Account screen
   account: {
     title: 'Account',
+    signOutTitle: 'Sign out',
+    signOutMsg: 'Are you sure you want to sign out?',
+    accountSection: 'Account',
+    changePassword: 'Change password',
+    changePasswordTitle: 'Change password',
+    passwordUpdated: 'Password updated',
     businessDetails: 'BUSINESS DETAILS',
     fullName: 'Full name',
     streetAddress: 'Street address',

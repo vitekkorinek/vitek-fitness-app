@@ -24,6 +24,7 @@ import { relativeTime } from '@/lib/utils';
 import { useAuth } from '@/context/AuthContext';
 import { SessionDetailsSheet } from '@/components/SessionDetailsSheet';
 import { BottomSheet } from '@/components/BottomSheet';
+import GlassPanel from '@/components/GlassPanel';
 import { CATEGORY_COLORS } from '@/lib/workoutCategories';
 import type { WorkoutCategory } from '@/lib/workoutCategories';
 import WorkoutPaperCover, { DARK_CARD_FOOTER } from '@/components/WorkoutPaperCover';
@@ -553,7 +554,8 @@ export default function RoutineDetailScreen() {
       {/* ── Reorder modal ────────────────────────────────────────────────────────── */}
       <Modal visible={reorderModal} transparent animationType="fade" onRequestClose={() => { if (!savingOrder) setReorderModal(false); }}>
         <Pressable style={popStyles.overlay} onPress={() => { if (!savingOrder) setReorderModal(false); }}>
-          <Pressable style={popStyles.card} onPress={() => {}}>
+          <Pressable style={popStyles.glassShadow} onPress={() => {}}>
+            <GlassPanel style={popStyles.glassBox}>
             <Text style={popStyles.heading}>Edit Order</Text>
             <View style={{ width: '100%', paddingBottom: 4 }}>
               {reorderList.map((w, i) => {
@@ -601,8 +603,9 @@ export default function RoutineDetailScreen() {
               }
             </TouchableOpacity>
             <TouchableOpacity style={popStyles.cancelBtn} onPress={() => { if (!savingOrder) setReorderModal(false); }}>
-              <Text style={popStyles.cancelText}>Cancel</Text>
+              <Text style={popStyles.cancelOnGlass}>Cancel</Text>
             </TouchableOpacity>
+            </GlassPanel>
           </Pressable>
         </Pressable>
       </Modal>
@@ -611,10 +614,11 @@ export default function RoutineDetailScreen() {
       {confirmModal && (
         <Modal visible transparent animationType="fade" onRequestClose={() => setConfirmModal(null)}>
           <Pressable style={popStyles.overlay} onPress={() => setConfirmModal(null)}>
-            <Pressable style={popStyles.card} onPress={() => {}}>
-              <Text style={popStyles.heading}>{confirmModal.title}</Text>
+            <Pressable style={popStyles.glassShadow} onPress={() => {}}>
+              <GlassPanel style={popStyles.glassBox}>
+              <Text style={popStyles.headingOnGlass}>{confirmModal.title}</Text>
               {confirmModal.message && (
-                <Text style={{ fontSize: 13, color: '#999', textAlign: 'center', paddingHorizontal: 20, marginBottom: 4 }}>
+                <Text style={{ fontSize: 13, color: '#1f2823', fontWeight: '600', textAlign: 'center', paddingHorizontal: 20, marginBottom: 4 }}>
                   {confirmModal.message}
                 </Text>
               )}
@@ -628,8 +632,9 @@ export default function RoutineDetailScreen() {
                 </Text>
               </TouchableOpacity>
               <TouchableOpacity style={popStyles.cancelBtn} onPress={() => setConfirmModal(null)}>
-                <Text style={popStyles.cancelText}>Cancel</Text>
+                <Text style={popStyles.cancelOnGlass}>Cancel</Text>
               </TouchableOpacity>
+              </GlassPanel>
             </Pressable>
           </Pressable>
         </Modal>
@@ -1043,10 +1048,25 @@ const popStyles = StyleSheet.create({
     shadowColor: '#000', shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.15, shadowRadius: 20, elevation: 10,
   },
+  // Liquid Glass popup — radius-38 shadow wrapper + GlassPanel (the account.tsx family).
+  glassShadow: {
+    width: '100%', borderRadius: 38,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.22, shadowRadius: 28, elevation: 12,
+  },
+  glassBox: {
+    borderRadius: 38, overflow: 'hidden',
+    paddingTop: 20, paddingBottom: 8, alignItems: 'center',
+  },
   heading: {
     fontSize: 13, fontWeight: '700', color: '#aaa',
     letterSpacing: 0.6, textTransform: 'uppercase', marginBottom: 8,
   },
+  headingOnGlass: {
+    fontSize: 13, fontWeight: '700', color: '#414b45',
+    letterSpacing: 0.6, textTransform: 'uppercase', marginBottom: 8,
+  },
+  cancelOnGlass: { fontSize: 14, color: '#414b45', fontWeight: '600' },
   option: {
     width: '100%', flexDirection: 'row', alignItems: 'center',
     paddingHorizontal: 20, paddingVertical: 16, gap: 12,

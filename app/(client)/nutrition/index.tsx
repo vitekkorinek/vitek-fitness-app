@@ -24,6 +24,7 @@ import { useFocusEffect, useRouter } from 'expo-router';
 import { useTabBarHeight } from '@/components/FloatingTabBar';
 import { LightHeader, HeaderIcon, HEADER_ICON, useHeaderHeight } from '@/components/LightHeader';
 import { BottomSheet } from '@/components/BottomSheet';
+import GlassPanel from '@/components/GlassPanel';
 import { SymbolView } from 'expo-symbols';
 import Svg, { Defs, LinearGradient as SvgLinearGradient, Path as SvgPath, Stop } from 'react-native-svg';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -1169,8 +1170,9 @@ export default function NutritionDailyScreen() {
 
       <Modal visible={sessionModalVisible} transparent animationType="fade" onRequestClose={() => setSessionModalVisible(false)}>
         <Pressable style={sessStyles.backdrop} onPress={() => setSessionModalVisible(false)}>
-          <Pressable style={sessStyles.card} onPress={() => {}}>
-            <Text style={sessStyles.label}>SESSION IN PROGRESS</Text>
+          <Pressable style={sessStyles.glassShadow} onPress={() => {}}>
+          <GlassPanel style={sessStyles.glassBox}>
+            <Text style={[sessStyles.label, sessStyles.labelOnGlass]}>SESSION IN PROGRESS</Text>
             <Text style={sessStyles.name} numberOfLines={1}>{suspendedSession?.workoutName ?? 'Session'}</Text>
             <Text style={sessStyles.timer}>
               {String(Math.floor(sessionElapsed / 60)).padStart(2, '0')}:{String(sessionElapsed % 60).padStart(2, '0')}
@@ -1178,6 +1180,7 @@ export default function NutritionDailyScreen() {
             <TouchableOpacity style={sessStyles.returnBtn} onPress={handleReturnToSession} activeOpacity={0.85}>
               <Text style={sessStyles.returnBtnText}>Return to session</Text>
             </TouchableOpacity>
+          </GlassPanel>
           </Pressable>
         </Pressable>
       </Modal>
@@ -1632,9 +1635,10 @@ export default function NutritionDailyScreen() {
       {/* ── Save this day? incomplete warning ────────────────────────── */}
       <Modal visible={saveDayWarnModal} transparent animationType="fade">
         <TouchableOpacity style={styles.modalOverlay} onPress={() => setSaveDayWarnModal(false)} activeOpacity={1}>
-          <TouchableOpacity activeOpacity={1} style={styles.modalCard}>
+          <TouchableOpacity activeOpacity={1} style={styles.glassShadow}>
+          <GlassPanel style={styles.glassBox}>
             <Text style={styles.modalTitle}>Save this day?</Text>
-            <Text style={styles.modalBody}>
+            <Text style={[styles.modalBody, styles.messageOnGlass]}>
               Not all meals have been logged yet. You can still save this day and edit it later.
             </Text>
             <TouchableOpacity
@@ -1644,8 +1648,9 @@ export default function NutritionDailyScreen() {
               <Text style={styles.confirmBtnText}>Save anyway</Text>
             </TouchableOpacity>
             <TouchableOpacity onPress={() => setSaveDayWarnModal(false)} style={styles.cancelLink}>
-              <Text style={styles.cancelText}>Cancel</Text>
+              <Text style={[styles.cancelText, styles.cancelOnGlass]}>Cancel</Text>
             </TouchableOpacity>
+          </GlassPanel>
           </TouchableOpacity>
         </TouchableOpacity>
       </Modal>
@@ -1653,12 +1658,13 @@ export default function NutritionDailyScreen() {
       {/* ── Save this day modal ───────────────────────────────────────── */}
       <Modal visible={saveDayModal} transparent animationType="fade">
         <TouchableOpacity style={styles.modalOverlay} onPress={() => setSaveDayModal(false)} activeOpacity={1}>
-          <TouchableOpacity activeOpacity={1} style={styles.modalCard}>
+          <TouchableOpacity activeOpacity={1} style={styles.glassShadow}>
+          <GlassPanel style={styles.glassBox}>
             <Text style={styles.modalTitle}>Save this day</Text>
             <TextInput
-              style={styles.modalInput}
+              style={[styles.modalInput, styles.inputOnGlass]}
               placeholder="e.g. Chicken salad day"
-              placeholderTextColor={MUTED}
+              placeholderTextColor="#8a938e"
               value={saveDayName}
               onChangeText={setSaveDayName}
               autoFocus
@@ -1672,8 +1678,9 @@ export default function NutritionDailyScreen() {
               <Text style={styles.confirmBtnText}>{savingDay ? 'Saving…' : 'Save'}</Text>
             </TouchableOpacity>
             <TouchableOpacity onPress={() => setSaveDayModal(false)} style={styles.cancelLink}>
-              <Text style={styles.cancelText}>Cancel</Text>
+              <Text style={[styles.cancelText, styles.cancelOnGlass]}>Cancel</Text>
             </TouchableOpacity>
+          </GlassPanel>
           </TouchableOpacity>
         </TouchableOpacity>
       </Modal>
@@ -1681,21 +1688,22 @@ export default function NutritionDailyScreen() {
       {/* ── Edit food entry modal ──────────────────────────────────────── */}
       <Modal visible={editEntry !== null} transparent animationType="fade">
         <TouchableOpacity style={styles.modalOverlay} onPress={() => setEditEntry(null)} activeOpacity={1}>
-          <TouchableOpacity activeOpacity={1} style={styles.modalCard}>
+          <TouchableOpacity activeOpacity={1} style={styles.glassShadow}>
+          <GlassPanel style={styles.glassBox}>
             <Text style={styles.modalTitle} numberOfLines={2}>{editEntry?.food_name}</Text>
             {/* Amount input */}
-            <View style={styles.editAmountRow}>
+            <View style={[styles.editAmountRow, styles.inputOnGlass]}>
               <TextInput
                 style={styles.editAmountInput}
                 value={editAmount}
                 onChangeText={setEditAmount}
                 keyboardType="decimal-pad"
                 placeholder="Amount"
-                placeholderTextColor={MUTED}
+                placeholderTextColor="#8a938e"
                 autoFocus
                 selectTextOnFocus
               />
-              <Text style={styles.editUnit}>{editEntry?.portion_unit}</Text>
+              <Text style={[styles.editUnit, styles.metaOnGlass]}>{editEntry?.portion_unit}</Text>
             </View>
             {/* Live nutrition preview */}
             {editAmount !== '' && !isNaN(parseFloat(editAmount)) && parseFloat(editAmount) > 0 && editEntry && (() => {
@@ -1704,19 +1712,19 @@ export default function NutritionDailyScreen() {
                 <View style={styles.editNutrRow}>
                   <View style={styles.editNutrCell}>
                     <Text style={styles.editNutrVal}>{Math.round((editEntry.calories ?? 0) * scale)}</Text>
-                    <Text style={styles.editNutrLabel}>kcal</Text>
+                    <Text style={[styles.editNutrLabel, styles.metaOnGlass]}>kcal</Text>
                   </View>
                   <View style={styles.editNutrCell}>
                     <Text style={styles.editNutrVal}>{((editEntry.protein_g ?? 0) * scale).toFixed(1)}g</Text>
-                    <Text style={styles.editNutrLabel}>protein</Text>
+                    <Text style={[styles.editNutrLabel, styles.metaOnGlass]}>protein</Text>
                   </View>
                   <View style={styles.editNutrCell}>
                     <Text style={styles.editNutrVal}>{((editEntry.carbs_g ?? 0) * scale).toFixed(1)}g</Text>
-                    <Text style={styles.editNutrLabel}>carbs</Text>
+                    <Text style={[styles.editNutrLabel, styles.metaOnGlass]}>carbs</Text>
                   </View>
                   <View style={styles.editNutrCell}>
                     <Text style={styles.editNutrVal}>{((editEntry.fat_g ?? 0) * scale).toFixed(1)}g</Text>
-                    <Text style={styles.editNutrLabel}>fat</Text>
+                    <Text style={[styles.editNutrLabel, styles.metaOnGlass]}>fat</Text>
                   </View>
                 </View>
               );
@@ -1737,8 +1745,9 @@ export default function NutritionDailyScreen() {
               <Text style={styles.editDeleteText}>Remove from log</Text>
             </TouchableOpacity>
             <TouchableOpacity onPress={() => setEditEntry(null)} style={styles.cancelLink}>
-              <Text style={styles.cancelText}>Cancel</Text>
+              <Text style={[styles.cancelText, styles.cancelOnGlass]}>Cancel</Text>
             </TouchableOpacity>
+          </GlassPanel>
           </TouchableOpacity>
         </TouchableOpacity>
       </Modal>
@@ -1750,13 +1759,14 @@ export default function NutritionDailyScreen() {
           behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         >
           <TouchableOpacity style={StyleSheet.absoluteFillObject} onPress={() => setCreateMealModal(false)} activeOpacity={1} />
-          <View style={styles.modalCard}>
+          <View style={styles.glassShadow}>
+          <GlassPanel style={styles.glassBox}>
             <Text style={styles.modalTitle}>Save as meal</Text>
-            <Text style={styles.modalBody}>{selectedIds.size} item{selectedIds.size > 1 ? 's' : ''} selected</Text>
+            <Text style={[styles.modalBody, styles.messageOnGlass]}>{selectedIds.size} item{selectedIds.size > 1 ? 's' : ''} selected</Text>
             <TextInput
-              style={styles.modalInput}
+              style={[styles.modalInput, styles.inputOnGlass]}
               placeholder="Meal name…"
-              placeholderTextColor={MUTED}
+              placeholderTextColor="#8a938e"
               value={createMealName}
               onChangeText={setCreateMealName}
               autoFocus
@@ -1772,8 +1782,9 @@ export default function NutritionDailyScreen() {
               <Text style={styles.confirmBtnText}>Save meal</Text>
             </TouchableOpacity>
             <TouchableOpacity onPress={() => setCreateMealModal(false)} style={styles.cancelLink}>
-              <Text style={styles.cancelText}>Cancel</Text>
+              <Text style={[styles.cancelText, styles.cancelOnGlass]}>Cancel</Text>
             </TouchableOpacity>
+          </GlassPanel>
           </View>
         </KeyboardAvoidingView>
       </Modal>
@@ -1995,6 +2006,13 @@ const styles = StyleSheet.create({
 
   // Modals
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', alignItems: 'center', justifyContent: 'center' },
+  // Liquid Glass centered pop-ups — radius-38 shadow wrapper + GlassPanel
+  glassShadow: { width: '88%', borderRadius: 38, shadowColor: '#000', shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.22, shadowRadius: 28, elevation: 12 },
+  glassBox:    { borderRadius: 38, overflow: 'hidden', padding: 24, width: '100%' },
+  messageOnGlass: { color: '#1f2823', fontWeight: '600' },
+  metaOnGlass:    { color: '#414b45' },
+  cancelOnGlass:  { color: '#414b45', fontWeight: '600' },
+  inputOnGlass:   { backgroundColor: 'rgba(255,255,255,0.6)', borderWidth: 1, borderColor: 'rgba(0,0,0,0.12)' },
   modalInner:   { width: '88%' },
   modalCard:    { width: '88%', backgroundColor: CARD, borderRadius: 16, padding: 20 },
   modalTitle:   { fontSize: 16, fontWeight: '700', color: TEXT, marginBottom: 10, textAlign: 'center' },
@@ -2011,6 +2029,10 @@ const styles = StyleSheet.create({
 const sessStyles = StyleSheet.create({
   backdrop:   { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', alignItems: 'center', justifyContent: 'center', padding: 32 },
   card:       { backgroundColor: '#fff', borderRadius: 16, padding: 24, width: '100%', alignItems: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.15, shadowRadius: 20, elevation: 10 },
+  // Liquid Glass centered pop-up — radius-38 shadow wrapper + GlassPanel
+  glassShadow: { width: '100%', borderRadius: 38, shadowColor: '#000', shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.22, shadowRadius: 28, elevation: 12 },
+  glassBox:    { borderRadius: 38, overflow: 'hidden', padding: 24, width: '100%', alignItems: 'center' },
+  labelOnGlass: { color: '#414b45' },
   label:      { fontSize: 10, fontWeight: '700', color: MUTED, letterSpacing: 0.8, textTransform: 'uppercase', marginBottom: 8 },
   name:       { fontSize: 17, fontWeight: '700', color: TEXT, marginBottom: 12, textAlign: 'center' },
   timer:      { fontSize: 40, fontWeight: '700', color: ACCENT, fontVariant: ['tabular-nums'] as any, marginBottom: 20 },

@@ -19,6 +19,7 @@ import { resolveWeeklyGoal } from '@/lib/weeklyGoal';
 import type { ClientTrainingData } from '@/lib/clientTraining';
 import { BottomSheet } from '@/components/BottomSheet';
 import { useHeaderHeight } from '@/components/LightHeader';
+import GlassPanel from '@/components/GlassPanel';
 import { useTabBarHeight } from '@/components/FloatingTabBar';
 import { SessionDetailsSheet } from '@/components/SessionDetailsSheet';
 import CategoryCover, { categoryHasCover, WORKOUT_COVER_PHOTOS_ENABLED } from '@/components/CategoryCover';
@@ -1289,9 +1290,10 @@ export default function TrainTabScreen() {
       <Modal visible={!!deleteConfirmSess} transparent animationType="fade" onRequestClose={() => { if (!deletingSession) setDeleteConfirmSess(null); }}>
         <View style={sessMenuStyles.overlay}>
           <Pressable style={StyleSheet.absoluteFill} onPress={() => { if (!deletingSession) setDeleteConfirmSess(null); }} />
-          <View style={sessMenuStyles.card}>
+          <View style={sessMenuStyles.glassShadow}>
+          <GlassPanel style={sessMenuStyles.glassBox}>
             <Text style={sessMenuStyles.confirmTitle}>Delete training?</Text>
-            <Text style={sessMenuStyles.confirmMsg}>This removes the session from your calendar. The workout itself is not deleted.</Text>
+            <Text style={[sessMenuStyles.confirmMsg, sessMenuStyles.confirmMsgOnGlass]}>This removes the session from your calendar. The workout itself is not deleted.</Text>
             <TouchableOpacity
               style={sessMenuStyles.deleteBtn}
               activeOpacity={0.85}
@@ -1303,8 +1305,9 @@ export default function TrainTabScreen() {
                 : <Text style={sessMenuStyles.deleteBtnText}>Delete</Text>}
             </TouchableOpacity>
             <TouchableOpacity onPress={() => setDeleteConfirmSess(null)} disabled={deletingSession} hitSlop={8} style={{ marginTop: 12 }}>
-              <Text style={sessMenuStyles.cancelText}>Cancel</Text>
+              <Text style={[sessMenuStyles.cancelText, sessMenuStyles.cancelOnGlass]}>Cancel</Text>
             </TouchableOpacity>
+          </GlassPanel>
           </View>
         </View>
       </Modal>
@@ -2154,7 +2157,12 @@ const calModalStyles = StyleSheet.create({
 const sessMenuStyles = StyleSheet.create({
   sheetBody:      { paddingHorizontal: 20, paddingBottom: 8 },
   overlay:        { flex: 1, backgroundColor: 'rgba(0,0,0,0.52)', justifyContent: 'center', paddingHorizontal: 40 },
-  card:           { backgroundColor: CARD, borderRadius: 16, paddingVertical: 18, paddingHorizontal: 20, alignItems: 'stretch', shadowColor: '#000', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.15, shadowRadius: 20, elevation: 10 },
+  // Liquid Glass popup — radius-38 shadow wrapper + GlassPanel (the Do Mode
+  // confirm-box family), texts darkened for glass legibility.
+  glassShadow:    { borderRadius: 38, shadowColor: '#000', shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.22, shadowRadius: 28, elevation: 12 },
+  glassBox:       { borderRadius: 38, overflow: 'hidden', padding: 24, alignItems: 'stretch' },
+  confirmMsgOnGlass: { color: '#1f2823', fontWeight: '600' },
+  cancelOnGlass:  { color: '#414b45', fontWeight: '600' },
   title:          { fontSize: 16, fontWeight: '700', color: TEXT, textAlign: 'center', marginBottom: 12 },
   option:         { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 12 },
   optionLabel:    { fontSize: 15, fontWeight: '600', color: TEXT },

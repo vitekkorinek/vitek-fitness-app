@@ -34,6 +34,7 @@ import { GlassToggle } from '@/components/GlassToggle';
 import { useTabBarHeight } from '@/components/FloatingTabBar';
 import { ExerciseFilterSheet } from '@/components/ExerciseFilterSheet';
 import { BottomSheet } from '@/components/BottomSheet';
+import GlassPanel from '@/components/GlassPanel';
 import {
   MUSCLE_FILTER_OPTIONS,
   EQUIPMENT_FILTER_OPTIONS,
@@ -875,15 +876,17 @@ function NutritionTipsTab({
       {/* Confirm delete modal */}
       <Modal visible={!!confirmDelete} transparent animationType="fade" onRequestClose={() => setConfirmDelete(null)}>
         <Pressable style={menuStyles.overlay} onPress={() => setConfirmDelete(null)}>
-          <Pressable style={nutStyles.editModal} onPress={() => {}}>
+          <Pressable style={nutStyles.glassShadow} onPress={() => {}}>
+            <GlassPanel style={nutStyles.glassBox}>
             <Text style={nutStyles.editModalTitle}>Delete this {category === 'supplement' ? 'recommendation' : 'tip'}?</Text>
-            <Text style={nutStyles.confirmSub}>This cannot be undone.</Text>
+            <Text style={nutStyles.confirmSubOnGlass}>This cannot be undone.</Text>
             <TouchableOpacity style={[nutStyles.saveBtn, { backgroundColor: CORAL }]} onPress={() => confirmDelete && deleteTip(confirmDelete)} activeOpacity={0.8}>
               <Text style={nutStyles.saveBtnText}>Delete</Text>
             </TouchableOpacity>
             <TouchableOpacity style={{ alignSelf: 'center', marginTop: 10 }} onPress={() => setConfirmDelete(null)}>
-              <Text style={{ fontSize: 14, color: MUTED }}>Cancel</Text>
+              <Text style={nutStyles.cancelOnGlass}>Cancel</Text>
             </TouchableOpacity>
+            </GlassPanel>
           </Pressable>
         </Pressable>
       </Modal>
@@ -1118,9 +1121,10 @@ function FoodsTab({
         onRequestClose={() => setConfirmDelete(null)}
       >
         <Pressable style={menuStyles.overlay} onPress={() => setConfirmDelete(null)}>
-          <Pressable style={nutStyles.editModal} onPress={() => {}}>
+          <Pressable style={nutStyles.glassShadow} onPress={() => {}}>
+            <GlassPanel style={nutStyles.glassBox}>
             <Text style={nutStyles.editModalTitle}>Delete "{confirmDelete?.name}"?</Text>
-            <Text style={nutStyles.confirmSub}>This cannot be undone.</Text>
+            <Text style={nutStyles.confirmSubOnGlass}>This cannot be undone.</Text>
             <TouchableOpacity
               style={[nutStyles.saveBtn, { backgroundColor: CORAL }]}
               onPress={confirmDeleteFood}
@@ -1129,8 +1133,9 @@ function FoodsTab({
               <Text style={nutStyles.saveBtnText}>Delete</Text>
             </TouchableOpacity>
             <TouchableOpacity style={{ alignSelf: 'center', marginTop: 10 }} onPress={() => setConfirmDelete(null)}>
-              <Text style={{ fontSize: 14, color: MUTED }}>Cancel</Text>
+              <Text style={nutStyles.cancelOnGlass}>Cancel</Text>
             </TouchableOpacity>
+            </GlassPanel>
           </Pressable>
         </Pressable>
       </Modal>
@@ -1512,15 +1517,17 @@ function RecipesTab({
       {/* Confirm delete recipe modal */}
       <Modal visible={!!confirmDeleteRecipe} transparent animationType="fade" onRequestClose={() => setConfirmDeleteRecipe(null)}>
         <Pressable style={menuStyles.overlay} onPress={() => setConfirmDeleteRecipe(null)}>
-          <Pressable style={nutStyles.editModal} onPress={() => {}}>
+          <Pressable style={nutStyles.glassShadow} onPress={() => {}}>
+            <GlassPanel style={nutStyles.glassBox}>
             <Text style={nutStyles.editModalTitle}>Delete this recipe?</Text>
-            <Text style={nutStyles.confirmSub}>This cannot be undone.</Text>
+            <Text style={nutStyles.confirmSubOnGlass}>This cannot be undone.</Text>
             <TouchableOpacity style={[nutStyles.saveBtn, { backgroundColor: CORAL }]} onPress={deleteRecipe} activeOpacity={0.8}>
               <Text style={nutStyles.saveBtnText}>Delete</Text>
             </TouchableOpacity>
             <TouchableOpacity style={{ alignSelf: 'center', marginTop: 10 }} onPress={() => setConfirmDeleteRecipe(null)}>
-              <Text style={{ fontSize: 14, color: MUTED }}>Cancel</Text>
+              <Text style={nutStyles.cancelOnGlass}>Cancel</Text>
             </TouchableOpacity>
+            </GlassPanel>
           </Pressable>
         </Pressable>
       </Modal>
@@ -2536,23 +2543,25 @@ function RoutinePickerModal({
   return (
     <Modal visible transparent animationType="fade" onRequestClose={onClose} statusBarTranslucent>
       <Pressable style={menuStyles.overlay} onPress={onClose}>
-        <Pressable style={menuStyles.sheet}>
-          <Text style={menuStyles.sheetTitle}>Add to Routine</Text>
-          <View style={menuStyles.sheetDivider} />
+        <Pressable style={menuStyles.glassShadow}>
+          <GlassPanel style={menuStyles.glassBox}>
+          <Text style={[menuStyles.sheetTitle, menuStyles.sheetTitleOnGlass]}>Add to Routine</Text>
+          <View style={[menuStyles.sheetDivider, menuStyles.dividerOnGlass]} />
           {loading ? (
             <ActivityIndicator color={ACCENT} style={{ paddingVertical: 20 }} />
           ) : routines.length === 0 ? (
-            <Text style={menuStyles.emptyText}>No active routines</Text>
+            <Text style={[menuStyles.emptyText, menuStyles.emptyTextOnGlass]}>No active routines</Text>
           ) : (
             routines.map((r, i) => (
               <View key={r.id}>
                 <TouchableOpacity style={menuStyles.option} onPress={() => onPick(r.id)} activeOpacity={0.7}>
                   <Text style={menuStyles.optionText}>{r.name}</Text>
                 </TouchableOpacity>
-                {i < routines.length - 1 && <View style={menuStyles.optionDivider} />}
+                {i < routines.length - 1 && <View style={[menuStyles.optionDivider, menuStyles.dividerOnGlass]} />}
               </View>
             ))
           )}
+          </GlassPanel>
         </Pressable>
       </Pressable>
     </Modal>
@@ -2875,6 +2884,15 @@ const menuStyles = StyleSheet.create({
   optionDivider: { height: 1, backgroundColor: '#f0f0f0', marginLeft: 20 },
   deleteText: { color: '#ef4444' },
   emptyText: { color: MUTED, fontSize: 14, textAlign: 'center', paddingVertical: 20, paddingHorizontal: 16 },
+  // Liquid Glass popup (RoutinePickerModal) — radius-38 shadow wrapper +
+  // GlassPanel; *OnGlass overrides darken texts/dividers for glass legibility
+  // (the shared sheet/divider styles also serve the BottomSheet menus — never
+  // darken them in place).
+  glassShadow: { borderRadius: 38, shadowColor: '#000', shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.22, shadowRadius: 28, elevation: 12 },
+  glassBox:   { borderRadius: 38, overflow: 'hidden', paddingVertical: 10 },
+  sheetTitleOnGlass: { color: '#414b45' },
+  dividerOnGlass:    { backgroundColor: 'rgba(0,0,0,0.08)' },
+  emptyTextOnGlass:  { color: '#414b45', fontWeight: '600' },
 });
 
 const catPickStyles = StyleSheet.create({
@@ -3018,6 +3036,12 @@ const nutStyles = StyleSheet.create({
   saveBtn:      { backgroundColor: ACCENT, borderRadius: 100, paddingVertical: 12, alignItems: 'center' },
   saveBtnText:  { fontSize: 15, fontWeight: '700', color: '#fff' },
   confirmSub:   { fontSize: 13, color: MUTED, textAlign: 'center', marginBottom: 14 },
+  // Liquid Glass confirm popups — radius-38 shadow wrapper + GlassPanel,
+  // texts darkened for glass legibility (the account.tsx confirm-box family).
+  glassShadow: { width: '90%', alignSelf: 'center', borderRadius: 38, shadowColor: '#000', shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.22, shadowRadius: 28, elevation: 12 },
+  glassBox:    { borderRadius: 38, overflow: 'hidden', padding: 22 },
+  confirmSubOnGlass: { fontSize: 13, color: '#1f2823', fontWeight: '600', textAlign: 'center', marginBottom: 14 },
+  cancelOnGlass:     { fontSize: 14, color: '#414b45', fontWeight: '600' },
 
   // Full-screen create/edit modal
   fsHeader: {

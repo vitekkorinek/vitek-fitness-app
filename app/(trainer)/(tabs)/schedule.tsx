@@ -14,6 +14,7 @@ import { TrainerLogoButton } from '@/components/TrainerLogoButton';
 import { LightHeader, HeaderIcon, HEADER_ICON, useHeaderHeight } from '@/components/LightHeader';
 import { useTabBarHeight } from '@/components/FloatingTabBar';
 import { BottomSheet } from '@/components/BottomSheet';
+import GlassPanel from '@/components/GlassPanel';
 
 const makeUUID = () => 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
   const r = Math.random() * 16 | 0; return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
@@ -998,9 +999,10 @@ export default function ScheduleScreen() {
       {deleteConfirmBlock && (
         <Modal transparent animationType="fade" onRequestClose={() => setDeleteConfirmBlock(null)}>
           <TouchableOpacity style={pk.overlay} activeOpacity={1} onPress={() => setDeleteConfirmBlock(null)} />
-          <View style={pk.modal}>
+          <View style={pk.glassShadow}>
+          <GlassPanel style={pk.glassBox}>
             <Text style={[pk.title, { marginBottom: 8 }]}>Delete block?</Text>
-            <Text style={{ color: MUTED, fontSize: 13, textAlign: 'center', marginBottom: 20 }}>This cannot be undone.</Text>
+            <Text style={[pk.msgOnGlass, { marginBottom: 20 }]}>This cannot be undone.</Text>
             <TouchableOpacity
               style={[sh.saveBtn, { backgroundColor: '#e85d4a', marginTop: 0, marginBottom: 0 }]}
               onPress={async () => {
@@ -1014,8 +1016,9 @@ export default function ScheduleScreen() {
               <Text style={sh.saveBtnText}>Delete</Text>
             </TouchableOpacity>
             <TouchableOpacity onPress={() => setDeleteConfirmBlock(null)} style={{ paddingTop: 14, alignItems: 'center' }}>
-              <Text style={{ color: MUTED, fontSize: 15 }}>Cancel</Text>
+              <Text style={pk.cancelOnGlass}>Cancel</Text>
             </TouchableOpacity>
+          </GlassPanel>
           </View>
         </Modal>
       )}
@@ -1024,14 +1027,15 @@ export default function ScheduleScreen() {
       {deleteConfirmAppt && (
         <Modal transparent animationType="fade" onRequestClose={() => setDeleteConfirmAppt(null)}>
           <TouchableOpacity style={pk.overlay} activeOpacity={1} onPress={() => setDeleteConfirmAppt(null)} />
-          <View style={pk.modal}>
+          <View style={pk.glassShadow}>
+          <GlassPanel style={pk.glassBox}>
             <Text style={[pk.title, { marginBottom: 8 }]}>Delete appointment?</Text>
             {deleteConfirmAppt.is_confirmed && (
               <Text style={{ color: '#e67e22', fontSize: 13, textAlign: 'center', marginBottom: 8, lineHeight: 19 }}>
                 This appointment was confirmed. The client will be notified about the cancellation.
               </Text>
             )}
-            <Text style={{ color: MUTED, fontSize: 13, textAlign: 'center', marginBottom: 20 }}>
+            <Text style={[pk.msgOnGlass, { marginBottom: 20 }]}>
               This cannot be undone.
             </Text>
             <TouchableOpacity
@@ -1047,8 +1051,9 @@ export default function ScheduleScreen() {
               <Text style={sh.saveBtnText}>Delete</Text>
             </TouchableOpacity>
             <TouchableOpacity onPress={() => setDeleteConfirmAppt(null)} style={{ paddingTop: 14, alignItems: 'center' }}>
-              <Text style={{ color: MUTED, fontSize: 15 }}>Cancel</Text>
+              <Text style={pk.cancelOnGlass}>Cancel</Text>
             </TouchableOpacity>
+          </GlassPanel>
           </View>
         </Modal>
       )}
@@ -1754,12 +1759,13 @@ function NewAppointmentSheet({
         <Modal transparent animationType="fade" onRequestClose={() => setShowNotesModal(false)}>
           <TouchableOpacity style={pk.overlay} activeOpacity={1} onPress={() => setShowNotesModal(false)} />
           <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex:1, justifyContent:'flex-end' }}>
-            <View style={{ marginHorizontal:24, marginBottom:16, backgroundColor:CARD, borderRadius:16, padding:20 }}>
+            <View style={pk.notesGlassShadow}>
+            <GlassPanel style={pk.glassBox}>
               <Text style={pk.title}>Notes</Text>
               <TextInput
-                style={[sh.textInput, { minHeight:100, textAlignVertical:'top', marginBottom:16 }]}
+                style={[sh.textInput, pk.inputOnGlass, { minHeight:100, textAlignVertical:'top', marginBottom:16 }]}
                 placeholder="Add a note…"
-                placeholderTextColor={MUTED}
+                placeholderTextColor="#8a938e"
                 value={notesDraft}
                 onChangeText={setNotesDraft}
                 multiline
@@ -1769,8 +1775,9 @@ function NewAppointmentSheet({
                 <Text style={sh.saveBtnText}>Confirm</Text>
               </TouchableOpacity>
               <TouchableOpacity onPress={() => setShowNotesModal(false)} style={{ paddingTop:14, alignItems:'center' }}>
-                <Text style={{ color:MUTED, fontSize:15 }}>Cancel</Text>
+                <Text style={pk.cancelOnGlass}>Cancel</Text>
               </TouchableOpacity>
+            </GlassPanel>
             </View>
           </KeyboardAvoidingView>
         </Modal>
@@ -1896,15 +1903,17 @@ function ViewAppointmentSheet({
       {confirmDel && (
         <Modal transparent animationType="fade" onRequestClose={() => setConfirmDel(false)}>
           <TouchableOpacity style={pk.overlay} activeOpacity={1} onPress={() => setConfirmDel(false)} />
-          <View style={pk.modal}>
+          <View style={pk.glassShadow}>
+          <GlassPanel style={pk.glassBox}>
             <Text style={[pk.title, { marginBottom:8 }]}>Delete appointment?</Text>
-            <Text style={{ color:MUTED, fontSize:14, textAlign:'center', marginBottom:20 }}>This cannot be undone.</Text>
+            <Text style={[pk.msgOnGlass, { fontSize:14, marginBottom:20 }]}>This cannot be undone.</Text>
             <TouchableOpacity style={[sh.saveBtn, { backgroundColor:'#e85d4a', marginBottom:0 }]} onPress={() => { setConfirmDel(false); handleDelete(); }} activeOpacity={0.85}>
               <Text style={sh.saveBtnText}>Delete</Text>
             </TouchableOpacity>
             <TouchableOpacity onPress={() => setConfirmDel(false)} style={{ paddingTop:14, alignItems:'center' }}>
-              <Text style={{ color:MUTED, fontSize:15 }}>Cancel</Text>
+              <Text style={pk.cancelOnGlass}>Cancel</Text>
             </TouchableOpacity>
+          </GlassPanel>
           </View>
         </Modal>
       )}
@@ -1912,9 +1921,10 @@ function ViewAppointmentSheet({
       {confirmCancelCharged && (
         <Modal transparent animationType="fade" onRequestClose={() => setConfirmCancelCharged(false)}>
           <TouchableOpacity style={pk.overlay} activeOpacity={1} onPress={() => setConfirmCancelCharged(false)} />
-          <View style={pk.modal}>
+          <View style={pk.glassShadow}>
+          <GlassPanel style={pk.glassBox}>
             <Text style={[pk.title, { marginBottom:8 }]}>Cancel and charge session?</Text>
-            <Text style={{ color:MUTED, fontSize:13, textAlign:'center', marginBottom:20, lineHeight:19 }}>
+            <Text style={[pk.msgOnGlass, { marginBottom:20, lineHeight:19 }]}>
               This will mark the session as cancelled and count it against the client's package.
             </Text>
             <TouchableOpacity
@@ -1930,8 +1940,9 @@ function ViewAppointmentSheet({
               <Text style={sh.saveBtnText}>Cancel — charge session</Text>
             </TouchableOpacity>
             <TouchableOpacity onPress={() => setConfirmCancelCharged(false)} style={{ paddingTop:14, alignItems:'center' }}>
-              <Text style={{ color:MUTED, fontSize:15 }}>Keep appointment</Text>
+              <Text style={pk.cancelOnGlass}>Keep appointment</Text>
             </TouchableOpacity>
+          </GlassPanel>
           </View>
         </Modal>
       )}
@@ -2096,6 +2107,14 @@ const pk = StyleSheet.create({
   rowActive:    { backgroundColor:'#f0faf6' },
   rowText:      { fontSize:15, color:TEXT },
   rowTextActive:{ color:ACCENT, fontWeight:'600' },
+  // Liquid Glass popups — radius-38 shadow wrapper + GlassPanel, texts darkened
+  // for glass legibility (the account.tsx / Do Mode confirm-box family).
+  glassShadow:      { position:'absolute', top:'50%', left:24, right:24, transform:[{translateY:-160}], borderRadius:38, shadowColor:'#000', shadowOffset:{ width:0, height:10 }, shadowOpacity:0.22, shadowRadius:28, elevation:12 },
+  notesGlassShadow: { marginHorizontal:24, marginBottom:16, borderRadius:38, shadowColor:'#000', shadowOffset:{ width:0, height:10 }, shadowOpacity:0.22, shadowRadius:28, elevation:12 },
+  glassBox:         { borderRadius:38, overflow:'hidden', padding:20 },
+  msgOnGlass:       { color:'#1f2823', fontWeight:'600', fontSize:13, textAlign:'center' },
+  cancelOnGlass:    { color:'#414b45', fontSize:15, fontWeight:'600' },
+  inputOnGlass:     { backgroundColor:'rgba(255,255,255,0.6)', borderWidth:1, borderColor:'rgba(0,0,0,0.12)' },
 });
 
 const AMBER = '#f5a623';

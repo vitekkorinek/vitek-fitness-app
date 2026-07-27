@@ -94,6 +94,7 @@ import { SymbolView } from 'expo-symbols';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
 import { GlassView, isLiquidGlassAvailable } from 'expo-glass-effect';
+import GlassPanel from '@/components/GlassPanel';
 import { VideoView, useVideoPlayer } from 'expo-video';
 import { Plus, ArrowLeftRight } from 'lucide-react-native';
 import * as ImagePicker from 'expo-image-picker';
@@ -428,39 +429,10 @@ function computeStats(points: GraphPoint[]): { bestThis: StatPoint; lowestThis: 
   };
 }
 
-// ─── GlassPanel ───────────────────────────────────────────────────────
-// Matches Apple's Notification Centre glass: the ADAPTIVE "regular" Liquid
-// Glass material (auto-tints to the content behind, keeps a specular edge and
-// stays genuinely see-through) rather than the flat "clear" glass + heavy white
-// wash that read as milky plastic. Only a WHISPER of white scrim is layered on
-// so our dark text stays legible without killing the transparency.
-// Knob: SCRIM_OPACITY — raise for more legibility/frost, lower for more glass.
-// 0.14 → 0.22 → 0.30 July 24 2026: the 48h muscle-rest confirm renders right
-// over the preview's bright green Start button and the dark message text went
-// muddy through the glass (Vitek: "hard to read"; 0.22 still not enough —
-// "mmm"). 0.30 stays translucent, nowhere near the rejected 0.5 milky wash.
-// Kept mirrored in both files. If even this fails on device, the fallback is
-// a brand-dark glass confirm + white text (not built).
-const GLASS_SCRIM_OPACITY = 0.30;
-function GlassPanel({ style, children }: { style?: any; children: React.ReactNode }) {
-  const textScrim = (
-    <View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: `rgba(255,255,255,${GLASS_SCRIM_OPACITY})` }]} />
-  );
-  if (isLiquidGlassAvailable()) {
-    return (
-      <GlassView style={style} glassEffectStyle="regular">
-        {textScrim}
-        {children}
-      </GlassView>
-    );
-  }
-  return (
-    <BlurView intensity={30} tint="light" style={style}>
-      {textScrim}
-      {children}
-    </BlurView>
-  );
-}
+// ─── GlassPanel — now the SHARED components/GlassPanel.tsx (July 27 2026) ──
+// The local copy (once mirrored between both Do Mode files) moved there when
+// centered pop-up windows went Liquid Glass app-wide; the scrim-knob history
+// lives in that file's header comment.
 
 // The header timer/START/FINISH pill as a Liquid Glass capsule (shadow on an
 // outer wrapper; glass clipped inside). Tappable when onPress is given.
@@ -977,6 +949,9 @@ export default function TrainerWorkoutSessionScreen() {
 
   const [trainingNotesOpen, setTrainingNotesOpen] = useState(false);
   const [trainingNotesViewed, setTrainingNotesViewed] = useState(false);
+  // Centered popup opened by tapping the preview's note line — deliberately NOT a
+  // bottom sheet (a panel sliding up would step on the preview panel's own slide).
+  const [previewNotesOpen, setPreviewNotesOpen] = useState(false);
   const [trainingTrainerNotes, setTrainingTrainerNotes] = useState<NoteEntry[]>([]);
   const [trainingClientNotes, setTrainingClientNotes] = useState<NoteEntry[]>([]);
   const [trainingNoteHistory, setTrainingNoteHistory] = useState<TrainingNoteHistorySession[]>([]);
@@ -3555,14 +3530,36 @@ export default function TrainerWorkoutSessionScreen() {
     ),
   );
   const previewHandleOpacity = previewLock.interpolate({ inputRange: [0, 0.5], outputRange: [1, 0], extrapolate: 'clamp' });
-  // A note for the whole session (latest trainer training note), plus how many
+  // A note for the whole session (latest trainer training note), plus which
   // exercises carry notes — surfaced under the workout name in the preview.
   const previewSessionNote = usePanel
     ? ([...trainingTrainerNotes].reverse().find(n => !n.isDeleted)?.text ?? null)
     : null;
-  const previewNotedCount = usePanel
-    ? exercises.filter(ex => ex.trainerNotes.some(n => !n.isDeleted) || ex.clientNote.some(n => !n.isDeleted)).length
-    : 0;
+  const previewNotedExercises = usePanel
+    ? exercises
+        .map(ex => ({
+          weId: ex.workoutExerciseId,
+          name: ex.exerciseName,
+          trainer: ex.trainerNotes.filter(n => !n.isDeleted),
+          client: ex.clientNote.filter(n => !n.isDeleted),
+        }))
+        .filter(e => e.trainer.length > 0 || e.client.length > 0)
+    : [];
+  // One line per note source, stacked under the meta: the session note first (no
+  // label — it's for the whole workout), then each noted exercise's newest note
+  // prefixed with the exercise name. Capped at 3 lines + a "+N more" row.
+  const previewNoteLines = (() => {
+    const lines: { key: string; exName: string | null; text: string }[] = [];
+    if (previewSessionNote != null) lines.push({ key: 'session', exName: null, text: previewSessionNote });
+    for (const e of previewNotedExercises) {
+      let newest: NoteEntry | null = null;
+      for (const note of [...e.trainer, ...e.client]) {
+        if (!newest || (note.createdAt ?? '') > (newest.createdAt ?? '')) newest = note;
+      }
+      if (newest) lines.push({ key: e.weId, exName: e.name, text: newest.text });
+    }
+    return lines;
+  })();
   // Overline + meta say WHICH session this is — the three cases the deleted session-intro
   // screen used to label ("Today's session" / "Planned session" / "Past session").
   const fmtPreviewDate = (d: string) => new Date(d).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
@@ -4207,13 +4204,27 @@ export default function TrainerWorkoutSessionScreen() {
             <Text style={styles.previewTodayLabel}>{previewTopLabel}</Text>
             <Text style={styles.previewWorkoutName} numberOfLines={2}>{workout?.name ?? ''}</Text>
             <Text style={styles.previewMeta}>{previewMetaText}</Text>
-            {(previewSessionNote || previewNotedCount > 0) && (
-              <TouchableOpacity onPress={() => setDotsMenuOpen(true)} activeOpacity={0.85} style={styles.previewNoteRow}>
-                <SymbolView name="note.text" size={13} tintColor="rgba(255,255,255,0.9)" />
-                <Text style={styles.previewNoteText} numberOfLines={2}>
-                  {previewSessionNote ?? `${previewNotedCount} exercise${previewNotedCount > 1 ? 's have' : ' has'} notes`}
-                </Text>
-              </TouchableOpacity>
+            {previewNoteLines.length > 0 && (
+              <View style={styles.previewNotesWrap}>
+                {previewNoteLines.slice(0, 3).map(l => (
+                  <TouchableOpacity key={l.key} onPress={() => setPreviewNotesOpen(true)} activeOpacity={0.85} style={styles.previewNoteRow}>
+                    <SymbolView name="note.text" size={13} tintColor="rgba(255,255,255,0.9)" />
+                    <Text style={styles.previewNoteText} numberOfLines={1}>
+                      {l.exName ? (
+                        <>
+                          <Text style={styles.previewNoteExName}>{l.exName}</Text>
+                          {` — ${l.text}`}
+                        </>
+                      ) : l.text}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+                {previewNoteLines.length > 3 && (
+                  <TouchableOpacity onPress={() => setPreviewNotesOpen(true)} activeOpacity={0.85} style={styles.previewNoteRow}>
+                    <Text style={[styles.previewNoteText, styles.previewNoteMore]}>{`+${previewNoteLines.length - 3} more note${previewNoteLines.length - 3 > 1 ? 's' : ''}`}</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
             )}
           </View>
         </Animated.View>
@@ -4421,7 +4432,8 @@ export default function TrainerWorkoutSessionScreen() {
       <Modal visible={!!hardBlockModal} transparent animationType="fade" onRequestClose={() => setHardBlockModal(null)}>
         <View style={styles.centeredRoot}>
           <Pressable style={StyleSheet.absoluteFill} onPress={() => setHardBlockModal(null)} />
-          <View style={styles.hardBlockBox}>
+          <View style={styles.confirmBoxShadow}>
+          <GlassPanel style={styles.hardBlockBox}>
             <Text style={styles.hardBlockTitle}>You must start the workout to do this</Text>
             <TouchableOpacity
               style={styles.hardBlockStartBtn}
@@ -4443,6 +4455,7 @@ export default function TrainerWorkoutSessionScreen() {
             <TouchableOpacity onPress={() => setHardBlockModal(null)} activeOpacity={0.7} hitSlop={8}>
               <Text style={styles.hardBlockCancelText}>Cancel</Text>
             </TouchableOpacity>
+          </GlassPanel>
           </View>
         </View>
       </Modal>
@@ -4484,14 +4497,15 @@ export default function TrainerWorkoutSessionScreen() {
         <Modal visible transparent animationType="fade" onRequestClose={() => setLastSessionNotesModal(null)}>
           <View style={styles.centeredRoot}>
             <Pressable style={StyleSheet.absoluteFill} onPress={() => setLastSessionNotesModal(null)} />
-            <View style={styles.centeredModal}>
+            <View style={styles.confirmBoxShadow}>
+            <GlassPanel style={styles.previewNotesBox}>
               <Text style={styles.centeredModalTitle}>Notes from last session</Text>
               <ScrollView bounces={false} showsVerticalScrollIndicator={false} style={{ maxHeight: SCREEN_H * 0.5 }}>
                 {lastSessionNotesModal.trainer.length > 0 && (
                   <>
                     <Text style={[styles.infoLabel, { color: ACCENT }]}>TRAINER NOTE</Text>
                     {lastSessionNotesModal.trainer.map(n => (
-                      <View key={n.id} style={styles.noteEntry}>
+                      <View key={n.id} style={[styles.noteEntry, styles.previewNoteEntryOnGlass]}>
                         <View style={styles.noteEntryBody}>
                           <Text style={styles.noteDateLabel}>{n.date}</Text>
                           <Text style={styles.noteBodyText}>{n.text}</Text>
@@ -4504,7 +4518,7 @@ export default function TrainerWorkoutSessionScreen() {
                   <>
                     <Text style={[styles.infoLabel, { color: MUTED }]}>CLIENT NOTE</Text>
                     {lastSessionNotesModal.client.map(n => (
-                      <View key={n.id} style={[styles.noteEntry, styles.clientNoteEntry]}>
+                      <View key={n.id} style={[styles.noteEntry, styles.clientNoteEntry, styles.previewNoteEntryOnGlassClient]}>
                         <View style={styles.noteEntryBody}>
                           <Text style={[styles.noteDateLabel, styles.clientNoteDateLabel]}>{n.date}</Text>
                           <Text style={[styles.noteBodyText, styles.clientNoteBodyText]}>{n.text}</Text>
@@ -4518,6 +4532,75 @@ export default function TrainerWorkoutSessionScreen() {
               <TouchableOpacity style={styles.centeredModalDoneBtn} onPress={() => setLastSessionNotesModal(null)} activeOpacity={0.85}>
                 <Text style={styles.centeredModalDoneBtnText}>Got it</Text>
               </TouchableOpacity>
+            </GlassPanel>
+            </View>
+          </View>
+        </Modal>
+      )}
+
+      {/* ── Preview note popup — centered on purpose, never a bottom sheet
+             (a sheet sliding up would step on the preview panel's own slide) ── */}
+      {previewNotesOpen && (
+        <Modal visible transparent animationType="fade" onRequestClose={() => setPreviewNotesOpen(false)}>
+          <View style={styles.centeredRoot}>
+            <Pressable style={StyleSheet.absoluteFill} onPress={() => setPreviewNotesOpen(false)} />
+            <View style={styles.confirmBoxShadow}>
+            <GlassPanel style={styles.previewNotesBox}>
+              <Text style={styles.centeredModalTitle}>Notes for this session</Text>
+              <ScrollView bounces={false} showsVerticalScrollIndicator={false} style={{ maxHeight: SCREEN_H * 0.5 }}>
+                {(() => {
+                  const sessTrainer = [...trainingTrainerNotes].reverse().filter(n => !n.isDeleted);
+                  const sessClient = [...trainingClientNotes].reverse().filter(n => !n.isDeleted);
+                  if (sessTrainer.length === 0 && sessClient.length === 0) return null;
+                  return (
+                    <>
+                      <Text style={[styles.infoLabel, { color: ACCENT }]}>WHOLE WORKOUT</Text>
+                      {sessTrainer.map(n => (
+                        <View key={n.id} style={[styles.noteEntry, styles.previewNoteEntryOnGlass]}>
+                          <View style={styles.noteEntryBody}>
+                            <Text style={styles.noteDateLabel}>TRAINER · {n.date}</Text>
+                            <Text style={styles.noteBodyText}>{n.text}</Text>
+                          </View>
+                        </View>
+                      ))}
+                      {sessClient.map(n => (
+                        <View key={n.id} style={[styles.noteEntry, styles.clientNoteEntry, styles.previewNoteEntryOnGlassClient]}>
+                          <View style={styles.noteEntryBody}>
+                            <Text style={[styles.noteDateLabel, styles.clientNoteDateLabel]}>YOU · {n.date}</Text>
+                            <Text style={[styles.noteBodyText, styles.clientNoteBodyText]}>{n.text}</Text>
+                          </View>
+                        </View>
+                      ))}
+                    </>
+                  );
+                })()}
+                {previewNotedExercises.map(e => (
+                  <View key={e.weId}>
+                    <Text style={styles.previewNotesExLabel}>{e.name}</Text>
+                    {[...e.trainer].reverse().map(n => (
+                      <View key={n.id} style={[styles.noteEntry, styles.previewNoteEntryOnGlass]}>
+                        <View style={styles.noteEntryBody}>
+                          <Text style={styles.noteDateLabel}>TRAINER · {n.date}</Text>
+                          <Text style={styles.noteBodyText}>{n.text}</Text>
+                        </View>
+                      </View>
+                    ))}
+                    {[...e.client].reverse().map(n => (
+                      <View key={n.id} style={[styles.noteEntry, styles.clientNoteEntry, styles.previewNoteEntryOnGlassClient]}>
+                        <View style={styles.noteEntryBody}>
+                          <Text style={[styles.noteDateLabel, styles.clientNoteDateLabel]}>YOU · {n.date}</Text>
+                          <Text style={[styles.noteBodyText, styles.clientNoteBodyText]}>{n.text}</Text>
+                        </View>
+                      </View>
+                    ))}
+                  </View>
+                ))}
+                <View style={{ height: 8 }} />
+              </ScrollView>
+              <TouchableOpacity style={styles.centeredModalDoneBtn} onPress={() => setPreviewNotesOpen(false)} activeOpacity={0.85}>
+                <Text style={styles.centeredModalDoneBtnText}>Done</Text>
+              </TouchableOpacity>
+            </GlassPanel>
             </View>
           </View>
         </Modal>
@@ -4528,7 +4611,8 @@ export default function TrainerWorkoutSessionScreen() {
         <Modal visible transparent animationType="fade" onRequestClose={() => setOrderMismatchModal(null)}>
           <View style={styles.centeredRoot}>
             <Pressable style={StyleSheet.absoluteFill} onPress={() => setOrderMismatchModal(null)} />
-            <View style={styles.centeredModal}>
+            <View style={styles.confirmBoxShadow}>
+            <GlassPanel style={styles.previewNotesBox}>
               <Text style={styles.centeredModalTitle}>Different order last time</Text>
               <ScrollView bounces={false} showsVerticalScrollIndicator={false} style={{ maxHeight: SCREEN_H * 0.5 }}>
                 <Text style={styles.orderMismatchSub}>Last session, some exercises were done in a different order than programmed:</Text>
@@ -4543,6 +4627,7 @@ export default function TrainerWorkoutSessionScreen() {
               <TouchableOpacity style={styles.centeredModalDoneBtn} onPress={() => setOrderMismatchModal(null)} activeOpacity={0.85}>
                 <Text style={styles.centeredModalDoneBtnText}>Got it</Text>
               </TouchableOpacity>
+            </GlassPanel>
             </View>
           </View>
         </Modal>
@@ -5454,7 +5539,8 @@ function MachineBrandModal({
   return (
     <Modal visible transparent animationType="fade" onRequestClose={onClose} statusBarTranslucent>
       <Pressable style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.52)' }]} onPress={onClose} />
-      <View style={styles.brandModal}>
+      <View style={[styles.brandModalWrap, styles.confirmBoxShadow]}>
+      <GlassPanel style={styles.brandModal}>
         <Text style={styles.centeredModalTitle}>{en.machineSelector.moreBrandsTitle}</Text>
         <ScrollView bounces={false} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} style={{ marginBottom: 12 }} contentContainerStyle={{ gap: 8 }}>
           {PRESET_BRANDS.map(brand => (
@@ -5490,6 +5576,7 @@ function MachineBrandModal({
         <TouchableOpacity style={[styles.centeredModalDoneBtn, { marginTop: 8 }]} onPress={onClose} activeOpacity={0.85}>
           <Text style={styles.centeredModalDoneBtnText}>{en.common.cancel}</Text>
         </TouchableOpacity>
+      </GlassPanel>
       </View>
     </Modal>
   );
@@ -6828,14 +6915,16 @@ function ExerciseProgressSheet({ exerciseId, workoutId: progWorkoutId, profileId
         <Modal visible transparent animationType="fade" onRequestClose={() => setTooltipPoint(null)}>
           <View style={styles.centeredRoot}>
             <Pressable style={StyleSheet.absoluteFill} onPress={() => setTooltipPoint(null)} />
-            <View style={[styles.centeredModal, { padding: 20 }]}>
+            <View style={styles.confirmBoxShadow}>
+            <GlassPanel style={[styles.previewNotesBox, { padding: 20 }]}>
               <Text style={[styles.centeredModalTitle, { marginBottom: 6 }]}>{formatShortDate(tooltipPoint.date)}</Text>
-              {tooltipPoint.workoutName && <Text style={{ fontSize: 12, color: MUTED, marginBottom: 8 }}>{tooltipPoint.workoutName}</Text>}
+              {tooltipPoint.workoutName && <Text style={{ fontSize: 12, color: '#414b45', marginBottom: 8 }}>{tooltipPoint.workoutName}</Text>}
               <Text style={{ fontSize: 22, fontWeight: '700', color: TEXT, marginBottom: 4 }}>{tooltipPoint.weightKg} kg</Text>
-              {tooltipPoint.reps != null && <Text style={{ fontSize: 14, color: MUTED }}>{tooltipPoint.reps} reps</Text>}
+              {tooltipPoint.reps != null && <Text style={{ fontSize: 14, color: '#414b45' }}>{tooltipPoint.reps} reps</Text>}
               <TouchableOpacity style={[styles.centeredModalDoneBtn, { marginTop: 16, alignSelf: 'stretch' }]} onPress={() => setTooltipPoint(null)} activeOpacity={0.85}>
                 <Text style={styles.centeredModalDoneBtnText}>{en.common.ok}</Text>
               </TouchableOpacity>
+            </GlassPanel>
             </View>
           </View>
         </Modal>
@@ -7092,9 +7181,10 @@ function ReplacementHistoryModal({ workoutId, slotNumber, exerciseName, onReplac
     <Modal visible transparent animationType="fade" onRequestClose={onClose} statusBarTranslucent>
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.centeredRoot}>
         <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
-        <View style={styles.centeredModal}>
+        <View style={styles.confirmBoxShadow}>
+        <GlassPanel style={styles.previewNotesBox}>
           <Text style={styles.centeredModalTitle}>{exerciseName}</Text>
-          <Text style={styles.infoLabel}>REPLACEMENT HISTORY</Text>
+          <Text style={[styles.infoLabel, replStyles.labelOnGlass]}>REPLACEMENT HISTORY</Text>
           {history.length === 0
             ? <Text style={replStyles.historyEmpty}>No replacements yet</Text>
             : history.map((h, i) => (
@@ -7104,7 +7194,7 @@ function ReplacementHistoryModal({ workoutId, slotNumber, exerciseName, onReplac
                 </View>
               ))
           }
-          <View style={styles.infoSep} />
+          <View style={[styles.infoSep, replStyles.sepOnGlass]} />
           <TouchableOpacity style={replStyles.replaceRow} onPress={onReplacePress} activeOpacity={0.7}>
             <Plus size={15} color={ACCENT} strokeWidth={2.5} />
             <Text style={replStyles.replaceRowText}>Replace with different exercise</Text>
@@ -7112,6 +7202,7 @@ function ReplacementHistoryModal({ workoutId, slotNumber, exerciseName, onReplac
           <TouchableOpacity style={styles.centeredModalDoneBtn} onPress={onClose} activeOpacity={0.85}>
             <Text style={styles.centeredModalDoneBtnText}>Done</Text>
           </TouchableOpacity>
+        </GlassPanel>
         </View>
       </KeyboardAvoidingView>
     </Modal>
@@ -7335,8 +7426,18 @@ const styles = StyleSheet.create({
   previewTodayLabel: { fontSize: 11, color: 'rgba(255,255,255,0.5)', letterSpacing: 1, marginBottom: 6, fontWeight: '600' },
   previewWorkoutName: { fontSize: 28, fontWeight: '700', color: '#fff', lineHeight: 32 },
   previewMeta: { fontSize: 13, color: 'rgba(255,255,255,0.65)', marginTop: 6 },
-  previewNoteRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 6, marginTop: 12, maxWidth: '92%' },
+  previewNotesWrap: { marginTop: 12, gap: 7, maxWidth: '92%' },
+  previewNoteRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 6 },
   previewNoteText: { flex: 1, fontSize: 13, color: 'rgba(255,255,255,0.85)', lineHeight: 18 },
+  previewNoteExName: { fontWeight: '700', color: 'rgba(255,255,255,0.95)' },
+  previewNoteMore: { color: 'rgba(255,255,255,0.55)' },
+  previewNotesExLabel: { fontSize: 12, fontWeight: '700', color: TEXT, marginTop: 8, marginBottom: 6 },
+  // The preview-notes popup rides the confirm-box glass family (radius 38, GlassPanel
+  // + 0.30 scrim); note entries get translucent fills so they don't sit on the glass
+  // as opaque stickers — the entry card is what keeps long note text readable.
+  previewNotesBox: { borderRadius: 38, overflow: 'hidden', padding: 24, maxHeight: SCREEN_H * 0.78 },
+  previewNoteEntryOnGlass: { backgroundColor: 'rgba(255,255,255,0.55)' },
+  previewNoteEntryOnGlassClient: { backgroundColor: 'rgba(240,248,245,0.8)' },
   combinedPillSep: { width: 1, height: 14, backgroundColor: 'rgba(36,172,136,0.35)' },
   combinedPillTimerText: { color: '#24ac88', fontSize: 13, fontVariant: ['tabular-nums'], letterSpacing: 0.4, ...fd(800) },
   combinedPillFinishText: { color: '#24ac88', fontWeight: '700', fontSize: 13, letterSpacing: 0.4 },
@@ -7477,13 +7578,14 @@ const styles = StyleSheet.create({
   barOptionTextPeeking: { color: '#c8a800' },
   barCustomInput: { fontSize: 13, fontWeight: '600', color: TEXT, minWidth: 44, textAlign: 'center', padding: 0 },
 
-  brandModal: { position: 'absolute', top: SCREEN_H * 0.18, left: 24, right: 24, maxHeight: SCREEN_H * 0.65, backgroundColor: CARD, borderRadius: 20, padding: 20 },
-  brandPickerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 13, paddingHorizontal: 16, borderRadius: 10, borderWidth: 1, borderColor: '#e0e0dc', backgroundColor: '#f9f9f7' },
+  brandModalWrap: { position: 'absolute', top: SCREEN_H * 0.18, left: 24, right: 24 },
+  brandModal: { borderRadius: 38, overflow: 'hidden', maxHeight: SCREEN_H * 0.65, padding: 20 },
+  brandPickerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 13, paddingHorizontal: 16, borderRadius: 10, borderWidth: 1, borderColor: 'rgba(0,0,0,0.12)', backgroundColor: 'rgba(255,255,255,0.6)' },
   brandPickerRowActive: { backgroundColor: ACCENT, borderColor: ACCENT },
   brandPickerText: { fontSize: 15, fontWeight: '500', color: TEXT },
   brandPickerTextActive: { color: '#fff', fontWeight: '600' },
   brandCustomRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 4 },
-  brandCustomInput: { flex: 1, fontSize: 15, color: TEXT, borderWidth: 1, borderColor: '#e0e0dc', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, backgroundColor: '#f9f9f7' },
+  brandCustomInput: { flex: 1, fontSize: 15, color: TEXT, borderWidth: 1, borderColor: 'rgba(0,0,0,0.12)', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, backgroundColor: 'rgba(255,255,255,0.6)' },
   brandCustomSetBtn: { paddingHorizontal: 16, paddingVertical: 10, borderRadius: 10, backgroundColor: ACCENT },
   brandCustomSetBtnDisabled: { backgroundColor: '#ccc' },
   brandCustomSetBtnText: { color: '#fff', fontSize: 14, fontWeight: '600' },
@@ -7658,11 +7760,11 @@ const styles = StyleSheet.create({
   thumbWrap: { position: 'relative', width: 54, height: 54 },
   thumbPeekBtn: { position: 'absolute', bottom: 2, right: 2, width: 16, height: 16, borderRadius: 4, backgroundColor: 'rgba(0,0,0,0.6)', alignItems: 'center', justifyContent: 'center' },
 
-  hardBlockBox: { backgroundColor: '#fff', borderRadius: 16, padding: 24, alignItems: 'center', gap: 16 },
+  hardBlockBox: { borderRadius: 38, overflow: 'hidden', padding: 24, alignItems: 'center', gap: 16 },
   hardBlockTitle: { fontSize: 16, fontWeight: '700', color: TEXT, textAlign: 'center' },
   hardBlockStartBtn: { backgroundColor: ACCENT, borderRadius: 100, paddingVertical: 14, paddingHorizontal: 32 },
   hardBlockStartText: { color: '#fff', fontSize: 15, fontWeight: '700' },
-  hardBlockCancelText: { fontSize: 14, color: MUTED },
+  hardBlockCancelText: { fontSize: 14, color: '#414b45', fontWeight: '600' },
   confirmBoxShadow: { borderRadius: 38, shadowColor: '#000', shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.22, shadowRadius: 28, elevation: 12 },
   confirmBox: { borderRadius: 38, overflow: 'hidden', padding: 24, alignItems: 'center', gap: 14 },
   confirmTitle: { fontSize: 16, fontWeight: '700', color: TEXT, textAlign: 'center' },
@@ -7685,10 +7787,12 @@ const styles = StyleSheet.create({
   dragHandleLine: { width: 14, height: 1.5, backgroundColor: '#bbb', borderRadius: 1 },
 
 
-  orderMismatchSub: { fontSize: 13, color: MUTED, marginBottom: 10, lineHeight: 18 },
-  orderMismatchRow: { paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: '#f0f0f0', gap: 2 },
+  // Muted grays darkened + hairline made translucent when this popup went glass
+  // (MUTED / #f0f0f0 washed out on the see-through panel).
+  orderMismatchSub: { fontSize: 13, color: '#414b45', fontWeight: '500', marginBottom: 10, lineHeight: 18 },
+  orderMismatchRow: { paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: 'rgba(0,0,0,0.08)', gap: 2 },
   orderMismatchName: { fontSize: 14, fontWeight: '600', color: TEXT },
-  orderMismatchMeta: { fontSize: 12, color: MUTED },
+  orderMismatchMeta: { fontSize: 12, color: '#414b45' },
 
   // Free session
   freeAddBtn: {
@@ -7755,10 +7859,13 @@ const pickerStyles = StyleSheet.create({
 const replStyles = StyleSheet.create({
   replaceRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 13, paddingHorizontal: 16, borderRadius: 12, borderWidth: 1.5, borderColor: ACCENT, marginTop: 12 },
   replaceRowText: { fontSize: 14, fontWeight: '600', color: ACCENT },
-  historyEmpty: { fontSize: 14, color: '#bbb', marginBottom: 4 },
-  historyRow: { paddingVertical: 7, borderBottomWidth: 1, borderBottomColor: '#f0f0f0', gap: 2 },
+  // On-glass overrides — this modal is a GlassPanel popup, muted grays wash out on the glass.
+  labelOnGlass: { color: '#414b45' },
+  sepOnGlass: { backgroundColor: 'rgba(0,0,0,0.08)' },
+  historyEmpty: { fontSize: 14, color: '#414b45', marginBottom: 4 },
+  historyRow: { paddingVertical: 7, borderBottomWidth: 1, borderBottomColor: 'rgba(0,0,0,0.08)', gap: 2 },
   historyName: { fontSize: 14, fontWeight: '600', color: TEXT },
-  historyDate: { fontSize: 12, color: MUTED },
+  historyDate: { fontSize: 12, color: '#414b45' },
 });
 
 const histStyles = StyleSheet.create({

@@ -7,6 +7,7 @@ import { VFIcon } from '@/components/VFIcon';
 import { KettlebellIcon } from '@/components/icons/KettlebellIcon';
 import { NotificationOverlay } from '@/components/NotificationOverlay';
 import { LightHeader, HeaderIcon, HEADER_ICON } from '@/components/LightHeader';
+import GlassPanel from '@/components/GlassPanel';
 import { useAuth } from '@/context/AuthContext';
 import { supabase } from '@/lib/supabase';
 import { useSessionStore } from '@/store/sessionStore';
@@ -175,15 +176,17 @@ export default function ClientTabsLayout() {
         onRequestClose={() => setSessionModalVisible(false)}
       >
         <Pressable style={sessStyles.backdrop} onPress={() => setSessionModalVisible(false)}>
-          <Pressable style={sessStyles.card} onPress={() => {}}>
-            <Text style={sessStyles.label}>SESSION IN PROGRESS</Text>
-            <Text style={sessStyles.name} numberOfLines={1}>{suspendedSession?.workoutName ?? 'Session'}</Text>
-            <Text style={sessStyles.timer}>
-              {String(Math.floor(sessionElapsed / 60)).padStart(2, '0')}:{String(sessionElapsed % 60).padStart(2, '0')}
-            </Text>
-            <TouchableOpacity style={sessStyles.returnBtn} onPress={handleReturnToSession} activeOpacity={0.85}>
-              <Text style={sessStyles.returnBtnText}>Return to session</Text>
-            </TouchableOpacity>
+          <Pressable style={sessStyles.glassShadow} onPress={() => {}}>
+            <GlassPanel style={sessStyles.glassBox}>
+              <Text style={sessStyles.label}>SESSION IN PROGRESS</Text>
+              <Text style={sessStyles.name} numberOfLines={1}>{suspendedSession?.workoutName ?? 'Session'}</Text>
+              <Text style={sessStyles.timer}>
+                {String(Math.floor(sessionElapsed / 60)).padStart(2, '0')}:{String(sessionElapsed % 60).padStart(2, '0')}
+              </Text>
+              <TouchableOpacity style={sessStyles.returnBtn} onPress={handleReturnToSession} activeOpacity={0.85}>
+                <Text style={sessStyles.returnBtnText}>Return to session</Text>
+              </TouchableOpacity>
+            </GlassPanel>
           </Pressable>
         </Pressable>
       </Modal>
@@ -237,11 +240,11 @@ const sessStyles = StyleSheet.create({
     flex: 1, backgroundColor: 'rgba(0,0,0,0.45)',
     alignItems: 'center', justifyContent: 'center', padding: 32,
   },
-  card: {
-    backgroundColor: '#fff', borderRadius: 16, padding: 24, width: '100%', alignItems: 'center',
-    shadowColor: '#000', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.15, shadowRadius: 20, elevation: 10,
-  },
-  label:     { fontSize: 10, fontWeight: '700', color: MUTED, letterSpacing: 0.8, textTransform: 'uppercase', marginBottom: 8 },
+  // Liquid Glass popup — radius-38 shadow wrapper + GlassPanel (the Do Mode
+  // confirm-box family), texts darkened for glass legibility.
+  glassShadow: { width: '100%', borderRadius: 38, shadowColor: '#000', shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.22, shadowRadius: 28, elevation: 12 },
+  glassBox:    { borderRadius: 38, overflow: 'hidden', padding: 24, alignItems: 'center' },
+  label:     { fontSize: 10, fontWeight: '700', color: '#414b45', letterSpacing: 0.8, textTransform: 'uppercase', marginBottom: 8 },
   name:      { fontSize: 17, fontWeight: '700', color: TEXT, marginBottom: 12, textAlign: 'center' },
   timer:     { fontSize: 40, fontWeight: '700', color: ACCENT, fontVariant: ['tabular-nums'] as any, marginBottom: 20 },
   returnBtn: { backgroundColor: ACCENT, borderRadius: 100, paddingVertical: 13, alignSelf: 'stretch', alignItems: 'center' },
