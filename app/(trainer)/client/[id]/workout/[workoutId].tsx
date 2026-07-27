@@ -7514,7 +7514,7 @@ const styles = StyleSheet.create({
   inlineDropsetRow: { paddingLeft: 24, backgroundColor: '#fafaf8' },
   inlineSetRemoved: { opacity: 0.3 },
   setNumCol: { width: 30, alignItems: 'center', justifyContent: 'center' },
-  setNum: { fontSize: 15, fontWeight: '700', color: '#999' },
+  setNum: { fontSize: 15, fontWeight: '700', color: TEXT },
   setNumNoteDot: { position: 'absolute', top: 0, right: -8, width: 5, height: 5, borderRadius: 2.5, backgroundColor: ACCENT },
   setNumPeeking: { color: '#b87d00' },
   dropsetArrow: { fontSize: 15, color: ACCENT, fontWeight: '700' },
