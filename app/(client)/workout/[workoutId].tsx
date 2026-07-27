@@ -619,7 +619,10 @@ const PreviewBackdrop = memo(function PreviewBackdrop({
     // default 2.3 would crop it down to a single body part).
     const body = exerciseBodyCfg(s.muscleGroups, s.secondaryMuscleGroups, 1.15);
     if (!body && !categoryHasCover(category)) return null;
-    return <CategoryCover category={category} variant="color" body={body ?? undefined} />;
+    // Same 'banner' green as the header (July 27) — this is the same no-photo exercise
+    // seen a second before Start, and it would otherwise change colour on the way in.
+    // Blends into this backdrop's own base gradient, which is that identical triple.
+    return <CategoryCover category={category} variant="banner" body={body ?? undefined} />;
   };
 
   return (
@@ -3708,18 +3711,21 @@ export default function TrainerWorkoutSessionScreen() {
             {bannerPhoto ? (
               <HeaderPhoto uri={bannerPhoto} focusY={activeHeaderEx?.headerFocusY ?? 0.5} boxW={SCREEN_W} boxH={bannerH} />
             ) : bannerBody ? (
-              // No media for this exercise → its OWN muscles, lit on the category wash.
-              <CategoryCover category={workout?.category} variant="color" body={bannerBody} />
+              // No media for this exercise → its OWN muscles, lit on the BRAND green wash
+              // (July 27 2026 — the category hue used to paint this; see CategoryCover's
+              // 'banner' variant note).
+              <CategoryCover category={workout?.category} variant="banner" body={bannerBody} />
             ) : categoryHasCover(workout?.category) ? (
-              <CategoryCover category={workout?.category} variant="color" watermarkSize={150} />
+              <CategoryCover category={workout?.category} variant="banner" watermarkSize={150} />
             ) : (
               <LinearGradient colors={['#2d6b5a', '#244e43', '#1a3832']} start={{ x: 1, y: 0 }} end={{ x: 0, y: 1 }} style={StyleSheet.absoluteFill} />
             )}
             {/* Preview-backdrop-style darkening (flat wash + emphasis at the text zones),
                 bumped past the preview's 0.30 on device review ("a bit darker still") so the
                 header chrome never fights a bright photo; the long-press peek shows the
-                photo at its original brightness. */}
-            <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.38)' }]} pointerEvents="none" />
+                photo at its original brightness. PHOTOS ONLY — the green wash is already a
+                controlled dark ground, and dimming it 38% stops it being the app's green. */}
+            {!!bannerPhoto && <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.38)' }]} pointerEvents="none" />}
             <LinearGradient colors={['rgba(0,0,0,0.30)', 'transparent', 'rgba(0,0,0,0.38)']} locations={[0, 0.45, 1]} style={StyleSheet.absoluteFill} pointerEvents="none" />
           </Pressable>
 

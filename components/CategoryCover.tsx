@@ -44,7 +44,18 @@ const BodyView = BodyHighlighter as unknown as React.ComponentType<any>;
  *                   style — white cover AND white footer). With no dark footer strip
  *                   left to give the card structure, the figure has to carry more of it,
  *                   so every level steps up roughly one notch. Same machinery otherwise.
- * variant='color' → bright same-hue gradient (the two Do Mode hero banners)
+ * variant='banner' → THE Do Mode hero banner's no-photo fallback (July 27 2026). NOT the
+ *                   category hue: one brand dark-green wash for every category (Vitek —
+ *                   "just dark green as the app has and then the same silhouette"), so the
+ *                   header stops changing colour exercise to exercise and reads as app
+ *                   chrome. The wash is the same triple Do Mode already used for its
+ *                   no-category fallback + preview backdrop, so all three fallback branches
+ *                   land on ONE ground. Figure = the 'brand' white ghost machinery (explicit
+ *                   per-part fills, no charcoal fallback) mixed a good deal stronger: the
+ *                   banner is full-screen-wide, and a whisper that works on a 112px card
+ *                   disappears at that size. Category identity lives in the cards + pill,
+ *                   not here.
+ * variant='color' → bright same-hue gradient (was the Do Mode hero banners until July 27)
  * variant='soft'  → muted / earthier same-hue gradient (tiny legacy thumbnails)
  * variant='muted' → darker, calmer version (unused for now, kept for the Do Mode header)
  * (The trial-era 'paper' and 'ghost' variants were deleted at lock-in.)
@@ -207,14 +218,15 @@ export default function CategoryCover({
   style,
 }: {
   category?: string | null;
-  variant?: 'color' | 'soft' | 'muted' | 'brand' | 'brandBright' | 'ink' | 'inkDeep';
+  variant?: 'color' | 'soft' | 'muted' | 'brand' | 'brandBright' | 'ink' | 'inkDeep' | 'banner';
   /**
    * Draw THESE muscles instead of the category's own set — used by the Do Mode banner,
    * which lights up the active EXERCISE's muscles when that exercise has no photo/video
-   * (build it with exerciseBodyCfg() in lib/muscleSilhouette.ts). The gradient still
-   * comes from the category, so the header keeps its category identity; with no/unknown
-   * category the neutral dark-green fallback wash is used. `paperCrop` is skipped for an
-   * override — its framing is tuned per category, not per muscle.
+   * (build it with exerciseBodyCfg() in lib/muscleSilhouette.ts). On variant='banner' the
+   * wash is the brand green regardless of category; on the hue variants the gradient still
+   * comes from the category, and with no/unknown category the neutral dark-green fallback
+   * wash is used. `paperCrop` is skipped for an override — its framing is tuned per
+   * category, not per muscle.
    */
   body?: BodyCfg;
   watermarkSize?: number; // accepted for back-compat; sizing is now measured from the box
@@ -226,10 +238,26 @@ export default function CategoryCover({
   const isBrand = variant === 'brand' || isBrandBright;
   const isInkDeep = variant === 'inkDeep';
   const isInk = variant === 'ink' || isInkDeep;
+  const isBanner = variant === 'banner';
   // Card variants (brand + ink/inkDeep) share the explicit-fill + paperCrop machinery;
   // they only differ in which ground the figure is mixed into and how strongly.
   const isCard = isBrand || isInk;
+  // 'banner' borrows the explicit-fill machinery too (otherwise the untouched body falls
+  // back to the library's charcoal — a muddy blob on green, where on a vibrant category
+  // gradient it passed as a shadow), but NOT paperCrop: that framing is per category and
+  // the banner is framed by the exercise's own muscles. It also draws a wash, so it is
+  // deliberately not part of `isCard`.
+  const withExplicitFill = isCard || isBanner;
   const BRAND_MID = '#1a3830';
+  // Do Mode's own dark green — the same triple its no-category fallback and the preview
+  // backdrop already use, so every no-photo surface in that screen shares one ground.
+  const BANNER_GRAD: [string, string, string] = ['#2d6b5a', '#244e43', '#1a3832'];
+  const BANNER_MID = '#244e43';
+  // Figure levels: body / lit-1 / lit-2 / border. Well above 'brand' (0.09/0.20/0.33/0.15)
+  // — this is a full-width hero, not a 112px card, and the lit muscles are the only thing
+  // telling you what you're training. Below the highlights the body still reads as quiet
+  // material rather than a diagram.
+  const bannerL = [0.13, 0.30, 0.50, 0.22];
   const INK_BASE = '#ffffff';
   const INK = '36,78,67'; // HEADER green as ink — ties the light figure to the brand story
   // Ink mix levels: body / lit-1 / lit-2 / border. 'inkDeep' (the all-white card) runs
@@ -261,7 +289,9 @@ export default function CategoryCover({
   // Same idea on the dark ground: 'brandBright' (the all-green card) lifts the white
   // ghost well clear of the gradient, 'brand' keeps its deliberately quiet levels.
   const brandL = isBrandBright ? [0.18, 0.34, 0.52, 0.26] : [0.09, 0.20, 0.33, 0.15];
-  const grad = cfg
+  const grad = isBanner
+    ? BANNER_GRAD
+    : cfg
     ? (variant === 'muted' ? cfg.muted : variant === 'soft' ? cfg.soft : cfg.grad)
     : (['#2a5448', '#1f3f35', '#1a3832'] as [string, string, string]);
 
@@ -274,11 +304,15 @@ export default function CategoryCover({
     ? mixHex(INK_BASE, inkColor, inkL[0])
     : isBrand
     ? mixHex(BRAND_MID, '255,255,255', brandL[0])
+    : isBanner
+    ? mixHex(BANNER_MID, '255,255,255', bannerL[0])
     : variant === 'muted' ? 'rgba(255,255,255,0.055)' : 'rgba(255,255,255,0.10)';
   const hl: [string, string] = isInk
     ? [mixHex(INK_BASE, inkColor, inkL[1]), mixHex(INK_BASE, inkColor, inkL[2])]
     : isBrand
     ? [mixHex(BRAND_MID, '255,255,255', brandL[1]), mixHex(BRAND_MID, '255,255,255', brandL[2])]
+    : isBanner
+    ? [mixHex(BANNER_MID, '255,255,255', bannerL[1]), mixHex(BANNER_MID, '255,255,255', bannerL[2])]
     : variant === 'muted'
       ? ['rgba(255,255,255,0.11)', 'rgba(255,255,255,0.19)']
       : ['rgba(255,255,255,0.24)', 'rgba(255,255,255,0.44)'];
@@ -314,14 +348,18 @@ export default function CategoryCover({
             passing it unchanged; `brand`/`ink` pass explicit per-part fills (top of the
             lib's fill-resolution chain) so nothing can fall back to charcoal. */}
         <BodyView
-          data={isCard ? brandData : b.slugs}
+          data={withExplicitFill ? brandData : b.slugs}
           side={b.side}
           scale={scale}
           colors={hl}
           background={bodyFill}
-          {...(isCard ? {
+          {...(withExplicitFill ? {
             defaultFill: bodyFill,
-            border: isInk ? mixHex(INK_BASE, inkColor, inkL[3]) : mixHex(BRAND_MID, '255,255,255', brandL[3]),
+            border: isInk
+              ? mixHex(INK_BASE, inkColor, inkL[3])
+              : isBanner
+              ? mixHex(BANNER_MID, '255,255,255', bannerL[3])
+              : mixHex(BRAND_MID, '255,255,255', brandL[3]),
           } : null)}
         />
       </View>

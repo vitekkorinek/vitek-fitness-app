@@ -3668,17 +3668,20 @@ export default function TrainerWorkoutSessionScreen() {
             {bannerPhoto ? (
               <HeaderPhoto uri={bannerPhoto} focusY={activeHeaderEx?.headerFocusY ?? 0.5} boxW={SCREEN_W} boxH={bannerH} />
             ) : bannerBody ? (
-              // No media for this exercise → its OWN muscles, lit on the category wash.
-              <CategoryCover category={workout?.category} variant="color" body={bannerBody} />
+              // No media for this exercise → its OWN muscles, lit on the BRAND green wash
+              // (July 27 2026 — the category hue used to paint this; see CategoryCover's
+              // 'banner' variant note).
+              <CategoryCover category={workout?.category} variant="banner" body={bannerBody} />
             ) : categoryHasCover(workout?.category) ? (
-              <CategoryCover category={workout?.category} variant="color" watermarkSize={150} />
+              <CategoryCover category={workout?.category} variant="banner" watermarkSize={150} />
             ) : (
               <LinearGradient colors={['#2d6b5a', '#244e43', '#1a3832']} start={{ x: 1, y: 0 }} end={{ x: 0, y: 1 }} style={StyleSheet.absoluteFill} />
             )}
             {/* Preview-backdrop-style darkening (flat wash + emphasis at the text zones),
                 matching the client — header chrome never fights a bright photo; the
-                long-press peek shows the photo at its original brightness. */}
-            <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.38)' }]} pointerEvents="none" />
+                long-press peek shows the photo at its original brightness. PHOTOS ONLY —
+                the green wash is already a controlled dark ground. */}
+            {!!bannerPhoto && <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.38)' }]} pointerEvents="none" />}
             <LinearGradient colors={['rgba(0,0,0,0.30)', 'transparent', 'rgba(0,0,0,0.38)']} locations={[0, 0.45, 1]} style={StyleSheet.absoluteFill} pointerEvents="none" />
           </Pressable>
 
