@@ -7592,7 +7592,7 @@ const styles = StyleSheet.create({
 
   setColHeaderRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingTop: 3, paddingBottom: 3, gap: 8 },
   colHeaderDivider: { height: 1, backgroundColor: '#e8e8e4', marginHorizontal: 12, marginBottom: 2 },
-  setColLabel: { fontSize: 9, fontWeight: '800', color: '#ccc', letterSpacing: 0.8 },
+  setColLabel: { fontSize: 9, fontWeight: '800', color: '#a3a39e', letterSpacing: 0.8 },
 
   inlineSetRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 7, gap: 8 },
   inlineDropsetRow: { paddingLeft: 24, backgroundColor: '#fafaf8' },

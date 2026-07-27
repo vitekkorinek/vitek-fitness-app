@@ -2899,7 +2899,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12, paddingTop: 6, paddingBottom: 4, gap: 8,
   },
   colHeaderDivider: { height: 1, backgroundColor: '#e8e8e4', marginHorizontal: 12, marginBottom: 2 },
-  setColLabel: { fontSize: 9, fontWeight: '800', color: '#ccc', letterSpacing: 0.8 },
+  setColLabel: { fontSize: 9, fontWeight: '800', color: '#a3a39e', letterSpacing: 0.8 },
 
   // Set row
   inlineSetRow: {
