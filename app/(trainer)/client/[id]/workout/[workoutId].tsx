@@ -665,6 +665,8 @@ export default function TrainerWorkoutSessionScreen() {
   >(null);
   const [pendingDoneToast, setPendingDoneToast] = useState<string | null>(null);
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [repsToast, setRepsToast] = useState<string | null>(null);
+  const repsToastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Track which exercise indices have already shown the "previous unchecked" toast this session
   const toastShownForRef = useRef<Set<number>>(new Set());
   const [hardBlockModal, setHardBlockModal] = useState<
@@ -1868,6 +1870,19 @@ export default function TrainerWorkoutSessionScreen() {
     });
   };
 
+  // ⚠️ A logged weight with no reps is not a valid record — Vitek: "kg and no reps
+  // should not exist, so if i record weight and no reps and click like done the app
+  // should say you need to record a rep". Reps with NO weight are fine (bodyweight).
+  // Blocks the done-tick rather than silently saving a set the summary can't judge.
+  const setsMissingReps = (ex: { sets: { isRemoved: boolean; weightKg: string; repsCompleted: string }[] } | undefined) =>
+    (ex?.sets ?? []).some(s => !s.isRemoved && s.weightKg.trim() !== '' && s.repsCompleted.trim() === '');
+
+  const showRepsToast = () => {
+    if (repsToastTimerRef.current) clearTimeout(repsToastTimerRef.current);
+    setRepsToast('Add the reps before marking this done — a weight without reps can\'t be compared.');
+    repsToastTimerRef.current = setTimeout(() => setRepsToast(null), 3000);
+  };
+
   const showPendingDoneToast = (exerciseName: string) => {
     if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
     if (savedToastTimerRef.current) { clearTimeout(savedToastTimerRef.current); setSavedToast(null); }
@@ -2038,6 +2053,7 @@ export default function TrainerWorkoutSessionScreen() {
     checkPrevUnchecked(exIdx);
     Keyboard.dismiss();
     const ex = exercisesRef.current[exIdx];
+    if (setsMissingReps(ex)) { showRepsToast(); return; }
     const weId = ex?.workoutExerciseId;
 
     // For superset: cascade to all previous members in the group (same logic as set-level cascade).
@@ -2131,6 +2147,10 @@ export default function TrainerWorkoutSessionScreen() {
     const toggling = ex.sets.find(s => s.localId === setLocalId);
     if (!toggling) return;
     const done = !toggling.isDone;
+    if (done && toggling.weightKg.trim() !== '' && toggling.repsCompleted.trim() === '') {
+      showRepsToast();
+      return;
+    }
     if (done) Keyboard.dismiss();
 
     const activeSets = ex.sets.filter(s => !s.isRemoved);
@@ -4530,6 +4550,11 @@ export default function TrainerWorkoutSessionScreen() {
       )}
 
       {/* ── Pending-done toast ───────────────────────────────────────── */}
+      {repsToast && (
+        <View pointerEvents="none" style={[styles.pendingDoneToast, { top: HEADER_MIN + 8 }]}>
+          <Text style={styles.pendingDoneToastText} numberOfLines={2}>{repsToast}</Text>
+        </View>
+      )}
       {pendingDoneToast && (
         <View pointerEvents="none" style={[styles.pendingDoneToast, { top: HEADER_MIN + 8 }]}>
           <Text style={styles.pendingDoneToastText} numberOfLines={2}>

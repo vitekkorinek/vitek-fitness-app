@@ -60,6 +60,29 @@ interface PBResult extends ExerciseResult {
   pbDelta: number;
 }
 
+/**
+ * Where today's number sits. Two scopes, always — Vitek: "we have two things — in
+ * total, and per this workout", and "this workout is this workout, it has specific
+ * exercises and the other workout is its own workout".
+ *  - 'ever'     beats everything this client has lifted on that exercise, anywhere
+ *  - 'workout'  beats their best IN THIS WORKOUT, while a bigger number stands elsewhere
+ */
+interface RecordResult {
+  workoutExerciseId: string;
+  exerciseName: string;
+  weight: number;
+  reps: number;
+  scope: 'ever' | 'workout';
+  /** The bigger number that still stands — only on scope 'workout'. */
+  standingBest?: { weight: number; reps: number; date: string; workoutName: string; position: number | null } | null;
+  todayPosition: number | null;
+  /** Position of the best this beat, so a record set from an easier slot is readable. */
+  beatenPosition: number | null;
+  /** Reps went DOWN while the weight went up — a record, but not a clean one. */
+  repsDropped: boolean;
+  prevReps: number | null;
+}
+
 /** An exercise this client has never lifted before — today's number IS the record. */
 interface FirstTimeResult {
   workoutExerciseId: string;
@@ -117,6 +140,22 @@ function formatDate(d: Date): string {
   return `${d.getDate()} ${months[d.getMonth()]} ${d.getFullYear()}`;
 }
 
+/** `12 × 40 kg`, or just `40 kg` when reps were never recorded — legacy rows predate
+ *  the reps guard, and "0 × 40 kg" reads as if zero reps were done. */
+function setLabel(weight: number, reps: number): string {
+  const w = weight % 1 === 0 ? String(weight) : weight.toFixed(1);
+  return reps > 0 ? `${reps} × ${w} kg` : `${w} kg`;
+}
+
+/** "12 Jul" from a YYYY-MM-DD session date — split, not `new Date`, so a plain date
+ *  string is never shifted a day by the timezone. */
+function formatShortDate(ymd: string): string {
+  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const [, m, d] = ymd.split('-').map(Number);
+  if (!m || !d) return ymd;
+  return `${d} ${months[m - 1]}`;
+}
+
 export function SessionCompleteScreen({
   sessionId, workoutId, clientId, clientName,
   sessionNumber, durationSeconds, exercisesDone, exercisesTotal, isTrainer,
@@ -127,7 +166,7 @@ export function SessionCompleteScreen({
   const [greeting, setGreeting] = useState('');
   const [improvements, setImprovements] = useState<ExerciseResult[]>([]);
   const [regressions, setRegressions] = useState<ExerciseResult[]>([]);
-  const [pbs, setPbs] = useState<PBResult[]>([]);
+  const [records, setRecords] = useState<RecordResult[]>([]);
   const [firstTimes, setFirstTimes] = useState<FirstTimeResult[]>([]);
   const [stretchWorkout, setStretchWorkout] = useState<{ id: string; name: string } | null>(null);
   const [sessionNote, setSessionNote] = useState('');
@@ -162,8 +201,10 @@ export function SessionCompleteScreen({
       ] = await Promise.all([
         supabase
           .from('session_logs')
-          .select('workout_exercise_id, set_number, weight_kg, reps_completed')
+          // Warm-ups never count towards a record (Vitek: "warm up set we don't count").
+          .select('workout_exercise_id, set_number, weight_kg, reps_completed, is_warmup')
           .eq('session_id', sessionId)
+          .not('is_warmup', 'eq', true)
           .not('is_removed', 'eq', true),
         supabase
           .from('sessions')
@@ -212,6 +253,14 @@ export function SessionCompleteScreen({
         weAll = data ?? [];
       }
       const weToEx      = new Map(weAll.map((w: any) => [w.id as string, w.exercise_id as string]));
+      const workoutNameById = new Map<string, string>();
+      {
+        const ids = [...new Set(weAll.map((w: any) => w.workout_id as string).filter(Boolean))];
+        if (ids.length) {
+          const { data: wn } = await supabase.from('workouts').select('id, name').in('id', ids);
+          (wn ?? []).forEach((w: any) => workoutNameById.set(w.id, w.name ?? 'Workout'));
+        }
+      }
       const weToWorkout = new Map(weAll.map((w: any) => [w.id as string, w.workout_id as string]));
       const allWeIds    = weAll.map((w: any) => w.id as string);
 
@@ -222,6 +271,7 @@ export function SessionCompleteScreen({
           .select('workout_exercise_id, weight_kg, reps_completed, session_id')
           .in('workout_exercise_id', allWeIds)
           .not('weight_kg', 'is', null)
+          .not('is_warmup', 'eq', true)
           .not('is_removed', 'eq', true)
           .neq('session_id', sessionId);
         histLogs = data ?? [];
@@ -242,6 +292,7 @@ export function SessionCompleteScreen({
         histSess = data ?? [];
       }
       const sessRank = new Map(histSess.map((x: any, i: number) => [x.id as string, i]));
+      const sessDate = new Map(histSess.map((x: any) => [x.id as string, x.date as string]));
 
       // Position of an exercise within its workout (1-based over ACTIVE rows, in
       // order_index order) — same weight done 3rd instead of 1st is not the same
@@ -278,6 +329,11 @@ export function SessionCompleteScreen({
         }
       });
 
+      // Best per exercise IN THIS WORKOUT, and best anywhere — the two scopes.
+      const todayWorkoutId = isFreeSession ? null : workoutId;
+      const bestThisWorkout = new Map<string, { weight: number; reps: number; weId: string; sessionId: string }>();
+      const bestEver        = new Map<string, { weight: number; reps: number; weId: string; sessionId: string }>();
+
       // Last time + all-time best, per exercise.
       const lastByEx    = new Map<string, { weight: number; reps: number; weId: string; rank: number }>();
       const allTimeByEx = new Map<string, number>();
@@ -286,6 +342,16 @@ export function SessionCompleteScreen({
         if (!exId) return;
         const best = allTimeByEx.get(exId) ?? 0;
         if (l.weight_kg > best) allTimeByEx.set(exId, l.weight_kg);
+
+        // Scope bests. `bestEver` spans every workout; `bestThisWorkout` only rows that
+        // belong to the workout being performed now.
+        const cand = { weight: l.weight_kg as number, reps: (l.reps_completed ?? 0) as number, weId: l.workout_exercise_id as string, sessionId: l.session_id as string };
+        const be = bestEver.get(exId);
+        if (!be || cand.weight > be.weight || (cand.weight === be.weight && cand.reps > be.reps)) bestEver.set(exId, cand);
+        if (weToWorkout.get(l.workout_exercise_id) === todayWorkoutId) {
+          const bw = bestThisWorkout.get(exId);
+          if (!bw || cand.weight > bw.weight || (cand.weight === bw.weight && cand.reps > bw.reps)) bestThisWorkout.set(exId, cand);
+        }
 
         const rank = sessRank.get(l.session_id);
         if (rank == null) return; // not a completed session
@@ -300,7 +366,7 @@ export function SessionCompleteScreen({
       const imps: ExerciseResult[] = [];
       const regs: ExerciseResult[] = [];
       const firsts: FirstTimeResult[] = [];
-      const pbList: PBResult[] = [];
+      const records: RecordResult[] = [];
 
       for (const [exId, today] of todayByEx) {
         const name = weNameMap.get(today.weId) ?? 'Exercise';
@@ -336,12 +402,39 @@ export function SessionCompleteScreen({
           regs.push({ ...base, delta: last.reps - today.reps, deltaType: 'reps' });
         }
 
-        // A personal best is measured against the ALL-TIME max for the exercise,
-        // not against last time — so beating last week but not your best is an
-        // improvement, never a PB.
-        const allTime = allTimeByEx.get(exId) ?? 0;
-        if (today.weight > allTime) {
-          pbList.push({ ...base, delta: today.weight - last.weight, deltaType: 'kg', pbDelta: today.weight - allTime });
+        // ── Records, in two scopes ───────────────────────────────────────────
+        // Measured against the BEST, never against last time — beating last week but
+        // not your best is an improvement, not a record.
+        const everBest = bestEver.get(exId);
+        const wkBest   = bestThisWorkout.get(exId);
+        const beatsEver    = !everBest || today.weight > everBest.weight;
+        const beatsWorkout = !!wkBest && today.weight > wkBest.weight;
+
+        if (beatsEver || beatsWorkout) {
+          const beaten = beatsEver ? everBest : wkBest;
+          const standing = (!beatsEver && everBest)
+            ? {
+                weight: everBest.weight,
+                reps: everBest.reps,
+                date: sessDate.get(everBest.sessionId) ?? '',
+                workoutName: workoutNameById.get(weToWorkout.get(everBest.weId) ?? '') ?? 'another workout',
+                position: positionOf.get(everBest.weId) ?? null,
+              }
+            : null;
+          records.push({
+            workoutExerciseId: today.weId,
+            exerciseName: name,
+            weight: today.weight,
+            reps: today.reps,
+            scope: beatsEver ? 'ever' : 'workout',
+            standingBest: standing,
+            todayPosition: todayPos,
+            beatenPosition: beaten ? (positionOf.get(beaten.weId) ?? null) : null,
+            // A record set with fewer reps than the number it beat is real but not
+            // clean — Vitek wants it said out loud, with the nudge attached.
+            repsDropped: !!beaten && today.reps > 0 && beaten.reps > 0 && today.reps < beaten.reps,
+            prevReps: beaten ? beaten.reps : null,
+          });
         }
       }
 
@@ -370,6 +463,8 @@ export function SessionCompleteScreen({
       let g: string;
       if (isFirstSession) {
         g = `First one's in the books, ${clientName}!`;
+      } else if (records.length > 0) {
+        g = records.some(r => r.scope === 'ever') ? `New best ever, ${clientName}!` : `Record day, ${clientName}!`;
       } else if (firsts.length > 0 && imps.length === 0 && regs.length === 0) {
         g = `New ground today, ${clientName}!`;
       } else if (imps.length > 0 && regs.length === 0) {
@@ -381,9 +476,12 @@ export function SessionCompleteScreen({
       }
 
       setGreeting(g);
-      setImprovements(imps);
+      // A record is already the louder version of "you did better" — showing the same
+      // exercise in both cards reads as two separate achievements.
+      const recordIds = new Set(records.map(r => r.workoutExerciseId));
+      setImprovements(imps.filter(i => !recordIds.has(i.workoutExerciseId)));
       setRegressions(regs);
-      setPbs(pbList);
+      setRecords(records);
       setFirstTimes(firsts);
       setStretchWorkout(stretch);
     } finally {
@@ -476,21 +574,46 @@ export function SessionCompleteScreen({
                 </View>
               </View>
 
-              {/* Personal bests */}
-              {pbs.length > 0 && (
+              {/* Records — two scopes. 'ever' beats everything; 'workout' beats this
+                  workout's own history while a bigger number still stands elsewhere. */}
+              {records.length > 0 && (
                 <View style={s.card}>
                   <View style={s.cardHeader}>
-                    <Text style={s.cardHeaderText}>🏆 PERSONAL BESTS TODAY</Text>
+                    <Text style={s.cardHeaderText}>🏆 RECORDS TODAY</Text>
                   </View>
-                  {pbs.map((pb, i) => (
-                    <View key={pb.workoutExerciseId} style={[s.row, i < pbs.length - 1 && s.rowBorder]}>
-                      <Text style={s.rowName}>{pb.exerciseName}</Text>
-                      <View style={s.rowRight}>
-                        <Text style={s.rowSetDetail}>{pb.maxReps} × {pb.maxWeight % 1 === 0 ? pb.maxWeight : pb.maxWeight.toFixed(1)} kg</Text>
-                        <Text style={s.rowDeltaUp}>↑ {formatDelta(pb)}</Text>
+                  {records.map((r, i) => (
+                    <View key={r.workoutExerciseId} style={[s.row, i < records.length - 1 && s.rowBorder]}>
+                      <View style={s.rowLeft}>
+                        <Text style={s.rowName}>{r.exerciseName}</Text>
+                        <Text style={s.rowSetSubtitle}>{setLabel(r.weight, r.reps)}</Text>
+                        {/* Position only when it moved — a record set from an easier slot
+                            is a different claim from one set in the same place. */}
+                        {r.todayPosition != null && r.beatenPosition != null && r.todayPosition !== r.beatenPosition && (
+                          <Text style={s.rowContext}>
+                            did it {ordinal(r.todayPosition)} instead of {ordinal(r.beatenPosition)}
+                          </Text>
+                        )}
+                        {/* The bigger number that still stands, so a workout record is
+                            never mistaken for an all-time one. */}
+                        {r.scope === 'workout' && !!r.standingBest && (
+                          <Text style={s.rowContext}>
+                            your best is still {setLabel(r.standingBest.weight, r.standingBest.reps)}
+                            {r.standingBest.date ? ` · ${formatShortDate(r.standingBest.date)}` : ''}
+                            {` · ${r.standingBest.workoutName}`}
+                            {r.standingBest.position != null ? ` (${ordinal(r.standingBest.position)})` : ''}
+                          </Text>
+                        )}
                       </View>
+                      <Text style={s.rowDeltaUp}>{r.scope === 'ever' ? 'BEST EVER' : 'WORKOUT PB'}</Text>
                     </View>
                   ))}
+                  {/* More weight, fewer reps: a record, but worth naming so it isn't read
+                      as pure progress. Vitek's wording. */}
+                  {records.some(r => r.repsDropped) && (
+                    <Text style={s.motiveLine}>
+                      More weight lifted, fewer reps done. You might be the same strong — try more reps at that weight next time to keep improving.
+                    </Text>
+                  )}
                 </View>
               )}
 
@@ -505,7 +628,7 @@ export function SessionCompleteScreen({
                     <View key={ft.workoutExerciseId} style={[s.row, i < firstTimes.length - 1 && s.rowBorder]}>
                       <Text style={s.rowName}>{ft.exerciseName}</Text>
                       <View style={s.rowRight}>
-                        <Text style={s.rowSetDetail}>{ft.maxReps} × {ft.maxWeight % 1 === 0 ? ft.maxWeight : ft.maxWeight.toFixed(1)} kg</Text>
+                        <Text style={s.rowSetDetail}>{setLabel(ft.maxWeight, ft.maxReps)}</Text>
                         <Text style={s.rowDeltaUp}>NEW</Text>
                       </View>
                     </View>
@@ -554,7 +677,7 @@ export function SessionCompleteScreen({
               )}
 
               {/* Empty state */}
-              {improvements.length === 0 && regressions.length === 0 && pbs.length === 0 && (
+              {improvements.length === 0 && regressions.length === 0 && records.length === 0 && firstTimes.length === 0 && (
                 <View style={s.card}>
                   <Text style={s.emptyStateText}>Consistency is the foundation. Keep showing up — that's how progress is made.</Text>
                 </View>
