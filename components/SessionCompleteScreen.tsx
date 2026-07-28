@@ -464,7 +464,7 @@ export function SessionCompleteScreen({
       if (isFirstSession) {
         g = `First one's in the books, ${clientName}!`;
       } else if (records.length > 0) {
-        g = records.some(r => r.scope === 'ever') ? `New best ever, ${clientName}!` : `Record day, ${clientName}!`;
+        g = records.some(r => r.scope === 'ever') ? `New heaviest ever, ${clientName}!` : `Record day, ${clientName}!`;
       } else if (firsts.length > 0 && imps.length === 0 && regs.length === 0) {
         g = `New ground today, ${clientName}!`;
       } else if (imps.length > 0 && regs.length === 0) {
@@ -579,7 +579,7 @@ export function SessionCompleteScreen({
               {records.length > 0 && (
                 <View style={s.card}>
                   <View style={s.cardHeader}>
-                    <Text style={s.cardHeaderText}>🏆 RECORDS TODAY</Text>
+                    <Text style={s.cardHeaderText}>🏆 WEIGHT RECORDS TODAY</Text>
                   </View>
                   {records.map((r, i) => (
                     <View key={r.workoutExerciseId} style={[s.row, i < records.length - 1 && s.rowBorder]}>
@@ -597,14 +597,14 @@ export function SessionCompleteScreen({
                             never mistaken for an all-time one. */}
                         {r.scope === 'workout' && !!r.standingBest && (
                           <Text style={s.rowContext}>
-                            your best is still {setLabel(r.standingBest.weight, r.standingBest.reps)}
+                            your heaviest is still {setLabel(r.standingBest.weight, r.standingBest.reps)}
                             {r.standingBest.date ? ` · ${formatShortDate(r.standingBest.date)}` : ''}
                             {` · ${r.standingBest.workoutName}`}
                             {r.standingBest.position != null ? ` (${ordinal(r.standingBest.position)})` : ''}
                           </Text>
                         )}
                       </View>
-                      <Text style={s.rowDeltaUp}>{r.scope === 'ever' ? 'BEST EVER' : 'WORKOUT PB'}</Text>
+                      <Text style={s.rowDeltaUp}>{r.scope === 'ever' ? 'HEAVIEST EVER' : 'WORKOUT BEST'}</Text>
                     </View>
                   ))}
                   {/* More weight, fewer reps: a record, but worth naming so it isn't read
@@ -622,7 +622,7 @@ export function SessionCompleteScreen({
               {firstTimes.length > 0 && (
                 <View style={s.card}>
                   <View style={s.cardHeader}>
-                    <Text style={s.cardHeaderText}>⭐ FIRST TIME — NEW RECORD</Text>
+                    <Text style={s.cardHeaderText}>⭐ FIRST TIME LIFTED</Text>
                   </View>
                   {firstTimes.map((ft, i) => (
                     <View key={ft.workoutExerciseId} style={[s.row, i < firstTimes.length - 1 && s.rowBorder]}>
@@ -640,7 +640,7 @@ export function SessionCompleteScreen({
               {improvements.length > 0 && (
                 <View style={s.card}>
                   <View style={s.cardHeader}>
-                    <Text style={s.cardHeaderText}>💪 WHAT YOU DID BETTER TODAY</Text>
+                    <Text style={s.cardHeaderText}>💪 BETTER THAN LAST TIME</Text>
                   </View>
                   {improvements.map((imp, i) => (
                     <View key={imp.workoutExerciseId} style={[s.row, i < improvements.length - 1 && s.rowBorder]}>
@@ -660,7 +660,7 @@ export function SessionCompleteScreen({
               {regressions.length > 0 && (
                 <View style={s.card}>
                   <View style={s.cardHeader}>
-                    <Text style={s.cardHeaderText}>😅 WHAT WAS A BIT TOUGHER TODAY</Text>
+                    <Text style={s.cardHeaderText}>😅 TOUGHER THAN LAST TIME</Text>
                   </View>
                   {regressions.map((reg, i) => (
                     <View key={reg.workoutExerciseId} style={[s.row, i < regressions.length - 1 && s.rowBorder]}>
