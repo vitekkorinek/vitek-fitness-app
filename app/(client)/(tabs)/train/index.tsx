@@ -198,7 +198,7 @@ type WeekSession = {
   workoutName: string | null;
   coverImageUrl: string | null;
   category: string | null;
-  status: 'completed' | 'scheduled';
+  status: 'completed' | 'scheduled' | 'in_progress';
   exerciseNames: string[];
 };
 
@@ -345,7 +345,10 @@ export default function TrainTabScreen() {
       .from('sessions')
       .select('id, date, created_at, workout_id, duration_seconds, status, workouts(name, cover_image_url, category)')
       .eq('client_id', profile.id)
-      .in('status', ['completed', 'scheduled'])
+      // 'in_progress' MUST be here: starting a planned session converts that very row
+      // to in_progress, so leaving it out made a running-but-unfinished session vanish
+      // from its day entirely — neither planned nor done, with no way back into it.
+      .in('status', ['completed', 'scheduled', 'in_progress'])
       .gte('date', dates[0])
       .lte('date', dates[6]);
     const exMap = await fetchExerciseNames(
@@ -830,7 +833,9 @@ export default function TrainTabScreen() {
   const daySessions = weekSessions
     .filter(s => s.date === selectedDate)
     .sort((a, b) => {
-      if (a.status !== b.status) return a.status === 'completed' ? -1 : 1;
+      // completed (done) → in progress (live) → planned (not started).
+      const rank = (s: WeekSession) => (s.status === 'completed' ? 0 : s.status === 'in_progress' ? 1 : 2);
+      if (rank(a) !== rank(b)) return rank(a) - rank(b);
       return (a.created_at ?? '').localeCompare(b.created_at ?? '');
     });
 
@@ -883,6 +888,14 @@ export default function TrainTabScreen() {
                 //                               when it's a past day, review-only today)
                 const base = `/(client)/workout/${id}`;
                 let url = base;
+                // A session that is still running opens PLAIN: no viewOnly, no preview
+                // params. Do Mode's load() then adopts the open in_progress row and
+                // replays the draft, so the client lands back in the live session with
+                // their weights intact — the same place the header timer chip goes.
+                if (opts?.running) {
+                  router.push(base as any);
+                  return;
+                }
                 if (opts?.planned) {
                   if (opts.date && opts.date > todayStr) url = `${base}?previewLocked=1&plannedDate=${opts.date}`;
                 } else if (opts?.date) {
@@ -1561,7 +1574,7 @@ interface WeeklyGaugeCardProps {
   daySessions: WeekSession[];
   sessionDetails: Record<string, SessionDetail>;
   onStartSession: () => void;
-  onOpenSession: (workoutId: string, opts?: { date?: string; planned?: boolean }) => void;
+  onOpenSession: (workoutId: string, opts?: { date?: string; planned?: boolean; running?: boolean }) => void;
   screenWidth: number;
   weekOffset: number;
   onOpenCalendar: () => void;
@@ -1679,7 +1692,9 @@ function WeeklyGaugeCard({
                 const isToday    = dateStr === todayStr;
                 const isSelected = dateStr === selectedDate;
                 const dayCompleted = weekSessions.some(s => s.date === dateStr && s.status === 'completed');
-                const dayPlanned   = weekSessions.some(s => s.date === dateStr && s.status === 'scheduled');
+                // A running session marks its day too — otherwise the day reads empty
+                // while a session is open on it.
+                const dayPlanned   = weekSessions.some(s => s.date === dateStr && (s.status === 'scheduled' || s.status === 'in_progress'));
                 return (
                   <TouchableOpacity
                     key={dateStr}
@@ -1720,7 +1735,35 @@ function WeeklyGaugeCard({
           {/* A day can hold more than one session (e.g. morning + evening) — stack them,
               completed first (earlier on top), planned last. */}
           {daySessions.map((session) => (
-            session.status === 'scheduled' ? (
+            session.status === 'in_progress' ? (
+              /* Running but not finished — the client left Do Mode without finishing.
+                 Tapping goes straight back in and adopts the row, exactly like the
+                 timer chip in the header does. Without this card the session is
+                 invisible on its own day and the work looks lost. */
+              <View key={session.id} style={[gcStyles.sessCardOuter, footerDark && darkCardStyles.outerBg]}>
+                <View style={[gcStyles.sessCard, footerDark && darkCardStyles.inner]}>
+                  <TouchableOpacity
+                    activeOpacity={0.88}
+                    onPress={() => session.workout_id && onOpenSession(session.workout_id, { running: true })}
+                  >
+                    <WorkoutPaperCover
+                      category={session.category}
+                      exerciseNames={session.exerciseNames}
+                      size="strip"
+                    />
+                  </TouchableOpacity>
+                  <View style={[gcStyles.hlWrap, footerDark && darkCardStyles.footerBg]}>
+                    <View style={gcStyles.hlRow}>
+                      <Text style={[gcStyles.sessFooterName, footerDark && darkCardStyles.textOnDark, fd(700)]} numberOfLines={1}>{session.workoutName ?? 'Session'}</Text>
+                      <View style={gcStyles.runningBadge}><Text style={[gcStyles.plannedBadgeText, ft(700)]}>IN PROGRESS</Text></View>
+                      <TouchableOpacity onPress={() => onShowSessionMenu(session)} hitSlop={8} activeOpacity={0.5}>
+                        <SymbolView name="ellipsis" size={15} tintColor={footerDark ? DARK_MUTED_ICON : '#bbb'} />
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                </View>
+              </View>
+            ) : session.status === 'scheduled' ? (
               /* Planned (scheduled) session — not performed. The client logs it for real on the day. */
               <View key={session.id} style={[gcStyles.sessCardOuter, footerDark && darkCardStyles.outerBg]}>
                 <View style={[gcStyles.sessCard, footerDark && darkCardStyles.inner]}>
@@ -1881,6 +1924,8 @@ const gcStyles = StyleSheet.create({
   checkBadge:     { position: 'absolute', top: 8, right: 8, width: 18, height: 18, borderRadius: 9, backgroundColor: '#24ac88', alignItems: 'center', justifyContent: 'center' },
   checkMark:      { fontSize: 10, color: '#fff', fontWeight: '700', lineHeight: 14 },
   plannedBadge:   { borderRadius: 100, backgroundColor: '#f5a623', paddingHorizontal: 8, paddingVertical: 3, marginRight: 10, flexShrink: 0 },
+  // ACCENT, not the planned amber — a live session is the app's "now" state.
+  runningBadge:   { borderRadius: 100, backgroundColor: ACCENT, paddingHorizontal: 8, paddingVertical: 3, marginRight: 10, flexShrink: 0 },
   plannedBadgeText: { fontSize: 8, fontWeight: '800', color: '#fff', letterSpacing: 0.5 },
   sessFooterName: { flex: 1, fontSize: 15, fontWeight: '700', color: '#1a1a1a' },
   // paddingVertical 4 (not 8) — matches the mini gallery card's wBody, so a week-strip

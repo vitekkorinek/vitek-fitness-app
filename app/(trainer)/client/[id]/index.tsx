@@ -961,7 +961,7 @@ type StripSession = {
   id: string;
   date: string;
   createdAt: string | null;
-  status: 'completed' | 'scheduled';
+  status: 'completed' | 'scheduled' | 'in_progress';
   workoutId: string | null;
   workoutName: string | null;
   coverImageUrl: string | null;
@@ -1124,7 +1124,9 @@ function TrainingTab({
       .from('sessions')
       .select('id, date, created_at, status, workout_id, workouts(name, cover_image_url, category)')
       .eq('client_id', clientId)
-      .in('status', ['completed', 'scheduled'])
+      // 'in_progress' included so a session the client has STARTED but not finished
+      // still shows on its day. Without it the day reads empty while they're training.
+      .in('status', ['completed', 'scheduled', 'in_progress'])
       .gte('date', rangeStart)
       .lte('date', rangeEnd);
     setStripSessions(
@@ -1132,7 +1134,7 @@ function TrainingTab({
         id: s.id,
         date: s.date,
         createdAt: s.created_at ?? null,
-        status: s.status as 'completed' | 'scheduled',
+        status: s.status as 'completed' | 'scheduled' | 'in_progress',
         workoutId: s.workout_id ?? null,
         workoutName: s.workouts?.name ?? null,
         coverImageUrl: s.workouts?.cover_image_url ?? null,
@@ -1490,7 +1492,9 @@ function TrainingTab({
             daySessions={stripSessions
               .filter(s => s.date === selectedDate)
               .sort((a, b) => {
-                if (a.status !== b.status) return a.status === 'completed' ? -1 : 1;
+                // completed (done) → in progress (live) → planned (not started).
+                const rank = (s: StripSession) => (s.status === 'completed' ? 0 : s.status === 'in_progress' ? 1 : 2);
+                if (rank(a) !== rank(b)) return rank(a) - rank(b);
                 return (a.createdAt ?? '').localeCompare(b.createdAt ?? '');
               })}
             details={dayDetails}
@@ -2126,7 +2130,36 @@ function WeekStripCard({
       {/* Session cards — a day can hold more than one (morning + evening); stack them,
           completed first (earlier on top), planned last. */}
       {daySessions.map((session) => (
-        session.status === 'scheduled' ? (
+        session.status === 'in_progress' ? (
+          /* The client has STARTED this and not finished it. Opens VIEW-ONLY on
+             purpose: trainer Do Mode adopts an open in_progress row, so a normal tap
+             would join the client's live session on this device — and a Finish here
+             would end their workout and save this screen over it. Nothing they are
+             typing is visible yet either: weights/reps stay on their phone until they
+             press Finish (only notes and photos save as they go). */
+          <View key={session.id} style={[wsStyles.sessCardOuter, footerDark && darkCardStyles.bg]}>
+            <TouchableOpacity
+              style={[wsStyles.sessCardInner, footerDark && darkCardStyles.bg]}
+              onPress={() => session.workoutId
+                ? router.push(`/(trainer)/client/${clientId}/workout/${session.workoutId}?viewOnly=1` as any)
+                : undefined}
+              activeOpacity={0.88}
+            >
+              <WorkoutPaperCover category={session.category} workoutId={session.workoutId} size="strip" />
+              <View style={wsStyles.sessionHighlights}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                  <Text style={[wsStyles.sessFooterName, footerDark && darkCardStyles.textOnDark, fd(700)]} numberOfLines={1}>{session.workoutName ?? 'Session'}</Text>
+                  <View style={wsStyles.runningBadge}>
+                    <Text style={[wsStyles.runningText, ft(700)]}>IN PROGRESS</Text>
+                  </View>
+                  <TouchableOpacity onPress={() => onScheduledMenu(session)} hitSlop={8} activeOpacity={0.5}>
+                    <SymbolView name="ellipsis" size={15} tintColor={footerDark ? DARK_MUTED_ICON : '#bbb'} />
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </TouchableOpacity>
+          </View>
+        ) : session.status === 'scheduled' ? (
           /* Scheduled session — standalone card below strip */
           <View key={session.id} style={[wsStyles.sessCardOuter, footerDark && darkCardStyles.bg]}>
             <TouchableOpacity
@@ -2349,7 +2382,10 @@ function ScheduledSessionMenu({
   onClose,
 }: {
   workoutName: string;
-  status: 'scheduled' | 'completed';
+  // 'in_progress' shows the same rows as a completed session — notably NOT "Edit
+  // workout", which is gated to 'scheduled': editing the program under a client who
+  // is mid-session would change the workout beneath them.
+  status: 'scheduled' | 'completed' | 'in_progress';
   onViewDetails: () => void;
   onEditWorkout: () => void;
   onMove: () => void;
@@ -4877,6 +4913,10 @@ const wsStyles = StyleSheet.create({
   // 'light' style's dark footer.
   notYetBadge:       { backgroundColor: 'rgba(0,0,0,0.06)', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 5 },
   notYetText:        { fontSize: 12, fontWeight: '600', color: '#8a8a86' },
+  // A live session is the app's "now" state — filled ACCENT, not the quiet grey the
+  // not-yet-done badge uses. Same geometry so the two cards line up.
+  runningBadge:      { backgroundColor: ACCENT, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 5 },
+  runningText:       { fontSize: 11, fontWeight: '700', color: '#fff', letterSpacing: 0.4 },
   notYetBadgeOnDark: { backgroundColor: 'rgba(255,255,255,0.16)' },
   notYetTextOnDark:  { color: 'rgba(255,255,255,0.85)' },
 });

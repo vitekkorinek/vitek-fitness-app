@@ -23,6 +23,15 @@ export type SessionDraft = {
   activeSessionId: string | null;
   startedAt: number | null;
   savedAt: number;
+  /**
+   * The running row was CONVERTED from a trainer-planned (`scheduled`) session
+   * rather than inserted for this session. Discard must then put it back to
+   * `scheduled` instead of deleting it — deleting destroys the trainer's plan.
+   * Persisted here so it survives the app being reclaimed mid-session.
+   */
+  fromPlan?: boolean;
+  /** The planned session's original date, restored on discard. */
+  planDate?: string | null;
   /** Full snapshot of the Do Mode `exercises` array (plain JSON — no class instances). */
   exercises: any[];
   barbellWeights: [string, number][];

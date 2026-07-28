@@ -645,6 +645,12 @@ export default function TrainerWorkoutSessionScreen() {
   const [exercisePhotos, setExercisePhotos] = useState<Map<string, string[]>>(new Map());
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const activeSessionIdRef = useRef<string | null>(null);
+  // The running row was CONVERTED from a planned `scheduled` session, not inserted for
+  // this session — so "Discard session" must put it BACK to scheduled instead of
+  // deleting it. Deleting wipes the plan off that day, which is a separate action
+  // (⋯ → delete workout).
+  const sessionFromPlanRef = useRef(false);
+  const sessionPlanDateRef = useRef<string | null>(null);
   const startedAtRef = useRef(startedAt);
   startedAtRef.current = startedAt;
   // Long-press on the banner photo → view it full-screen, uncropped (tap to close)
@@ -880,7 +886,7 @@ export default function TrainerWorkoutSessionScreen() {
       // An in_progress row means this session was left running (back-swipe, "Leave —
       // keep it running", or the app being reclaimed by iOS). Adopt it instead of
       // starting a second one, so FINISH completes the row that's already there.
-      supabase.from('sessions').select('id, created_at').eq('client_id', clientId).eq('workout_id', workoutId)
+      supabase.from('sessions').select('id, created_at, date').eq('client_id', clientId).eq('workout_id', workoutId)
         .eq('status', 'in_progress').order('created_at', { ascending: false }).limit(1).maybeSingle(),
       loadSessionDraft(clientId, workoutId),
     ]);
@@ -899,9 +905,13 @@ export default function TrainerWorkoutSessionScreen() {
     // start time and FINISH completes THAT row instead of inserting a duplicate.
     // Only today's row counts — a forgotten in_progress row from a previous day
     // must not silently resume with a multi-day elapsed timer.
-    const liveIsToday = (liveSess as any)?.created_at
-      ? new Date((liveSess as any).created_at).toDateString() === new Date().toDateString()
-      : false;
+    // ⚠️ Gate on the session's `date`, NEVER on `created_at`. A PLANNED session keeps
+    // the created_at of the day the plan was made — performing it only flips status +
+    // date — so a created_at test made every planned session fail to adopt: the running
+    // row was abandoned, the draft never replayed, and the logged weights/reps were
+    // wiped on any mid-session reload. `date` is what the conversion sets to today.
+    const todayDateStr = new Date().toISOString().split('T')[0];
+    const liveIsToday = ((liveSess as any)?.date ?? null) === todayDateStr;
     const liveSessionId = !isViewOnly && liveIsToday ? (liveSess as any).id as string : null;
     if (liveSessionId && !resumeSessionId) {
       activeSessionIdRef.current = liveSessionId;
@@ -909,7 +919,12 @@ export default function TrainerWorkoutSessionScreen() {
       setBridgeActiveSessionId(liveSessionId);
       // Always re-point the store at THIS session — the running timer may belong to
       // a different workout that was left open.
-      const resumedStart = draft?.startedAt ?? new Date((liveSess as any).created_at).getTime();
+      // created_at is only a sane clock start for a row THIS session created; a
+      // converted plan carries the planning date and would show a multi-day timer.
+      const liveCreatedMs = (liveSess as any).created_at ? new Date((liveSess as any).created_at).getTime() : NaN;
+      const createdToday = Number.isFinite(liveCreatedMs)
+        && new Date(liveCreatedMs).toISOString().split('T')[0] === todayDateStr;
+      const resumedStart = draft?.startedAt ?? (createdToday ? liveCreatedMs : Date.now());
       resumeSession(workoutId, resumedStart);
     }
     // The draft only belongs to a session that is still open — never replay an old
@@ -921,6 +936,11 @@ export default function TrainerWorkoutSessionScreen() {
     if (activeDraft) {
       barbellWeightsRef.current = new Map(activeDraft.barbellWeights ?? []);
       machineBrandsRef.current = new Map(activeDraft.machineBrands ?? []);
+      // Carry the plan origin across an app restart so discard still restores the plan.
+      if (activeDraft.fromPlan) {
+        sessionFromPlanRef.current = true;
+        sessionPlanDateRef.current = activeDraft.planDate ?? null;
+      }
     }
 
     const weIds = (weData as any[]).map(we => we.id);
@@ -1462,6 +1482,8 @@ export default function TrainerWorkoutSessionScreen() {
         activeSessionId: activeSessionIdRef.current,
         startedAt: startedAt ?? null,
         savedAt: Date.now(),
+        fromPlan: sessionFromPlanRef.current,
+        planDate: sessionPlanDateRef.current,
         exercises,
         barbellWeights: Array.from(barbellWeightsRef.current.entries()),
         machineBrands: Array.from(machineBrandsRef.current.entries()),
@@ -2358,7 +2380,7 @@ export default function TrainerWorkoutSessionScreen() {
     if (!isFreeSession && workoutId) {
       const { data: sched } = await supabase
         .from('sessions')
-        .select('id')
+        .select('id, date')
         .eq('client_id', clientId)
         .eq('workout_id', workoutId)
         .eq('status', 'scheduled')
@@ -2375,6 +2397,9 @@ export default function TrainerWorkoutSessionScreen() {
           .single();
         if (upd) {
           activeSessionIdRef.current = (upd as any).id;
+          // Remember that this row IS the plan, so discarding restores it.
+          sessionFromPlanRef.current = true;
+          sessionPlanDateRef.current = (sched as any).date ?? null;
           setActiveSessionId((upd as any).id);
           setBridgeActiveSessionId((upd as any).id);
           return;
@@ -3189,7 +3214,18 @@ export default function TrainerWorkoutSessionScreen() {
   };
 
   const saveSession = async () => {
-    if (!clientId) return;
+    // A bare `return` here made Finish do NOTHING — no error, no modal, no navigation
+    // — if the profile hadn't rehydrated yet (e.g. after iOS reclaimed the app during
+    // a long session). Indistinguishable from a dead button. Say so instead.
+    if (!clientId) {
+      setConfirmModal({
+        title: "Couldn't save the session",
+        message: 'You appear to be signed out. Everything you logged is still here — check your connection and try Finish again.',
+        actions: [{ text: 'Try again', primary: true, onPress: async () => { await saveSessionRef.current(); } }],
+        cancelText: 'Back to session',
+      });
+      return;
+    }
     const duration = startedAt ? Math.floor((Date.now() - startedAt) / 1000) : null;
     const today = new Date().toISOString().split('T')[0];
     let completedSessionId: string | null = null;
@@ -3521,9 +3557,24 @@ export default function TrainerWorkoutSessionScreen() {
             text: 'Discard session',
             danger: true,
             onPress: async () => {
-              if (activeSessionIdRef.current ?? activeSessionId) {
-                await supabase.from('sessions').delete().eq('id', (activeSessionIdRef.current ?? activeSessionId)!);
+              const sid = activeSessionIdRef.current ?? activeSessionId;
+              if (sid) {
+                // Throw away what this session produced...
+                await supabase.from('session_logs').delete().eq('session_id', sid);
+                if (sessionFromPlanRef.current) {
+                  // ...but this row IS the planned session. Put it back to 'scheduled'
+                  // on its original day rather than deleting it — discarding an attempt
+                  // must never wipe the plan off the calendar.
+                  await supabase
+                    .from('sessions')
+                    .update({ status: 'scheduled', duration_seconds: null, ...(sessionPlanDateRef.current ? { date: sessionPlanDateRef.current } : {}) })
+                    .eq('id', sid);
+                } else {
+                  await supabase.from('sessions').delete().eq('id', sid);
+                }
               }
+              sessionFromPlanRef.current = false;
+              sessionPlanDateRef.current = null;
               void clearSessionDraft(clientId, isFreeSession ? 'free' : workoutId!);
               clearSuspendedSession();
               finishSession();
