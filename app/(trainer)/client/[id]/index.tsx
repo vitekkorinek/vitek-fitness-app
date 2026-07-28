@@ -2131,17 +2131,22 @@ function WeekStripCard({
           completed first (earlier on top), planned last. */}
       {daySessions.map((session) => (
         session.status === 'in_progress' ? (
-          /* The client has STARTED this and not finished it. Opens VIEW-ONLY on
-             purpose: trainer Do Mode adopts an open in_progress row, so a normal tap
-             would join the client's live session on this device — and a Finish here
-             would end their workout and save this screen over it. Nothing they are
-             typing is visible yet either: weights/reps stay on their phone until they
-             press Finish (only notes and photos save as they go). */
+          /* Started and not finished. Tapping RESUMES it — opens Do Mode plain so
+             load() adopts the running row and replays the draft.
+             ⚠️ This was briefly `?viewOnly=1` (July 28 2026) to stop the trainer
+             joining a session the CLIENT is running on their own phone. Reverted the
+             same day: the trainer runs sessions on his OWN phone as the normal case,
+             so view-only broke his main workflow — and worse, the view-only screen
+             still offers "Leave view-only and start session?", which inserts a SECOND
+             in_progress row because adoption was skipped. Vitek hit exactly that:
+             *"the session looked not started … also it allowed me to start the session
+             and add weights."* The duplicate is now blocked at the source instead —
+             `createInProgressSession` adopts an existing open row before inserting. */
           <View key={session.id} style={[wsStyles.sessCardOuter, footerDark && darkCardStyles.bg]}>
             <TouchableOpacity
               style={[wsStyles.sessCardInner, footerDark && darkCardStyles.bg]}
               onPress={() => session.workoutId
-                ? router.push(`/(trainer)/client/${clientId}/workout/${session.workoutId}?viewOnly=1` as any)
+                ? router.push(`/(trainer)/client/${clientId}/workout/${session.workoutId}` as any)
                 : undefined}
               activeOpacity={0.88}
             >

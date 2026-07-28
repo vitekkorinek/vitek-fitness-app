@@ -2715,6 +2715,31 @@ export default function TrainerWorkoutSessionScreen() {
       }
     }
 
+    // ⚠️ LAST LINE OF DEFENCE AGAINST A DUPLICATE SESSION. `load()` normally adopts an
+    // open row, but any path that skipped adoption would land here with a null ref and
+    // insert a SECOND in_progress row for the same workout on the same day. Adopt
+    // whatever is already open first. Skipped for a deliberate past-day log, which is
+    // allowed to start its own row.
+    if (!isFreeSession && workoutId && !pendingLogDate) {
+      const { data: openRow } = await supabase
+        .from('sessions')
+        .select('id')
+        .eq('client_id', clientId)
+        .eq('workout_id', workoutId)
+        .eq('status', 'in_progress')
+        .eq('date', logDate)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (openRow) {
+        console.log('[session] adopting existing in_progress instead of inserting:', (openRow as any).id);
+        activeSessionIdRef.current = (openRow as any).id;
+        setActiveSessionId((openRow as any).id);
+        setBridgeActiveSessionId((openRow as any).id);
+        return;
+      }
+    }
+
     console.log('[session] creating in_progress: workout_id=', workoutId, 'client_id=', clientId, 'date=', logDate);
     const { data, error } = await supabase
       .from('sessions')
