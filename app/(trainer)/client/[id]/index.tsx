@@ -1377,29 +1377,19 @@ function TrainingTab({
 
   // Open the details sheet for a completed session on the strip (performed mode),
   // or planned mode for a scheduled one.
-  const openSessionDetailsSheet = useCallback((sess: StripSession) => {
+  const openSessionDetailsSheet = useCallback(async (sess: StripSession) => {
     const completed = sess.status === 'completed';
     const detail = completed ? dayDetails[sess.id] : undefined;
-    setQuickLookWorkout({
-      id: sess.workoutId ?? '',
-      name: sess.workoutName ?? 'Session',
-      category: sess.category,
-      sessionId: completed ? sess.id : null,
-      dateLabel: completed ? fmtDayLabel(sess.date) : null,
-      durationSeconds: detail?.durationSeconds ?? null,
-    });
-    setQuickLookVisible(true);
-  }, [dayDetails]);
+    let sessionId: string | null = completed ? sess.id : null;
+    let dateLabel: string | null = completed ? fmtDayLabel(sess.date) : null;
+    let durationSeconds: number | null = detail?.durationSeconds ?? null;
 
-  // A session the CLIENT is running has no logs yet (weights reach the DB only at
-  // FINISH), so its own details would show the programmed targets. What the trainer
-  // wants is "what did we lift last time" — so open the most recent COMPLETED session
-  // for this workout instead. Falls back to targets when there has never been one.
-  const openLastLoggedSheet = useCallback(async (sess: StripSession) => {
-    let sessionId: string | null = null;
-    let dateLabel: string | null = null;
-    let durationSeconds: number | null = null;
-    if (sess.workoutId) {
+    // ⚠️ A RUNNING session has no logs — weights only reach the DB at FINISH — so
+    // passing its own id (or null) would render the programmed TARGETS and read as
+    // "nothing logged". Show the most recent COMPLETED session for this workout
+    // instead: "whatever was logged last, or set last" (Vitek). Falls through to
+    // targets when the workout has genuinely never been performed.
+    if (sess.status === 'in_progress' && sess.workoutId) {
       const { data } = await supabase
         .from('sessions')
         .select('id, date, duration_seconds')
@@ -1416,6 +1406,7 @@ function TrainingTab({
         durationSeconds = (data as any).duration_seconds ?? null;
       }
     }
+
     setQuickLookWorkout({
       id: sess.workoutId ?? '',
       name: sess.workoutName ?? 'Session',
@@ -1423,7 +1414,7 @@ function TrainingTab({
       sessionId, dateLabel, durationSeconds,
     });
     setQuickLookVisible(true);
-  }, [clientId]);
+  }, [dayDetails, clientId]);
 
   const startRename = () => {
     if (!activeMenu) return;
@@ -1545,7 +1536,7 @@ function TrainingTab({
             onWeekChange={setWeekOffset}
             onDaySelect={setSelectedDate}
             onScheduledMenu={setScheduledMenu}
-            onShowLastLogged={openLastLoggedSheet}
+            onShowLastLogged={openSessionDetailsSheet}
             onLogWorkout={() => setLogWorkoutModal(true)}
             onReloadStrip={loadStripSessions}
           />

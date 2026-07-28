@@ -283,28 +283,18 @@ export default function TrainTabScreen() {
   } | null>(null);
   const [detailsVisible, setDetailsVisible] = useState(false);
 
-  const openSessionDetails = useCallback((sess: WeekSession) => {
+  const openSessionDetails = useCallback(async (sess: WeekSession) => {
     const completed = sess.status === 'completed';
-    setDetailsData({
-      workoutId: sess.workout_id,
-      workoutName: sess.workoutName ?? 'Session',
-      category: sess.category,
-      sessionId: completed ? sess.id : null,
-      dateLabel: completed ? formatShortDate(sess.date) : null,
-      durationSeconds: completed ? sess.duration_seconds : null,
-    });
-    setDetailsVisible(true);
-  }, []);
+    let sessionId: string | null = completed ? sess.id : null;
+    let dateLabel: string | null = completed ? formatShortDate(sess.date) : null;
+    let durationSeconds: number | null = completed ? sess.duration_seconds : null;
 
-  // A session someone else is running has NO logs yet (weights reach the DB only at
-  // FINISH), so its own details would show the programmed targets. What's actually
-  // wanted is "what did we lift last time" — so open the most recent COMPLETED session
-  // for this workout instead. Falls back to targets when there has never been one.
-  const openLastLoggedDetails = useCallback(async (sess: WeekSession) => {
-    let sessionId: string | null = null;
-    let dateLabel: string | null = null;
-    let durationSeconds: number | null = null;
-    if (sess.workout_id && profile?.id) {
+    // ⚠️ A RUNNING session has no logs — weights only reach the DB at FINISH — so
+    // passing its own id (or null) would render the programmed TARGETS and read as
+    // "nothing logged". Show the most recent COMPLETED session for this workout
+    // instead: "whatever was logged last, or set last" (Vitek). Falls through to
+    // targets when the workout has genuinely never been performed.
+    if (sess.status === 'in_progress' && sess.workout_id && profile?.id) {
       const { data } = await supabase
         .from('sessions')
         .select('id, date, duration_seconds')
@@ -321,6 +311,7 @@ export default function TrainTabScreen() {
         durationSeconds = (data as any).duration_seconds ?? null;
       }
     }
+
     setDetailsData({
       workoutId: sess.workout_id,
       workoutName: sess.workoutName ?? 'Session',
@@ -1354,7 +1345,7 @@ export default function TrainTabScreen() {
             <TouchableOpacity
               style={sessMenuStyles.deleteBtn}
               activeOpacity={0.85}
-              onPress={() => { const s = busySess; setBusySess(null); if (s) void openLastLoggedDetails(s); }}
+              onPress={() => { const s = busySess; setBusySess(null); if (s) void openSessionDetails(s); }}
             >
               <Text style={sessMenuStyles.deleteBtnText}>See last logged values</Text>
             </TouchableOpacity>
