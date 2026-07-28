@@ -925,6 +925,9 @@ export default function TrainerWorkoutSessionScreen() {
   // inserted for this session — so "Discard session" must put it BACK to scheduled
   // instead of deleting it. Deleting destroys the trainer's plan for that day, which
   // is a separate, trainer-only action (⋯ → delete workout).
+  // An in_progress session for this workout is owned by someone else (see started_by).
+  // Hard-blocks this screen: no adopting, no starting, just an explanation.
+  const [blockedByOtherSession, setBlockedByOtherSession] = useState(false);
   const sessionFromPlanRef = useRef(false);
   const sessionPlanDateRef = useRef<string | null>(null);
   const startedAtRef = useRef(startedAt);
@@ -950,6 +953,18 @@ export default function TrainerWorkoutSessionScreen() {
     onCancel?: () => void;
   };
   const [confirmModal, setConfirmModal] = useState<ConfirmModalState | null>(null);
+
+  // Reached a session someone else is running (via the resume chip, a deep link, or a
+  // card on an older build). Explain and leave — this screen can neither show their
+  // live weights (those stay on their device until FINISH) nor safely finish for them.
+  useEffect(() => {
+    if (!blockedByOtherSession) return;
+    setConfirmModal({
+      title: 'Session in progress',
+      message: 'Your trainer has this session open on another device. It can’t be opened here while it’s running.',
+      actions: [{ text: 'Go back', primary: true, onPress: () => router.back() }],
+    });
+  }, [blockedByOtherSession, router]);
   const [lastSessionNotesModal, setLastSessionNotesModal] = useState<{
     trainer: NoteEntry[];
     client: NoteEntry[];
@@ -1190,7 +1205,7 @@ export default function TrainerWorkoutSessionScreen() {
       // An in_progress row means this session was left running (back-swipe, "Leave —
       // keep it running", or the app being reclaimed by iOS). Adopt it instead of
       // starting a second one, so FINISH completes the row that's already there.
-      supabase.from('sessions').select('id, created_at, date').eq('client_id', clientId).eq('workout_id', workoutId)
+      supabase.from('sessions').select('id, created_at, date, started_by').eq('client_id', clientId).eq('workout_id', workoutId)
         .eq('status', 'in_progress').order('created_at', { ascending: false }).limit(1).maybeSingle(),
       loadSessionDraft(clientId, workoutId),
     ]);
@@ -1219,7 +1234,20 @@ export default function TrainerWorkoutSessionScreen() {
     // long gym session is enough). `date` is what the conversion sets to today.
     const todayDateStr = new Date().toISOString().split('T')[0];
     const liveIsToday = ((liveSess as any)?.date ?? null) === todayDateStr;
-    const liveSessionId = !isViewOnly && !logDatePending && liveIsToday ? (liveSess as any).id as string : null;
+
+    // ⚠️ OWNERSHIP IS ENFORCED HERE, not only on the week-strip card. Do Mode can be
+    // reached by several routes (the header resume chip, a deep link, the card), and
+    // the chip walked straight past the card's check — Vitek signed in as the client
+    // and tapped the still-running chip into the TRAINER's session, seeing weights that
+    // account has no business editing. Adopting someone else's live session is what
+    // must never happen, so the test belongs at the adoption point.
+    // A null started_by is a pre-column row and stays open to anyone.
+    const liveOwner = (liveSess as any)?.started_by ?? null;
+    // `!!profile?.id` guard: if we don't yet know WHO we are, never block — a
+    // momentarily-null profile would otherwise lock the owner out of their own session.
+    const liveOwnedByOther = liveIsToday && !!liveOwner && !!profile?.id && liveOwner !== profile.id;
+    if (liveOwnedByOther) setBlockedByOtherSession(true);
+    const liveSessionId = !isViewOnly && !logDatePending && liveIsToday && !liveOwnedByOther ? (liveSess as any).id as string : null;
     if (isViewOnly && !logDatePending && liveIsToday) viewOnlyLiveSessionRef.current = (liveSess as any).id as string;
     if (liveSessionId && !resumeSessionId) {
       activeSessionIdRef.current = liveSessionId;
@@ -2725,7 +2753,7 @@ export default function TrainerWorkoutSessionScreen() {
     if (!isFreeSession && workoutId && !pendingLogDate) {
       const { data: openRow } = await supabase
         .from('sessions')
-        .select('id')
+        .select('id, started_by')
         .eq('client_id', clientId)
         .eq('workout_id', workoutId)
         .eq('status', 'in_progress')
@@ -2733,6 +2761,14 @@ export default function TrainerWorkoutSessionScreen() {
         .order('created_at', { ascending: false })
         .limit(1)
         .maybeSingle();
+      // ⚠️ Never adopt — or duplicate — a session someone ELSE is running. Adopting it
+      // would silently hand their live session to this device; inserting alongside it
+      // would give the same workout two open rows. Block instead.
+      const openOwner = (openRow as any)?.started_by ?? null;
+      if (openRow && openOwner && profile?.id && openOwner !== profile.id) {
+        setBlockedByOtherSession(true);
+        return;
+      }
       if (openRow) {
         console.log('[session] adopting existing in_progress instead of inserting:', (openRow as any).id);
         activeSessionIdRef.current = (openRow as any).id;

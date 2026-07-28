@@ -3,6 +3,7 @@ import * as Linking from 'expo-linking';
 import { Session, User } from '@supabase/supabase-js';
 import { supabase } from '@/lib/supabase';
 import { bindCardVariantToUser } from '@/lib/cardVariant';
+import { useSessionStore } from '@/store/sessionStore';
 import type { User as UserProfile } from '@/types/database';
 
 type AuthContextType = {
@@ -158,6 +159,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     await supabase.auth.signOut();
     setProfile(null);
     setPasswordRecovery(false);
+    // ⚠️ The session store is plain in-memory zustand — nothing clears it on its own,
+    // so a running/suspended session survived a logout and reappeared under the NEXT
+    // account. Vitek hit exactly that: signed out of the trainer side, signed in as the
+    // client, and the header timer chip was still counting his TRAINER session — tapping
+    // it walked straight into a session that account doesn't own. Reset it here.
+    useSessionStore.getState().clearSuspendedSession();
+    useSessionStore.getState().finish();
+    useSessionStore.getState().clearPendingLogDate();
   };
 
   return (
