@@ -23,6 +23,37 @@ interface ExerciseResult {
   maxReps: number;
   delta: number;
   deltaType: 'kg' | 'reps';
+  /** What the same exercise was last done at, in ANY workout. */
+  prevWeight?: number | null;
+  prevReps?: number | null;
+  /** 1-based place in the session — same kg done 3rd instead of 1st is not the same
+   *  performance, so the summary says so rather than calling it a plain decline. */
+  todayPosition?: number | null;
+  prevPosition?: number | null;
+  /** False when "last time" was a different workout. */
+  sameWorkout?: boolean;
+}
+
+const ORDINALS = ['', '1st', '2nd', '3rd', '4th', '5th', '6th', '7th', '8th', '9th', '10th'];
+const ordinal = (n: number) => ORDINALS[n] ?? `${n}th`;
+
+/**
+ * The nuance line under a row. Two things the raw kg number hides:
+ *  - position: "if he starts with bench press he has more power … as a third exercise
+ *    and does less kg it might be because he is more tired not weaker" (Vitek)
+ *  - the reps trade-off: heavier for fewer reps isn't straightforwardly better.
+ * Returns null when there is nothing worth saying — most rows say nothing.
+ */
+function contextNote(r: ExerciseResult): string | null {
+  const bits: string[] = [];
+  if (r.deltaType === 'kg' && r.prevReps != null && r.maxReps > 0 && r.maxReps !== r.prevReps) {
+    bits.push(`${r.maxReps} reps vs ${r.prevReps}`);
+  }
+  if (r.todayPosition && r.prevPosition && r.todayPosition !== r.prevPosition) {
+    const where = r.todayPosition < r.prevPosition ? 'earlier' : 'later';
+    bits.push(`${where} in the session (${ordinal(r.todayPosition)}, was ${ordinal(r.prevPosition)})`);
+  }
+  return bits.length ? bits.join(' · ') : null;
 }
 
 interface PBResult extends ExerciseResult {
@@ -162,167 +193,155 @@ export function SessionCompleteScreen({
         });
       }
 
-      // Previous session for this workout
-      let prevSessionId: string | null = null;
-      if (!isFreeSession) {
-        const { data: prevSess } = await supabase
-          .from('sessions')
-          .select('id')
-          .eq('workout_id', workoutId)
-          .eq('client_id', clientId)
-          .eq('status', 'completed')
-          .neq('id', sessionId)
-          .order('created_at', { ascending: false })
-          .limit(1)
-          .maybeSingle();
-        prevSessionId = (prevSess as any)?.id ?? null;
-      }
-      const isFirstSession = prevSessionId === null;
+      // ── History, keyed by EXERCISE across every workout ──────────────────
+      // Comparison used to run against the previous session OF THIS WORKOUT, keyed by
+      // workout_exercise_id. That made a best local to one workout: bench 100 kg on
+      // Monday, then 90 kg in a different workout on Thursday, and Thursday was
+      // reported as an improvement. Vitek: "we always talk about new personal best so
+      // it doesn't matter where it is in the workout". Everything below is per
+      // exercise_id, over all of this client's workouts.
+      const todayExIds = [...new Set(weIds.map((w: string) => weExIdMap.get(w)).filter(Boolean) as string[])];
 
-      let prevLogs: any[] = [];
-      if (prevSessionId) {
-        const { data: pl } = await supabase
+      let weAll: any[] = [];
+      if (todayExIds.length) {
+        const { data } = await supabase
+          .from('workout_exercises')
+          .select('id, exercise_id, workout_id, workouts!inner(client_id)')
+          .in('exercise_id', todayExIds)
+          .eq('workouts.client_id', clientId);
+        weAll = data ?? [];
+      }
+      const weToEx      = new Map(weAll.map((w: any) => [w.id as string, w.exercise_id as string]));
+      const weToWorkout = new Map(weAll.map((w: any) => [w.id as string, w.workout_id as string]));
+      const allWeIds    = weAll.map((w: any) => w.id as string);
+
+      let histLogs: any[] = [];
+      if (allWeIds.length) {
+        const { data } = await supabase
           .from('session_logs')
-          .select('workout_exercise_id, set_number, weight_kg, reps_completed')
-          .eq('session_id', prevSessionId)
-          .not('is_removed', 'eq', true);
-        prevLogs = pl ?? [];
+          .select('workout_exercise_id, weight_kg, reps_completed, session_id')
+          .in('workout_exercise_id', allWeIds)
+          .not('weight_kg', 'is', null)
+          .not('is_removed', 'eq', true)
+          .neq('session_id', sessionId);
+        histLogs = data ?? [];
       }
 
-      const maxWeightToday = new Map<string, number>();
-      const bestSetToday = new Map<string, { reps: number; weight: number }>();
+      // Rank the sessions those logs belong to, newest first, so "last time" means the
+      // most recent session this exercise appeared in — in ANY workout.
+      const histSessIds = [...new Set(histLogs.map((l: any) => l.session_id as string))];
+      let histSess: any[] = [];
+      if (histSessIds.length) {
+        const { data } = await supabase
+          .from('sessions')
+          .select('id, date, created_at')
+          .in('id', histSessIds)
+          .eq('status', 'completed')
+          .order('date', { ascending: false })
+          .order('created_at', { ascending: false });
+        histSess = data ?? [];
+      }
+      const sessRank = new Map(histSess.map((x: any, i: number) => [x.id as string, i]));
+
+      // Position of an exercise within its workout (1-based over ACTIVE rows, in
+      // order_index order) — same weight done 3rd instead of 1st is not the same
+      // performance. Vitek: "if he starts with bench press he has more power".
+      const posWorkoutIds = [...new Set([...weAll.map((w: any) => w.workout_id as string)].filter(Boolean))];
+      const positionOf = new Map<string, number>();
+      if (posWorkoutIds.length) {
+        const { data: posRows } = await supabase
+          .from('workout_exercises')
+          .select('id, workout_id, order_index')
+          .in('workout_id', posWorkoutIds)
+          .eq('is_active', true)
+          .order('order_index', { ascending: true });
+        const byWorkout = new Map<string, any[]>();
+        (posRows ?? []).forEach((r: any) => {
+          if (!byWorkout.has(r.workout_id)) byWorkout.set(r.workout_id, []);
+          byWorkout.get(r.workout_id)!.push(r);
+        });
+        byWorkout.forEach(rows => rows.forEach((r: any, i: number) => positionOf.set(r.id as string, i + 1)));
+      }
+
+      const isFirstSession = histLogs.length === 0;
+
+      // Today, per exercise: heaviest set, reps at that weight.
+      const todayByEx = new Map<string, { weight: number; reps: number; weId: string }>();
       todayLogs.forEach((l: any) => {
         if (l.weight_kg == null) return;
-        const cur = maxWeightToday.get(l.workout_exercise_id);
-        if (cur == null || l.weight_kg > cur) {
-          maxWeightToday.set(l.workout_exercise_id, l.weight_kg);
-          bestSetToday.set(l.workout_exercise_id, { weight: l.weight_kg, reps: l.reps_completed ?? 0 });
-        } else if (l.weight_kg === cur) {
-          const curReps = bestSetToday.get(l.workout_exercise_id)?.reps ?? 0;
-          if ((l.reps_completed ?? 0) > curReps) {
-            bestSetToday.set(l.workout_exercise_id, { weight: l.weight_kg, reps: l.reps_completed ?? 0 });
-          }
+        const exId = weExIdMap.get(l.workout_exercise_id);
+        if (!exId) return;
+        const cur = todayByEx.get(exId);
+        if (cur == null || l.weight_kg > cur.weight
+            || (l.weight_kg === cur.weight && (l.reps_completed ?? 0) > cur.reps)) {
+          todayByEx.set(exId, { weight: l.weight_kg, reps: l.reps_completed ?? 0, weId: l.workout_exercise_id });
         }
       });
 
-      const maxWeightPrev = new Map<string, number>();
-      const maxRepsPrev = new Map<string, number>();
-      prevLogs.forEach((l: any) => {
-        if (l.weight_kg == null) return;
-        const cur = maxWeightPrev.get(l.workout_exercise_id);
-        if (cur == null || l.weight_kg > cur) {
-          maxWeightPrev.set(l.workout_exercise_id, l.weight_kg);
-          maxRepsPrev.set(l.workout_exercise_id, l.reps_completed ?? 0);
-        } else if (l.weight_kg === cur) {
-          const curReps = maxRepsPrev.get(l.workout_exercise_id) ?? 0;
-          if ((l.reps_completed ?? 0) > curReps) maxRepsPrev.set(l.workout_exercise_id, l.reps_completed ?? 0);
+      // Last time + all-time best, per exercise.
+      const lastByEx    = new Map<string, { weight: number; reps: number; weId: string; rank: number }>();
+      const allTimeByEx = new Map<string, number>();
+      histLogs.forEach((l: any) => {
+        const exId = weToEx.get(l.workout_exercise_id);
+        if (!exId) return;
+        const best = allTimeByEx.get(exId) ?? 0;
+        if (l.weight_kg > best) allTimeByEx.set(exId, l.weight_kg);
+
+        const rank = sessRank.get(l.session_id);
+        if (rank == null) return; // not a completed session
+        const cur = lastByEx.get(exId);
+        if (cur == null || rank < cur.rank
+            || (rank === cur.rank && (l.weight_kg > cur.weight
+                || (l.weight_kg === cur.weight && (l.reps_completed ?? 0) > cur.reps)))) {
+          lastByEx.set(exId, { weight: l.weight_kg, reps: l.reps_completed ?? 0, weId: l.workout_exercise_id, rank });
         }
       });
 
       const imps: ExerciseResult[] = [];
       const regs: ExerciseResult[] = [];
-
-      // Exercises with nothing to compare against — candidates for a first-time record.
-      // Confirmed against the client's WHOLE history further down, not just this workout.
-      const noPrevInThisWorkout: string[] = [];
-
-      for (const [weId, todayMax] of maxWeightToday) {
-        const prevMax = maxWeightPrev.get(weId);
-        if (prevMax == null) { noPrevInThisWorkout.push(weId); continue; }
-        const name = weNameMap.get(weId) ?? 'Exercise';
-        const best = bestSetToday.get(weId)!;
-
-        if (todayMax > prevMax) {
-          imps.push({ workoutExerciseId: weId, exerciseName: name, maxWeight: todayMax, maxReps: best.reps, delta: todayMax - prevMax, deltaType: 'kg' });
-        } else if (todayMax < prevMax) {
-          regs.push({ workoutExerciseId: weId, exerciseName: name, maxWeight: todayMax, maxReps: best.reps, delta: prevMax - todayMax, deltaType: 'kg' });
-        } else {
-          const prevReps = maxRepsPrev.get(weId) ?? 0;
-          const todayReps = best.reps;
-          if (todayReps > prevReps) {
-            imps.push({ workoutExerciseId: weId, exerciseName: name, maxWeight: todayMax, maxReps: todayReps, delta: todayReps - prevReps, deltaType: 'reps' });
-          } else if (todayReps < prevReps) {
-            regs.push({ workoutExerciseId: weId, exerciseName: name, maxWeight: todayMax, maxReps: todayReps, delta: prevReps - todayReps, deltaType: 'reps' });
-          }
-        }
-      }
-
-      const pbList: PBResult[] = [];
-      const pbWeIds = imps.filter(i => i.deltaType === 'kg').map(i => i.workoutExerciseId);
-      if (pbWeIds.length) {
-        const { data: allTimeLogs } = await supabase
-          .from('session_logs')
-          .select('workout_exercise_id, weight_kg, session_id')
-          .in('workout_exercise_id', pbWeIds)
-          .not('weight_kg', 'is', null)
-          .not('is_removed', 'eq', true)
-          .neq('session_id', sessionId);
-
-        const allTimeMaxMap = new Map<string, number>();
-        (allTimeLogs ?? []).forEach((l: any) => {
-          const cur = allTimeMaxMap.get(l.workout_exercise_id) ?? 0;
-          if (l.weight_kg > cur) allTimeMaxMap.set(l.workout_exercise_id, l.weight_kg);
-        });
-
-        for (const imp of imps) {
-          if (imp.deltaType !== 'kg') continue;
-          const allTimePrev = allTimeMaxMap.get(imp.workoutExerciseId) ?? 0;
-          if (imp.maxWeight > allTimePrev) {
-            pbList.push({ ...imp, pbDelta: imp.maxWeight - allTimePrev });
-          }
-        }
-      }
-
-      // ── First-time records ────────────────────────────────────────────────
-      // An exercise with no previous record used to be dropped from the summary
-      // entirely, so a client's very first lift on a movement went unmentioned.
-      // Vitek: "if i recorded 25kg for incline chest press - this is his record
-      // since he never did it. it should be noted in the summary."
-      //
-      // ⚠️ "Never did it" must mean never in ANY workout, tested by exercise_id —
-      // NOT by workout_exercise_id like the improvement comparison above. A client
-      // can easily have the same exercise in two workouts (Adam Test has two "Push"
-      // workouts, both containing Incline Chest Press); keying on the row would
-      // announce a bogus "first time" every time the other copy is performed.
       const firsts: FirstTimeResult[] = [];
-      if (noPrevInThisWorkout.length) {
-        const exIds = [...new Set(noPrevInThisWorkout.map(w => weExIdMap.get(w)).filter(Boolean) as string[])];
-        const everByExId = new Set<string>();
-        if (exIds.length) {
-          // Every row for these exercises, across all of this client's workouts...
-          const { data: weAll } = await supabase
-            .from('workout_exercises')
-            .select('id, exercise_id, workouts!inner(client_id)')
-            .in('exercise_id', exIds)
-            .eq('workouts.client_id', clientId);
-          const allWeIds = (weAll ?? []).map((w: any) => w.id as string);
-          const weToEx = new Map((weAll ?? []).map((w: any) => [w.id as string, w.exercise_id as string]));
-          if (allWeIds.length) {
-            // ...and any weight ever logged against them, excluding today's session.
-            const { data: everLogs } = await supabase
-              .from('session_logs')
-              .select('workout_exercise_id, weight_kg')
-              .in('workout_exercise_id', allWeIds)
-              .not('weight_kg', 'is', null)
-              .not('is_removed', 'eq', true)
-              .neq('session_id', sessionId);
-            (everLogs ?? []).forEach((l: any) => {
-              const ex = weToEx.get(l.workout_exercise_id);
-              if (ex) everByExId.add(ex);
-            });
-          }
+      const pbList: PBResult[] = [];
+
+      for (const [exId, today] of todayByEx) {
+        const name = weNameMap.get(today.weId) ?? 'Exercise';
+        const last = lastByEx.get(exId);
+        const todayPos = positionOf.get(today.weId) ?? null;
+
+        // Never lifted before, anywhere — today's number IS the record.
+        if (!last) {
+          firsts.push({ workoutExerciseId: today.weId, exerciseName: name, maxWeight: today.weight, maxReps: today.reps });
+          continue;
         }
-        for (const weId of noPrevInThisWorkout) {
-          const exId = weExIdMap.get(weId);
-          if (!exId || everByExId.has(exId)) continue; // done before — not a first
-          const best = bestSetToday.get(weId);
-          if (!best) continue;
-          firsts.push({
-            workoutExerciseId: weId,
-            exerciseName: weNameMap.get(weId) ?? 'Exercise',
-            maxWeight: best.weight,
-            maxReps: best.reps,
-          });
+
+        const prevPos = positionOf.get(last.weId) ?? null;
+        const base = {
+          workoutExerciseId: today.weId,
+          exerciseName: name,
+          maxWeight: today.weight,
+          maxReps: today.reps,
+          prevWeight: last.weight,
+          prevReps: last.reps,
+          todayPosition: todayPos,
+          prevPosition: prevPos,
+          sameWorkout: weToWorkout.get(today.weId) === weToWorkout.get(last.weId),
+        };
+
+        if (today.weight > last.weight) {
+          imps.push({ ...base, delta: today.weight - last.weight, deltaType: 'kg' });
+        } else if (today.weight < last.weight) {
+          regs.push({ ...base, delta: last.weight - today.weight, deltaType: 'kg' });
+        } else if (today.reps > last.reps) {
+          imps.push({ ...base, delta: today.reps - last.reps, deltaType: 'reps' });
+        } else if (today.reps < last.reps) {
+          regs.push({ ...base, delta: last.reps - today.reps, deltaType: 'reps' });
+        }
+
+        // A personal best is measured against the ALL-TIME max for the exercise,
+        // not against last time — so beating last week but not your best is an
+        // improvement, never a PB.
+        const allTime = allTimeByEx.get(exId) ?? 0;
+        if (today.weight > allTime) {
+          pbList.push({ ...base, delta: today.weight - last.weight, deltaType: 'kg', pbDelta: today.weight - allTime });
         }
       }
 
@@ -505,6 +524,7 @@ export function SessionCompleteScreen({
                       <View style={s.rowLeft}>
                         <Text style={s.rowName}>{imp.exerciseName}</Text>
                         <Text style={s.rowSetSubtitle}>{imp.maxReps} × {imp.maxWeight % 1 === 0 ? imp.maxWeight : imp.maxWeight.toFixed(1)} kg</Text>
+                        {!!contextNote(imp) && <Text style={s.rowContext}>{contextNote(imp)}</Text>}
                       </View>
                       <Text style={s.rowDeltaUp}>↑ {formatDelta(imp)}</Text>
                     </View>
@@ -524,6 +544,7 @@ export function SessionCompleteScreen({
                       <View style={s.rowLeft}>
                         <Text style={s.rowName}>{reg.exerciseName}</Text>
                         <Text style={s.rowSetSubtitle}>{reg.maxReps} × {reg.maxWeight % 1 === 0 ? reg.maxWeight : reg.maxWeight.toFixed(1)} kg</Text>
+                        {!!contextNote(reg) && <Text style={s.rowContext}>{contextNote(reg)}</Text>}
                       </View>
                       <Text style={s.rowDeltaDown}>↓ {formatDelta(reg)}</Text>
                     </View>
@@ -646,6 +667,9 @@ const s = StyleSheet.create({
   rowName: { fontSize: 15, fontWeight: '500', color: TEXT, flex: 1 },
   rowSetDetail: { fontSize: 14, fontWeight: '500', color: HEADER },
   rowSetSubtitle: { fontSize: 13, color: SEC, marginTop: 2 },
+  // The position / reps nuance under a row — deliberately quieter than the numbers
+  // it qualifies, so it reads as an aside rather than a competing stat.
+  rowContext:     { fontSize: 11, color: '#8a8a86', marginTop: 2 },
   rowDeltaUp: { fontSize: 14, fontWeight: '600', color: ACCENT },
   rowDeltaDown: { fontSize: 14, fontWeight: '600', color: RED },
   motiveLine: { fontSize: 13, fontStyle: 'italic', color: ACCENT, paddingHorizontal: 16, paddingBottom: 14, paddingTop: 4 },
