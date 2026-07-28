@@ -199,6 +199,9 @@ type WeekSession = {
   coverImageUrl: string | null;
   category: string | null;
   status: 'completed' | 'scheduled' | 'in_progress';
+  /** Who pressed START. Only they may re-enter a running session. Null on rows
+   *  created before the column existed — those stay open to everyone. */
+  startedBy: string | null;
   exerciseNames: string[];
 };
 
@@ -293,6 +296,40 @@ export default function TrainTabScreen() {
     setDetailsVisible(true);
   }, []);
 
+  // A session someone else is running has NO logs yet (weights reach the DB only at
+  // FINISH), so its own details would show the programmed targets. What's actually
+  // wanted is "what did we lift last time" — so open the most recent COMPLETED session
+  // for this workout instead. Falls back to targets when there has never been one.
+  const openLastLoggedDetails = useCallback(async (sess: WeekSession) => {
+    let sessionId: string | null = null;
+    let dateLabel: string | null = null;
+    let durationSeconds: number | null = null;
+    if (sess.workout_id && profile?.id) {
+      const { data } = await supabase
+        .from('sessions')
+        .select('id, date, duration_seconds')
+        .eq('client_id', profile.id)
+        .eq('workout_id', sess.workout_id)
+        .eq('status', 'completed')
+        .order('date', { ascending: false })
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (data) {
+        sessionId = (data as any).id;
+        dateLabel = formatShortDate((data as any).date);
+        durationSeconds = (data as any).duration_seconds ?? null;
+      }
+    }
+    setDetailsData({
+      workoutId: sess.workout_id,
+      workoutName: sess.workoutName ?? 'Session',
+      category: sess.category,
+      sessionId, dateLabel, durationSeconds,
+    });
+    setDetailsVisible(true);
+  }, [profile?.id]);
+
   const openWorkoutDetails = useCallback((w: { id: string; name: string; category: string | null }) => {
     setDetailsData({
       workoutId: w.id, workoutName: w.name, category: w.category,
@@ -303,6 +340,8 @@ export default function TrainTabScreen() {
 
   // Session ⋯ menu (Move training / Delete) state
   const [sessMenu, setSessMenu]                 = useState<WeekSession | null>(null);
+  // A session started on the OTHER side (trainer-led). Tapping explains, never enters.
+  const [busySess, setBusySess]                 = useState<WeekSession | null>(null);
   const [deleteConfirmSess, setDeleteConfirmSess] = useState<WeekSession | null>(null);
   const [deletingSession, setDeletingSession]   = useState(false);
 
@@ -343,7 +382,7 @@ export default function TrainTabScreen() {
     if (!profile?.id) return;
     const { data } = await supabase
       .from('sessions')
-      .select('id, date, created_at, workout_id, duration_seconds, status, workouts(name, cover_image_url, category)')
+      .select('id, date, created_at, workout_id, duration_seconds, status, started_by, workouts(name, cover_image_url, category)')
       .eq('client_id', profile.id)
       // 'in_progress' MUST be here: starting a planned session converts that very row
       // to in_progress, so leaving it out made a running-but-unfinished session vanish
@@ -364,6 +403,7 @@ export default function TrainTabScreen() {
       coverImageUrl: s.workouts?.cover_image_url ?? null,
       category: s.workouts?.category ?? null,
       status: s.status,
+      startedBy: s.started_by ?? null,
       exerciseNames: s.workout_id ? (exMap.get(s.workout_id) ?? []) : [],
     })));
   }, [profile?.id]);
@@ -913,6 +953,8 @@ export default function TrainTabScreen() {
                 setCalModalOpen(true);
               }}
               onShowSessionMenu={(sess) => setSessMenu(sess)}
+              meId={profile?.id ?? null}
+              onBusySession={(sess) => setBusySess(sess)}
             />
           )}
 
@@ -1299,6 +1341,31 @@ export default function TrainTabScreen() {
         </BottomSheet>
       )}
 
+      {/* Session someone else started — explain instead of entering. The live weights
+          sit on the other device until FINISH, so opening it here shows an empty
+          session and finishing it would save that emptiness over their work. */}
+      <Modal visible={!!busySess} transparent animationType="fade" onRequestClose={() => setBusySess(null)}>
+        <View style={sessMenuStyles.overlay}>
+          <Pressable style={StyleSheet.absoluteFill} onPress={() => setBusySess(null)} />
+          <View style={sessMenuStyles.glassShadow}>
+          <GlassPanel style={sessMenuStyles.glassBox}>
+            <Text style={sessMenuStyles.confirmTitle}>Session in progress</Text>
+            <Text style={[sessMenuStyles.confirmMsg, sessMenuStyles.confirmMsgOnGlass]}>Your trainer has this session open. It can’t be opened here while it’s running.</Text>
+            <TouchableOpacity
+              style={sessMenuStyles.deleteBtn}
+              activeOpacity={0.85}
+              onPress={() => { const s = busySess; setBusySess(null); if (s) void openLastLoggedDetails(s); }}
+            >
+              <Text style={sessMenuStyles.deleteBtnText}>See last logged values</Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => setBusySess(null)} hitSlop={8} style={{ marginTop: 12 }}>
+              <Text style={[sessMenuStyles.cancelText, sessMenuStyles.cancelOnGlass]}>Close</Text>
+            </TouchableOpacity>
+          </GlassPanel>
+          </View>
+        </View>
+      </Modal>
+
       {/* Delete training — confirmation */}
       <Modal visible={!!deleteConfirmSess} transparent animationType="fade" onRequestClose={() => { if (!deletingSession) setDeleteConfirmSess(null); }}>
         <View style={sessMenuStyles.overlay}>
@@ -1575,6 +1642,9 @@ interface WeeklyGaugeCardProps {
   sessionDetails: Record<string, SessionDetail>;
   onStartSession: () => void;
   onOpenSession: (workoutId: string, opts?: { date?: string; planned?: boolean; running?: boolean }) => void;
+  /** Current user id — a running session may only be re-entered by whoever started it. */
+  meId: string | null;
+  onBusySession: (s: WeekSession) => void;
   screenWidth: number;
   weekOffset: number;
   onOpenCalendar: () => void;
@@ -1585,7 +1655,7 @@ interface WeeklyGaugeCardProps {
 function WeeklyGaugeCard({
   weeklyGoal, weeklyCompleted, weekDates, weekSessions,
   selectedDate, onSelectDate, weekPanHandlers,
-  daySessions, sessionDetails, onStartSession, onOpenSession,
+  daySessions, sessionDetails, onStartSession, onOpenSession, meId, onBusySession,
   screenWidth: sw, weekOffset, onOpenCalendar, onGoToToday, onShowSessionMenu,
 }: WeeklyGaugeCardProps) {
   const exceeded = weeklyCompleted > weeklyGoal;
@@ -1744,7 +1814,15 @@ function WeeklyGaugeCard({
                 <View style={[gcStyles.sessCard, footerDark && darkCardStyles.inner]}>
                   <TouchableOpacity
                     activeOpacity={0.88}
-                    onPress={() => session.workout_id && onOpenSession(session.workout_id, { running: true })}
+                    onPress={() => {
+                      if (!session.workout_id) return;
+                      // "You can only enter the session that you started" — if the
+                      // TRAINER started this one (training the client in person), the
+                      // live weights are on his device, not here. A null startedBy is a
+                      // pre-column row and stays open.
+                      if (session.startedBy && session.startedBy !== meId) { onBusySession(session); return; }
+                      onOpenSession(session.workout_id, { running: true });
+                    }}
                   >
                     <WorkoutPaperCover
                       category={session.category}

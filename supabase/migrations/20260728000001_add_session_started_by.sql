@@ -1,0 +1,14 @@
+-- Who STARTED this session.
+--
+-- Rule (Vitek, July 28 2026): "you can only enter the session that you started."
+-- A session that someone else has open must not be enterable from the other side —
+-- the trainer opening a client's live session sees none of their weights (those stay
+-- on the client's phone until FINISH), so finishing it there would complete it empty.
+-- Blocking entry also removes the duplicate-session class of bug at the UI level.
+--
+-- Set by createInProgressSession in both Do Mode files, on BOTH paths: the fresh
+-- insert AND the scheduled -> in_progress conversion of a planned session.
+--
+-- NULLable on purpose: rows created before this column existed have no owner, and
+-- must stay enterable rather than locking anyone out of a session already running.
+ALTER TABLE sessions ADD COLUMN IF NOT EXISTS started_by UUID REFERENCES users(id);

@@ -962,6 +962,9 @@ type StripSession = {
   date: string;
   createdAt: string | null;
   status: 'completed' | 'scheduled' | 'in_progress';
+  /** Who pressed START. Only they may re-enter a running session. Null on rows
+   *  created before the column existed — those stay open to everyone. */
+  startedBy: string | null;
   workoutId: string | null;
   workoutName: string | null;
   coverImageUrl: string | null;
@@ -1122,7 +1125,7 @@ function TrainingTab({
     const rangeEnd   = localDateStr(new Date(now + 8 * 7 * 24 * 60 * 60 * 1000));
     const { data } = await supabase
       .from('sessions')
-      .select('id, date, created_at, status, workout_id, workouts(name, cover_image_url, category)')
+      .select('id, date, created_at, status, started_by, workout_id, workouts(name, cover_image_url, category)')
       .eq('client_id', clientId)
       // 'in_progress' included so a session the client has STARTED but not finished
       // still shows on its day. Without it the day reads empty while they're training.
@@ -1135,6 +1138,7 @@ function TrainingTab({
         date: s.date,
         createdAt: s.created_at ?? null,
         status: s.status as 'completed' | 'scheduled' | 'in_progress',
+        startedBy: s.started_by ?? null,
         workoutId: s.workout_id ?? null,
         workoutName: s.workouts?.name ?? null,
         coverImageUrl: s.workouts?.cover_image_url ?? null,
@@ -1387,6 +1391,40 @@ function TrainingTab({
     setQuickLookVisible(true);
   }, [dayDetails]);
 
+  // A session the CLIENT is running has no logs yet (weights reach the DB only at
+  // FINISH), so its own details would show the programmed targets. What the trainer
+  // wants is "what did we lift last time" — so open the most recent COMPLETED session
+  // for this workout instead. Falls back to targets when there has never been one.
+  const openLastLoggedSheet = useCallback(async (sess: StripSession) => {
+    let sessionId: string | null = null;
+    let dateLabel: string | null = null;
+    let durationSeconds: number | null = null;
+    if (sess.workoutId) {
+      const { data } = await supabase
+        .from('sessions')
+        .select('id, date, duration_seconds')
+        .eq('client_id', clientId)
+        .eq('workout_id', sess.workoutId)
+        .eq('status', 'completed')
+        .order('date', { ascending: false })
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (data) {
+        sessionId = (data as any).id;
+        dateLabel = fmtDayLabel((data as any).date);
+        durationSeconds = (data as any).duration_seconds ?? null;
+      }
+    }
+    setQuickLookWorkout({
+      id: sess.workoutId ?? '',
+      name: sess.workoutName ?? 'Session',
+      category: sess.category,
+      sessionId, dateLabel, durationSeconds,
+    });
+    setQuickLookVisible(true);
+  }, [clientId]);
+
   const startRename = () => {
     if (!activeMenu) return;
     setRenameText(activeMenu.name);
@@ -1507,6 +1545,7 @@ function TrainingTab({
             onWeekChange={setWeekOffset}
             onDaySelect={setSelectedDate}
             onScheduledMenu={setScheduledMenu}
+            onShowLastLogged={openLastLoggedSheet}
             onLogWorkout={() => setLogWorkoutModal(true)}
             onReloadStrip={loadStripSessions}
           />
@@ -1988,6 +2027,7 @@ function WeekStripCard({
   onWeekChange,
   onDaySelect,
   onScheduledMenu,
+  onShowLastLogged,
   onLogWorkout,
   onReloadStrip,
 }: {
@@ -2005,6 +2045,8 @@ function WeekStripCard({
   onWeekChange: (n: number) => void;
   onDaySelect: (date: string) => void;
   onScheduledMenu: (s: StripSession) => void;
+  /** Opens the last COMPLETED session's details — used when a running session can't be entered. */
+  onShowLastLogged: (s: StripSession) => void;
   onLogWorkout: () => void;
   onReloadStrip: () => void;
 }) {
@@ -2014,6 +2056,11 @@ function WeekStripCard({
   const weekOffsetRef = useRef(weekOffset);
   weekOffsetRef.current = weekOffset;
   const [noSessModal, setNoSessModal] = useState(false);
+  // Someone ELSE has this session open (see `startedBy`). Tapping it explains rather
+  // than entering — the other device holds the live weights, so opening it here would
+  // show an empty session and finishing it would save that emptiness over their work.
+  const [busySession, setBusySession] = useState<StripSession | null>(null);
+  const { profile: me } = useAuth();
 
   // Month calendar (jump the week strip to a chosen day) — opened by the calendar icon
   const [calOpen, setCalOpen] = useState(false);
@@ -2145,9 +2192,13 @@ function WeekStripCard({
           <View key={session.id} style={[wsStyles.sessCardOuter, footerDark && darkCardStyles.bg]}>
             <TouchableOpacity
               style={[wsStyles.sessCardInner, footerDark && darkCardStyles.bg]}
-              onPress={() => session.workoutId
-                ? router.push(`/(trainer)/client/${clientId}/workout/${session.workoutId}` as any)
-                : undefined}
+              onPress={() => {
+                if (!session.workoutId) return;
+                // "You can only enter the session that you started" (Vitek, July 28 2026).
+                // A null startedBy is a pre-column row — leave those open.
+                if (session.startedBy && session.startedBy !== me?.id) { setBusySession(session); return; }
+                router.push(`/(trainer)/client/${clientId}/workout/${session.workoutId}` as any);
+              }}
               activeOpacity={0.88}
             >
               <WorkoutPaperCover category={session.category} workoutId={session.workoutId} size="strip" />
@@ -2237,6 +2288,27 @@ function WeekStripCard({
       </TouchableOpacity>
 
       {/* Add session modal */}
+      {busySession && (
+        <Modal visible transparent animationType="fade" onRequestClose={() => setBusySession(null)} statusBarTranslucent>
+          <Pressable style={addPopStyles.overlay} onPress={() => setBusySession(null)}>
+            <Pressable style={addPopStyles.cardShadow} onPress={() => {}}>
+            <GlassPanel style={addPopStyles.card}>
+              <Text style={[addPopStyles.heading, addPopStyles.headingOnGlass]}>Session in progress</Text>
+              <Text style={busyStyles.msg}>
+                This session is running on another device, so it can’t be opened here — the weights are only on that phone until it’s finished.
+              </Text>
+              <View style={[addPopStyles.divider, addPopStyles.dividerOnGlass]} />
+              <TouchableOpacity style={addPopStyles.option} activeOpacity={0.7}
+                onPress={() => { const s = busySession; setBusySession(null); void onShowLastLogged(s); }}>
+                <SymbolView name="list.bullet.rectangle" size={18} tintColor="#244e43" />
+                <Text style={addPopStyles.optionText}>See last logged values</Text>
+              </TouchableOpacity>
+            </GlassPanel>
+            </Pressable>
+          </Pressable>
+        </Modal>
+      )}
+
       {noSessModal && (
         <Modal visible transparent animationType="fade" onRequestClose={() => setNoSessModal(false)} statusBarTranslucent>
           <Pressable style={addPopStyles.overlay} onPress={() => setNoSessModal(false)}>
@@ -4924,6 +4996,11 @@ const wsStyles = StyleSheet.create({
   runningText:       { fontSize: 11, fontWeight: '700', color: '#fff', letterSpacing: 0.4 },
   notYetBadgeOnDark: { backgroundColor: 'rgba(255,255,255,0.16)' },
   notYetTextOnDark:  { color: 'rgba(255,255,255,0.85)' },
+});
+
+// Muted grays are darkened on glass, per the app-wide popup rule.
+const busyStyles = StyleSheet.create({
+  msg: { fontSize: 14, lineHeight: 20, color: '#1f2823', fontWeight: '600', paddingHorizontal: 4, paddingBottom: 4 },
 });
 
 // ─── Move-training calendar modal styles ─────────────────────────────────────

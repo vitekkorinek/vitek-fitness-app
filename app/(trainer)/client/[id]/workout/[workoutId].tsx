@@ -1435,7 +1435,7 @@ export default function TrainerWorkoutSessionScreen() {
     const today = new Date().toISOString().split('T')[0];
     supabase
       .from('sessions')
-      .insert({ workout_id: null, client_id: clientId, date: today, status: 'in_progress', duration_seconds: null, name: freeSessionNameRef.current })
+      .insert({ workout_id: null, client_id: clientId, date: today, status: 'in_progress', duration_seconds: null, started_by: profile?.id ?? null, name: freeSessionNameRef.current })
       .select('id')
       .single()
       .then(({ data }) => {
@@ -2391,7 +2391,9 @@ export default function TrainerWorkoutSessionScreen() {
       if (sched) {
         const { data: upd } = await supabase
           .from('sessions')
-          .update({ status: 'in_progress', date: today })
+          // started_by: only whoever started a session may re-enter it (see the
+          // migration). Stamped on the conversion path too, not just the insert.
+          .update({ status: 'in_progress', date: today, started_by: profile?.id ?? null })
           .eq('id', (sched as any).id)
           .select('id')
           .single();
@@ -2434,7 +2436,7 @@ export default function TrainerWorkoutSessionScreen() {
     console.log('[session] creating in_progress: workout_id=', workoutId, 'client_id=', clientId, 'date=', today);
     const { data, error } = await supabase
       .from('sessions')
-      .insert({ workout_id: isFreeSession ? null : workoutId, client_id: clientId, date: today, status: 'in_progress', duration_seconds: null, ...(isFreeSession ? { name: freeSessionNameRef.current } : {}) })
+      .insert({ workout_id: isFreeSession ? null : workoutId, client_id: clientId, date: today, status: 'in_progress', duration_seconds: null, started_by: profile?.id ?? null, ...(isFreeSession ? { name: freeSessionNameRef.current } : {}) })
       .select('id')
       .single();
     console.log('[session] create in_progress result: id=', data?.id ?? 'FAILED', 'error=', error?.message ?? 'none', 'code=', (error as any)?.code ?? 'none');
