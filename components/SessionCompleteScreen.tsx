@@ -29,6 +29,14 @@ interface PBResult extends ExerciseResult {
   pbDelta: number;
 }
 
+/** An exercise this client has never lifted before — today's number IS the record. */
+interface FirstTimeResult {
+  workoutExerciseId: string;
+  exerciseName: string;
+  maxWeight: number;
+  maxReps: number;
+}
+
 function starPoints(outerR: number, innerR: number): string {
   const pts: string[] = [];
   for (let i = 0; i < 10; i++) {
@@ -89,6 +97,7 @@ export function SessionCompleteScreen({
   const [improvements, setImprovements] = useState<ExerciseResult[]>([]);
   const [regressions, setRegressions] = useState<ExerciseResult[]>([]);
   const [pbs, setPbs] = useState<PBResult[]>([]);
+  const [firstTimes, setFirstTimes] = useState<FirstTimeResult[]>([]);
   const [stretchWorkout, setStretchWorkout] = useState<{ id: string; name: string } | null>(null);
   const [sessionNote, setSessionNote] = useState('');
   const initialNoteRef = useRef('');
@@ -141,6 +150,7 @@ export function SessionCompleteScreen({
       const weIds = [...new Set(todayLogs.map((l: any) => l.workout_exercise_id))];
 
       let weNameMap = new Map<string, string>();
+      const weExIdMap = new Map<string, string>();
       if (weIds.length) {
         const { data: weData } = await supabase
           .from('workout_exercises')
@@ -148,6 +158,7 @@ export function SessionCompleteScreen({
           .in('id', weIds);
         (weData ?? []).forEach((we: any) => {
           weNameMap.set(we.id, we.exercises?.name ?? 'Exercise');
+          if (we.exercises?.id) weExIdMap.set(we.id, we.exercises.id as string);
         });
       }
 
@@ -211,9 +222,13 @@ export function SessionCompleteScreen({
       const imps: ExerciseResult[] = [];
       const regs: ExerciseResult[] = [];
 
+      // Exercises with nothing to compare against — candidates for a first-time record.
+      // Confirmed against the client's WHOLE history further down, not just this workout.
+      const noPrevInThisWorkout: string[] = [];
+
       for (const [weId, todayMax] of maxWeightToday) {
         const prevMax = maxWeightPrev.get(weId);
-        if (prevMax == null) continue;
+        if (prevMax == null) { noPrevInThisWorkout.push(weId); continue; }
         const name = weNameMap.get(weId) ?? 'Exercise';
         const best = bestSetToday.get(weId)!;
 
@@ -258,6 +273,59 @@ export function SessionCompleteScreen({
         }
       }
 
+      // ── First-time records ────────────────────────────────────────────────
+      // An exercise with no previous record used to be dropped from the summary
+      // entirely, so a client's very first lift on a movement went unmentioned.
+      // Vitek: "if i recorded 25kg for incline chest press - this is his record
+      // since he never did it. it should be noted in the summary."
+      //
+      // ⚠️ "Never did it" must mean never in ANY workout, tested by exercise_id —
+      // NOT by workout_exercise_id like the improvement comparison above. A client
+      // can easily have the same exercise in two workouts (Adam Test has two "Push"
+      // workouts, both containing Incline Chest Press); keying on the row would
+      // announce a bogus "first time" every time the other copy is performed.
+      const firsts: FirstTimeResult[] = [];
+      if (noPrevInThisWorkout.length) {
+        const exIds = [...new Set(noPrevInThisWorkout.map(w => weExIdMap.get(w)).filter(Boolean) as string[])];
+        const everByExId = new Set<string>();
+        if (exIds.length) {
+          // Every row for these exercises, across all of this client's workouts...
+          const { data: weAll } = await supabase
+            .from('workout_exercises')
+            .select('id, exercise_id, workouts!inner(client_id)')
+            .in('exercise_id', exIds)
+            .eq('workouts.client_id', clientId);
+          const allWeIds = (weAll ?? []).map((w: any) => w.id as string);
+          const weToEx = new Map((weAll ?? []).map((w: any) => [w.id as string, w.exercise_id as string]));
+          if (allWeIds.length) {
+            // ...and any weight ever logged against them, excluding today's session.
+            const { data: everLogs } = await supabase
+              .from('session_logs')
+              .select('workout_exercise_id, weight_kg')
+              .in('workout_exercise_id', allWeIds)
+              .not('weight_kg', 'is', null)
+              .not('is_removed', 'eq', true)
+              .neq('session_id', sessionId);
+            (everLogs ?? []).forEach((l: any) => {
+              const ex = weToEx.get(l.workout_exercise_id);
+              if (ex) everByExId.add(ex);
+            });
+          }
+        }
+        for (const weId of noPrevInThisWorkout) {
+          const exId = weExIdMap.get(weId);
+          if (!exId || everByExId.has(exId)) continue; // done before — not a first
+          const best = bestSetToday.get(weId);
+          if (!best) continue;
+          firsts.push({
+            workoutExerciseId: weId,
+            exerciseName: weNameMap.get(weId) ?? 'Exercise',
+            maxWeight: best.weight,
+            maxReps: best.reps,
+          });
+        }
+      }
+
       let stretch: { id: string; name: string } | null = null;
       if (!isFreeSession) {
         const { data: wRow } = await supabase
@@ -283,6 +351,8 @@ export function SessionCompleteScreen({
       let g: string;
       if (isFirstSession) {
         g = `First one's in the books, ${clientName}!`;
+      } else if (firsts.length > 0 && imps.length === 0 && regs.length === 0) {
+        g = `New ground today, ${clientName}!`;
       } else if (imps.length > 0 && regs.length === 0) {
         g = `You're on fire, ${clientName}!`;
       } else if (regs.length > 0 && imps.length === 0) {
@@ -295,6 +365,7 @@ export function SessionCompleteScreen({
       setImprovements(imps);
       setRegressions(regs);
       setPbs(pbList);
+      setFirstTimes(firsts);
       setStretchWorkout(stretch);
     } finally {
       setLoading(false);
@@ -398,6 +469,25 @@ export function SessionCompleteScreen({
                       <View style={s.rowRight}>
                         <Text style={s.rowSetDetail}>{pb.maxReps} × {pb.maxWeight % 1 === 0 ? pb.maxWeight : pb.maxWeight.toFixed(1)} kg</Text>
                         <Text style={s.rowDeltaUp}>↑ {formatDelta(pb)}</Text>
+                      </View>
+                    </View>
+                  ))}
+                </View>
+              )}
+
+              {/* First-time records — no previous number to beat, so today's IS the record.
+                  Sits under Personal bests: same kind of news, different reason. */}
+              {firstTimes.length > 0 && (
+                <View style={s.card}>
+                  <View style={s.cardHeader}>
+                    <Text style={s.cardHeaderText}>⭐ FIRST TIME — NEW RECORD</Text>
+                  </View>
+                  {firstTimes.map((ft, i) => (
+                    <View key={ft.workoutExerciseId} style={[s.row, i < firstTimes.length - 1 && s.rowBorder]}>
+                      <Text style={s.rowName}>{ft.exerciseName}</Text>
+                      <View style={s.rowRight}>
+                        <Text style={s.rowSetDetail}>{ft.maxReps} × {ft.maxWeight % 1 === 0 ? ft.maxWeight : ft.maxWeight.toFixed(1)} kg</Text>
+                        <Text style={s.rowDeltaUp}>NEW</Text>
                       </View>
                     </View>
                   ))}
