@@ -6,12 +6,13 @@ import {
 } from '@expo-google-fonts/manrope';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { AppState } from 'react-native';
 import 'react-native-reanimated';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 import { AuthProvider, useAuth } from '@/context/AuthContext';
+import { useOtaUpdates } from '@/lib/otaUpdates';
 import { flushSessionOutbox } from '@/lib/sessionOutbox';
 
 export { ErrorBoundary } from 'expo-router';
@@ -54,6 +55,18 @@ function RootLayoutNav() {
   const { session, profile, loading, passwordRecovery } = useAuth();
   const segments = useSegments();
   const router = useRouter();
+
+  // ── A waiting OTA update applies on THIS open, not the next one ─────────────────
+  // app.json's 5 s native launch wait is a race against a 2.54 MiB download and loses on any
+  // ordinary connection — which is why the app still had to be opened twice. lib/otaUpdates
+  // relaunches into the bundle the native layer downloads, the moment it is ready. It never
+  // blocks startup, and it asks this callback right then — so it can't restart the JS out from
+  // under someone standing in Do Mode.
+  // Cast: typedRoutes types `segments` as a union of known route literals, so `includes` narrows
+  // its argument to `never`. Both Do Mode routes carry a `workout` segment.
+  const segmentsRef = useRef(segments);
+  segmentsRef.current = segments;
+  useOtaUpdates(() => !(segmentsRef.current as string[]).includes('workout'));
 
   // ── Finished sessions waiting to reach the server ──────────────────────────────
   // Finishing a session is a LOCAL act (lib/sessionOutbox) — it queues, the session ends,
