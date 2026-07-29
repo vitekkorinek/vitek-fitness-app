@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, TextInput,
   StyleSheet, StatusBar, ActivityIndicator, RefreshControl,
@@ -125,6 +125,10 @@ export default function ScheduleTabScreen() {
   const [lastSession, setLastSession] = useState<Appointment | null>(null);
   const [activePackage, setActivePackage] = useState<SessionPackage | null>(null);
   const [loading, setLoading]         = useState(true);
+  // Only the FIRST load blanks the screen to a spinner. Every later focus refetches underneath
+  // the data already on screen — same queries, same freshness; the spinner was just hiding data
+  // this screen was still holding. Safe because load() never clears state before fetching.
+  const hasLoadedRef = useRef(false);
   const [refreshing, setRefreshing]   = useState(false);
 
   const [calYear, setCalYear]   = useState(today.getFullYear());
@@ -235,8 +239,11 @@ export default function ScheduleTabScreen() {
         setCalYear(d.getFullYear());
         setCalMonth(d.getMonth());
       }
-      setLoading(true);
-      load().finally(() => setLoading(false));
+      if (!hasLoadedRef.current) setLoading(true);
+      load().finally(() => {
+        hasLoadedRef.current = true;
+        setLoading(false);
+      });
     }, [load, notifDate])
   );
 

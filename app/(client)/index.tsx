@@ -108,6 +108,10 @@ export default function HomeScreen() {
   };
 
   const [loading, setLoading] = useState(true);
+  // Only the FIRST load blanks the screen to a spinner. Every later focus refetches underneath
+  // the data already on screen — same queries, same freshness; the spinner was just hiding data
+  // this screen was still holding. Safe because load() never clears state before fetching.
+  const hasLoadedRef = useRef(false);
   const [heroBannerUrl, setHeroBannerUrl]         = useState<string | null>(null);
   const [heroBannerOffsetY, setHeroBannerOffsetY] = useState(40);
   const [heroBannerZoom, setHeroBannerZoom]       = useState(1.5);
@@ -164,8 +168,11 @@ export default function HomeScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      setLoading(true);
-      load().finally(() => setLoading(false));
+      if (!hasLoadedRef.current) setLoading(true);
+      load().finally(() => {
+        hasLoadedRef.current = true;
+        setLoading(false);
+      });
     }, [load])
   );
 

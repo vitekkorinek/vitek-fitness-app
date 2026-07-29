@@ -1383,7 +1383,7 @@ function StatBox({ label, value, zone, onPress }: { label: string; value: string
 
 type ActiveMetric = 'weight' | 'fat' | 'muscle' | 'water' | 'visceral' | 'bmr';
 
-function MeasurementsSubTab({ clientId, client }: { clientId: string; client: User | null }) {
+function MeasurementsSubTab({ clientId, client, active }: { clientId: string; client: User | null; active: boolean }) {
   const { profile } = useAuth();
   const isTrainer = profile?.role === 'trainer';
 
@@ -1412,7 +1412,10 @@ function MeasurementsSubTab({ clientId, client }: { clientId: string; client: Us
     setLoading(false);
   }, [clientId]);
 
-  useFocusEffect(useCallback(() => { load(); }, [load]));
+  // `active` gate: both sub-tabs stay MOUNTED once opened (see ProgressTab), so without this
+  // every focus of the screen would refetch the hidden one too. Flipping active→true also
+  // re-runs this effect, so becoming visible refreshes underneath the data already shown.
+  useFocusEffect(useCallback(() => { if (active) load(); }, [load, active]));
 
   const deleteMeas = async (id: string) => {
     setDetailMeas(null);
@@ -1882,13 +1885,16 @@ async function loadMostImproved(clientId: string): Promise<ImprovedEntry[]> {
     .slice(0, 3);
 }
 
-function MostImprovedCard({ clientId }: { clientId: string }) {
+function MostImprovedCard({ clientId, active }: { clientId: string; active: boolean }) {
   const [entries, setEntries] = useState<ImprovedEntry[]>([]);
   const [loading, setLoading] = useState(true);
 
+  // Lives inside StrengthSubTab, which stays mounted while hidden — so it takes the same
+  // `active` gate, or it would refetch on every focus of a screen it isn't visible on.
   useFocusEffect(useCallback(() => {
+    if (!active) return;
     loadMostImproved(clientId).then(data => { setEntries(data); setLoading(false); });
-  }, [clientId]));
+  }, [clientId, active]));
 
   return (
     <View>
@@ -1925,7 +1931,7 @@ function MostImprovedCard({ clientId }: { clientId: string }) {
 
 type ExerciseResult = { id: string; name: string; equipment: string | null; muscle_groups: string[] };
 
-function StrengthSubTab({ clientId }: { clientId: string }) {
+function StrengthSubTab({ clientId, active }: { clientId: string; active: boolean }) {
   const [exercises, setExercises] = useState<ExerciseResult[]>([]);
   const [loadingExercises, setLoadingExercises] = useState(true);
   const [search, setSearch] = useState('');
@@ -1981,7 +1987,8 @@ function StrengthSubTab({ clientId }: { clientId: string }) {
     }
   }, [clientId]);
 
-  useFocusEffect(useCallback(() => { loadExercises(); }, [loadExercises]));
+  // See the `active` note in MeasurementsSubTab — this sub-tab also stays mounted while hidden.
+  useFocusEffect(useCallback(() => { if (active) loadExercises(); }, [loadExercises, active]));
 
   const loadBrands = useCallback(async (ex: ExerciseResult): Promise<string[]> => {
     const { data: weRows } = await supabase.from('workout_exercises').select('id').eq('exercise_id', ex.id);
@@ -2217,7 +2224,7 @@ function StrengthSubTab({ clientId }: { clientId: string }) {
   // Search + list view
   return (
     <View>
-      <MostImprovedCard clientId={clientId} />
+      <MostImprovedCard clientId={clientId} active={active} />
 
       <View style={str.searchCard}>
         <SymbolView name="magnifyingglass" size={15} tintColor="#aaa" />
@@ -2334,6 +2341,17 @@ export default function ProgressTab({
 }) {
   type SubTab = 'measurements' | 'strength';
   const [subTab, setSubTab] = useState<SubTab>('measurements');
+  // A sub-tab is mounted the first time it is opened and then stays mounted (hidden via
+  // `display:'none'`), so switching costs nothing. Conditionally rendering them UNMOUNTED both
+  // components, which threw away their fetched data and made every single switch — in both
+  // directions, forever — refetch from scratch behind a spinner. Lazy so the first open of the
+  // screen still loads only the sub-tab you are actually looking at; the hidden one's queries
+  // are held off by the `active` prop.
+  const [mounted, setMounted] = useState<SubTab[]>(['measurements']);
+  const selectSubTab = useCallback((tab: SubTab) => {
+    setSubTab(tab);
+    setMounted(m => (m.includes(tab) ? m : [...m, tab]));
+  }, []);
 
   return (
     <View>
@@ -2344,7 +2362,7 @@ export default function ProgressTab({
             { key: 'strength', label: t.clientProfile.progress.subTabStrength },
           ]}
           value={subTab}
-          onChange={setSubTab}
+          onChange={selectSubTab}
           style={s.glassToggle}
         />
       ) : variant === 'client' ? (
@@ -2353,7 +2371,7 @@ export default function ProgressTab({
             <TouchableOpacity
               key={tab}
               style={[s.underlineTabItem, subTab === tab && s.underlineTabItemActive]}
-              onPress={() => setSubTab(tab)}
+              onPress={() => selectSubTab(tab)}
               activeOpacity={0.7}
             >
               <Text style={[s.underlineTabText, subTab === tab && s.underlineTabTextActive]}>
@@ -2368,7 +2386,7 @@ export default function ProgressTab({
             <TouchableOpacity
               key={tab}
               style={[s.subTabItem, subTab === tab && s.subTabItemActive]}
-              onPress={() => setSubTab(tab)}
+              onPress={() => selectSubTab(tab)}
               activeOpacity={0.7}
             >
               <Text style={[s.subTabText, subTab === tab && s.subTabTextActive]}>
@@ -2379,8 +2397,16 @@ export default function ProgressTab({
         </View>
       )}
 
-      {subTab === 'measurements' && <MeasurementsSubTab clientId={clientId} client={client} />}
-      {subTab === 'strength' && <StrengthSubTab clientId={clientId} />}
+      {mounted.includes('measurements') && (
+        <View style={subTab === 'measurements' ? undefined : s.subTabHidden}>
+          <MeasurementsSubTab clientId={clientId} client={client} active={subTab === 'measurements'} />
+        </View>
+      )}
+      {mounted.includes('strength') && (
+        <View style={subTab === 'strength' ? undefined : s.subTabHidden}>
+          <StrengthSubTab clientId={clientId} active={subTab === 'strength'} />
+        </View>
+      )}
     </View>
   );
 }
@@ -2389,6 +2415,8 @@ export default function ProgressTab({
 
 const s = StyleSheet.create({
   glassToggle: { marginBottom: 16 },
+  // Keeps an opened sub-tab mounted (state + fetched data alive) while it is not the visible one.
+  subTabHidden: { display: 'none' },
   subTabBar: {
     flexDirection: 'row', backgroundColor: '#d8d8d4', borderRadius: 100,
     padding: 3, marginBottom: 16,

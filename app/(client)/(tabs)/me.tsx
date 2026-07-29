@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -94,6 +94,10 @@ export default function MeScreen() {
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [monthlyCount, setMonthlyCount] = useState(0);
   const [loading, setLoading] = useState(true);
+  // Only the FIRST load blanks the screen to a spinner. Every later focus refetches underneath
+  // the data already on screen — same queries, same freshness; the spinner was just hiding data
+  // this screen was still holding. Safe because load() never clears state before fetching.
+  const hasLoadedRef = useRef(false);
 
   // Avatar
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
@@ -181,8 +185,11 @@ export default function MeScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      setLoading(true);
-      load().finally(() => setLoading(false));
+      if (!hasLoadedRef.current) setLoading(true);
+      load().finally(() => {
+        hasLoadedRef.current = true;
+        setLoading(false);
+      });
     }, [load])
   );
 

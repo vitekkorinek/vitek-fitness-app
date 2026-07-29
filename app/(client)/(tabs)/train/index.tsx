@@ -258,6 +258,10 @@ export default function TrainTabScreen() {
   const [training, setTraining]                 = useState<ClientTrainingData | null>(null);
   const [workoutCards, setWorkoutCards]         = useState<WorkoutCard[]>([]);
   const [loading, setLoading]                   = useState(true);
+  // Only the FIRST load blanks the screen to a spinner. Every later focus refetches underneath
+  // the data already on screen — same queries, same freshness; the spinner was just hiding data
+  // this screen was still holding. Safe because load() never clears state before fetching.
+  const hasLoadedRef = useRef(false);
   const [refreshing, setRefreshing]     = useState(false);
 
   const [weekOffset, setWeekOffset]         = useState(0);
@@ -763,8 +767,11 @@ export default function TrainTabScreen() {
         // so a normal "start now" log never picks up a stale past date.
         store.clearPendingLogDate();
       }
-      setLoading(true);
-      load().finally(() => setLoading(false));
+      if (!hasLoadedRef.current) setLoading(true);
+      load().finally(() => {
+        hasLoadedRef.current = true;
+        setLoading(false);
+      });
       // Landing on the tab (incl. after the log → session-complete flow) is where a
       // freshly-reached goal is caught. Persisted flag makes it survive the tab remount.
       checkGoalCelebration();

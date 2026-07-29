@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -48,6 +48,10 @@ export default function OverviewScreen() {
   const [training, setTraining]     = useState<ClientTrainingData | null>(null);
   const [packages, setPackages]     = useState<SessionPackage[]>([]);
   const [loading, setLoading]       = useState(true);
+  // Only the FIRST load blanks the screen to a spinner. Every later focus refetches underneath
+  // the data already on screen — same queries, same freshness; the spinner was just hiding data
+  // this screen was still holding. Safe because load() never clears state before fetching.
+  const hasLoadedRef = useRef(false);
   const [refreshing, setRefreshing] = useState(false);
 
   // Calendar next session
@@ -66,8 +70,11 @@ export default function OverviewScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      setLoading(true);
-      load().finally(() => setLoading(false));
+      if (!hasLoadedRef.current) setLoading(true);
+      load().finally(() => {
+        hasLoadedRef.current = true;
+        setLoading(false);
+      });
     }, [load])
   );
 
