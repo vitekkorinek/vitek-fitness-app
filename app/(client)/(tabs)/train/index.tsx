@@ -1301,6 +1301,33 @@ export default function TrainTabScreen() {
               <SymbolView name="list.bullet.rectangle" size={18} tintColor={HEADER} />
               <Text style={sessMenuStyles.optionLabel}>View details</Text>
             </TouchableOpacity>
+            {/* Details = the facts (what was logged, set by set). This = the story
+                (records, better/tougher than last time). Only a session that HAPPENED
+                has one — there is nothing to tell about a plan. */}
+            {sessMenu?.status === 'completed' && (
+              <TouchableOpacity
+                style={sessMenuStyles.option}
+                activeOpacity={0.7}
+                onPress={() => {
+                  const sess = sessMenu!;
+                  // close() slides the sheet down BEFORE the push, so the overview
+                  // arrives from the right over a settled screen.
+                  close(() => router.push({
+                    pathname: '/(client)/workout/session-complete',
+                    params: {
+                      clientId: profile?.id ?? '',
+                      sessionId: sess.id,
+                      workoutId: sess.workout_id ?? 'free',
+                      clientName: (profile?.name ?? '').split(' ')[0],
+                      review: '1',
+                    },
+                  } as any));
+                }}
+              >
+                <SymbolView name="trophy" size={18} tintColor={HEADER} />
+                <Text style={sessMenuStyles.optionLabel}>See how it went</Text>
+              </TouchableOpacity>
+            )}
             <TouchableOpacity
               style={sessMenuStyles.option}
               activeOpacity={0.7}

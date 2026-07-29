@@ -101,6 +101,7 @@ import * as ImagePicker from 'expo-image-picker';
 
 import { supabase } from '@/lib/supabase';
 import { loadSessionDraft, saveSessionDraft, clearSessionDraft, mergeDraftIntoExercises } from '@/lib/sessionDraft';
+import { enqueueFinishJob, flushSessionOutbox, isSessionPending } from '@/lib/sessionOutbox';
 import { fetchMuscleRestConflict, recommendedCategories, shiftDateStr, type MuscleRestConflict } from '@/lib/muscleRest';
 import { CATEGORY_COLORS, WorkoutCategory } from '@/lib/workoutCategories';
 import {
@@ -150,6 +151,14 @@ const FIXED_HEADER = true;
 // Reversible: flip to false to fully disable. Launcher-only (all categories):
 // session-intro redirects launcher taps here without autoStart.
 const MERGED_PREVIEW = true;
+
+/**
+ * How long Finish waits for the upload before telling the client it is saved on the phone.
+ * Long enough that a working connection lands inside it (a normal save is 1–3s), short
+ * enough that a dead one doesn't hold him on a spinner. Either way the session is saved —
+ * this only decides whether he goes to the overview now or hears "it'll sync".
+ */
+const IMMEDIATE_UPLOAD_WAIT_MS = 12000;
 
 // ─── Types ──────────────────────────────────────────────────────────────────────
 
@@ -955,6 +964,20 @@ export default function TrainerWorkoutSessionScreen() {
     onCancel?: () => void;
   };
   const [confirmModal, setConfirmModal] = useState<ConfirmModalState | null>(null);
+
+  // ⚠️ FINISH is a network round-trip with NO visual state of its own: while it ran, the
+  // button looked exactly like an idle button. So a save that was slow, or that hung on a
+  // dead connection (React Native's fetch has no timeout and supabase-js sets none), read
+  // as "the button does nothing" and simply got tapped again — and again. Show the work.
+  // The ref is the real guard: two overlapping saves would each finalise the row and each
+  // insert a full set of session_logs, i.e. every set logged twice.
+  const [savingSession, setSavingSession] = useState(false);
+  const savingSessionRef = useRef(false);
+
+  // ⚠️ THE SESSION ENDED WHEN FINISH WAS TAPPED — not when the upload lands. The queued
+  // job carries this as `duration_seconds`, so a session that sat in the outbox for five
+  // hours is still recorded as the hour he actually trained.
+  const finishRequestedAtRef = useRef<number | null>(null);
 
   // Reached a session someone else is running (via the resume chip, a deep link, or a
   // card on an older build). Explain and leave — this screen can neither show their
@@ -3152,6 +3175,8 @@ export default function TrainerWorkoutSessionScreen() {
   };
 
   const handleFinish = () => {
+    // A save is already in flight — re-opening the confirm would let a second one start.
+    if (savingSessionRef.current) return;
     const total = exercises.length;
     const doneCount = exercises.filter(ex => ex.isDone).length;
     const allDone = doneCount === total;
@@ -3160,20 +3185,29 @@ export default function TrainerWorkoutSessionScreen() {
       setConfirmModal({
         title: 'Complete workout?',
         message: `${doneCount}/${total} exercises done`,
-        actions: [{ text: 'Complete', primary: true, onPress: saveSession }],
+        actions: [{ text: 'Complete', primary: true, onPress: requestFinish }],
         cancelText: 'Go back',
       });
     } else {
       setConfirmModal({
         title: 'Complete workout?',
         message: `${doneCount}/${total} exercises done. Some exercises weren't marked as complete.`,
-        actions: [{ text: 'Complete anyway', primary: true, onPress: saveSession }],
+        actions: [{ text: 'Complete anyway', primary: true, onPress: requestFinish }],
         cancelText: 'Go back',
       });
     }
   };
 
+  // Confirming Finish is a NEW request to end the session, so it re-stamps the end time.
+  // Automatic retries and the modal's "Try again" deliberately do NOT — they are the same
+  // finish, and the minutes spent waiting for signal are not training. Only a fresh tap
+  // moves it, because that is the one case where he may have gone back and done more work.
+  const requestFinish = () => { finishRequestedAtRef.current = Date.now(); return saveSession(); };
+
   const saveSession = async () => {
+    // Never two at once: the second run would finalise the row again and insert a
+    // duplicate of every session_log. Retry taps land here too, so this must come first.
+    if (savingSessionRef.current) return;
     // A bare `return` here made Finish do NOTHING — no error, no modal, no navigation
     // — if the profile hadn't rehydrated yet (e.g. after iOS reclaimed the app during
     // a long session). Indistinguishable from a dead button. Say so instead.
@@ -3186,189 +3220,79 @@ export default function TrainerWorkoutSessionScreen() {
       });
       return;
     }
-    const duration = startedAt ? Math.floor((Date.now() - startedAt) / 1000) : null;
+    // Stamp the END of the session on the FIRST attempt and keep it for every retry —
+    // the workout finished when he tapped Finish, not when the connection came back.
+    if (finishRequestedAtRef.current == null) finishRequestedAtRef.current = Date.now();
+    // Clamped: if the end time is ever older than the start, the subtraction goes negative.
+    const duration = startedAt ? Math.max(0, Math.floor((finishRequestedAtRef.current - startedAt) / 1000)) : null;
     const today = new Date().toISOString().split('T')[0];
     let completedSessionId: string | null = null;
+    let uploadedNow = false;
     const doneCount = exercises.filter(ex => ex.isDone).length;
     const total = exercises.length;
+    savingSessionRef.current = true;
+    setSavingSession(true);
 
     try {
-      // 1. Create or finalise session record
-      // Finalise the running row if we have one; if that update fails (or matched
-      // nothing — e.g. the row was cleaned up elsewhere) fall through to an insert
-      // rather than giving up. Losing a finished session is never acceptable.
-      let sessionId: string | null = null;
+      // ── Build the whole finish as one replayable job ─────────────────────────
+      // Nothing here touches the network. The session's id is minted on the device
+      // (or is the running row's), so it has an identity before the server knows it
+      // exists — which is what lets every write be addressed by id and replayed safely.
       const runningId = activeSessionIdRef.current ?? activeSessionId;
-      if (runningId) {
-        // Keep the date the row was created with (today, or a past day the client picked) —
-        // do NOT overwrite it with today here, or a past-week log would jump to the current week.
-        const { data: updated, error: updateErr } = await supabase
-          .from('sessions')
-          .update({ status: 'completed', duration_seconds: duration })
-          .eq('id', runningId)
-          .select('id');
-        if (updateErr) console.log('[saveSession] sessions update error:', updateErr);
-        if ((updated as any[])?.length) sessionId = runningId;
-      }
-      if (!sessionId) {
-        // Fallback: no in_progress row was created — honour any pending picked date.
-        const logDate = useSessionStore.getState().pendingLogDate ?? today;
-        useSessionStore.getState().clearPendingLogDate();
-        const { data: session, error } = await supabase
-          .from('sessions')
-          .insert({ workout_id: isFreeSession ? null : workoutId, client_id: clientId, date: logDate, status: 'completed', duration_seconds: duration, ...(isFreeSession ? { name: freeSessionNameRef.current } : {}) })
-          .select()
-          .single();
-        if (error || !session) {
-          console.log('[saveSession] sessions insert error:', error);
-          return; // the finally block keeps the session alive and offers a retry
-        }
-        sessionId = (session as any).id as string;
-      }
-      completedSessionId = sessionId;
+      const logDate = runningId
+        ? today
+        : (useSessionStore.getState().pendingLogDate ?? today);
+      if (!runningId) useSessionStore.getState().clearPendingLogDate();
+      const sessionId = runningId ?? generateUUID();
 
-      // 2. Insert added exercises into workout_exercises and map local IDs to real UUIDs
-      // (skipped for free sessions — no workout to attach exercises to)
-      const localToRealId = new Map<string, string>();
-      const addedExs = exercises.filter(ex => ex.isAddedDuringSession);
-      console.log(`[saveSession] ${addedExs.length} exercises added during session`);
-      if (addedExs.length > 0 && !isFreeSession) {
-        const { data: topWe } = await supabase
-          .from('workout_exercises')
-          .select('order_index')
-          .eq('workout_id', workoutId)
-          .order('order_index', { ascending: false })
-          .limit(1);
-        let nextIdx = ((topWe as any[])?.[0]?.order_index ?? 0) + 1;
-        for (const ex of addedExs) {
-          console.log(`[saveSession] Inserting workout_exercise: workoutId=${workoutId}, exerciseId=${ex.exerciseId}, order=${nextIdx}`);
-          const { data: inserted, error: weErr } = await supabase
-            .from('workout_exercises')
-            .insert({ workout_id: workoutId, exercise_id: ex.exerciseId, order_index: nextIdx })
-            .select('id')
-            .single();
-          if (weErr || !inserted) {
-            console.log('[saveSession] workout_exercises INSERT FAILED:', JSON.stringify(weErr));
-            continue;
-          }
-          const realId = (inserted as any).id;
-          console.log(`[saveSession] workout_exercises INSERT ok: localId=${ex.workoutExerciseId} → realId=${realId}`);
-          localToRealId.set(ex.workoutExerciseId, realId);
+      const addedExercises = isFreeSession ? [] : exercises
+        .filter(ex => ex.isAddedDuringSession)
+        .map(ex => ({
+          localWeId: ex.workoutExerciseId,
+          exerciseId: ex.exerciseId,
+          sets: ex.sets.filter(sx => !sx.isRemoved).map(sx => ({
+            set_number: sx.setNumber,
+            target_reps: sx.targetReps ?? null,
+            target_weight_kg: sx.weightKg ? parseFloat(sx.weightKg) : null,
+            is_warmup: sx.isWarmup,
+          })),
+        }));
+      const addedLocalIds = new Set(addedExercises.map(a => a.localWeId));
 
-          // Insert workout_sets so they persist on next load
-          // Note: workout_sets columns are: workout_exercise_id, set_number, target_reps, target_weight_kg, rest_seconds
-          const setsToInsert = ex.sets
-            .filter(s => !s.isRemoved)
-            .map(s => ({
-              workout_exercise_id: realId,
-              set_number: s.setNumber,
-              target_reps: s.targetReps ?? null,
-              target_weight_kg: s.weightKg ? parseFloat(s.weightKg) : null,
-              rest_seconds: null,
-              is_warmup: s.isWarmup,
-              is_added_during_session: true,
-            }));
-          console.log(`[saveSession] Inserting ${setsToInsert.length} workout_sets for realId=${realId}`);
-          if (setsToInsert.length > 0) {
-            const { error: wsErr } = await supabase.from('workout_sets').insert(setsToInsert);
-            if (wsErr) console.log('[saveSession] workout_sets INSERT FAILED:', JSON.stringify(wsErr));
-            else console.log('[saveSession] workout_sets INSERT ok');
-          }
+      const extraSets = exercises
+        .filter(ex => !ex.isAddedDuringSession)
+        .map(ex => ({
+          workoutExerciseId: ex.workoutExerciseId,
+          sets: ex.sets
+            .filter(sx => sx.workoutSetId === null && !sx.isDropset && !sx.isRemoved)
+            .map(sx => ({
+              set_number: sx.setNumber,
+              target_reps: sx.targetReps ?? null,
+              target_weight_kg: sx.weightKg ? parseFloat(sx.weightKg) : null,
+              is_warmup: sx.isWarmup,
+            })),
+        }))
+        .filter(e => e.sets.length > 0);
 
-          nextIdx++;
-        }
-      }
+      const replacedExercises = exercises
+        .map((ex, i) => ({ ex, slotNumber: i + 1 }))
+        .filter(({ ex }) => !ex.isAddedDuringSession && ex.originalExerciseId !== null)
+        .map(({ ex, slotNumber }) => ({
+          workoutExerciseId: ex.workoutExerciseId,
+          exerciseId: ex.exerciseId,
+          originalExerciseId: ex.originalExerciseId!,
+          slotNumber,
+        }));
 
-      // 2b. Persist extra sets added mid-session to existing exercises into workout_sets
-      // (sets with workoutSetId===null on non-added exercises were added via "add set" button)
-      for (const ex of exercises.filter(e => !e.isAddedDuringSession)) {
-        const newSets = ex.sets.filter(s => s.workoutSetId === null && !s.isDropset && !s.isRemoved);
-        if (newSets.length === 0) continue;
-        const { error: wsErr } = await supabase.from('workout_sets').insert(
-          newSets.map(s => ({
-            workout_exercise_id: ex.workoutExerciseId,
-            set_number: s.setNumber,
-            target_reps: s.targetReps ?? null,
-            target_weight_kg: s.weightKg ? parseFloat(s.weightKg) : null,
-            rest_seconds: null,
-            is_warmup: s.isWarmup,
-            is_added_during_session: true,
-          }))
-        );
-        if (wsErr) console.log('[saveSession] extra workout_sets INSERT FAILED:', JSON.stringify(wsErr));
-      }
+      const interactionOrder = sessionCount > 0
+        ? Array.from(exerciseInteractionOrderRef.current.entries()).flatMap(([weId, position]) => {
+            const idx = exercises.findIndex(e => e.workoutExerciseId === weId);
+            if (idx === -1) return [];
+            return [{ workoutExerciseId: weId, exerciseId: exercises[idx].exerciseId, slotNumber: idx + 1, position }];
+          })
+        : [];
 
-      // 3. Persist replaced exercises and track slot history
-      const replacedExs = exercises.filter(ex => !ex.isAddedDuringSession && ex.originalExerciseId !== null);
-      for (const ex of replacedExs) {
-        await supabase
-          .from('workout_exercises')
-          .update({ exercise_id: ex.exerciseId })
-          .eq('id', ex.workoutExerciseId);
-
-        const slotNumber = exercises.indexOf(ex) + 1;
-        const { data: slotRow } = await supabase
-          .from('workout_exercise_slots')
-          .upsert(
-            { workout_id: workoutId, slot_number: slotNumber, original_exercise_id: ex.originalExerciseId, current_exercise_id: ex.exerciseId },
-            { onConflict: 'workout_id,slot_number' }
-          )
-          .select('id')
-          .single();
-
-        if (slotRow) {
-          await supabase.from('slot_replacement_history').insert({
-            slot_id: (slotRow as any).id,
-            exercise_id: ex.exerciseId,
-            replaced_on: today,
-            session_id: sessionId,
-            is_permanent: true,
-          });
-        }
-      }
-
-      // 3b. Record slot interaction order (Feature 2)
-      if (sessionCount > 0 && exerciseInteractionOrderRef.current.size > 0) {
-        for (const [weId, interactionPos] of exerciseInteractionOrderRef.current) {
-          const exPos = exercises.findIndex(e => e.workoutExerciseId === weId);
-          if (exPos === -1) continue;
-          const slotNum = exPos + 1;
-          const ex = exercises[exPos];
-          const { data: existingSlot } = await supabase
-            .from('workout_exercise_slots')
-            .select('id')
-            .eq('workout_id', workoutId)
-            .eq('slot_number', slotNum)
-            .maybeSingle();
-          let slotId: string | null = existingSlot ? (existingSlot as any).id : null;
-          if (!slotId) {
-            const { data: newSlot } = await supabase
-              .from('workout_exercise_slots')
-              .insert({ workout_id: workoutId, slot_number: slotNum, original_exercise_id: ex.exerciseId, current_exercise_id: ex.exerciseId })
-              .select('id').single();
-            if (newSlot) slotId = (newSlot as any).id;
-          }
-          if (slotId) {
-            await supabase.from('slot_order_history').insert({
-              slot_id: slotId,
-              performed_at_position: interactionPos,
-              session_id: sessionId,
-              is_permanent: false,
-              changed_on: today,
-            });
-          }
-        }
-      }
-
-      // 4. Build and insert session logs using real workout_exercise IDs
-      const logs: any[] = [];
-      for (const ex of exercises) {
-        const weId = localToRealId.get(ex.workoutExerciseId) ?? ex.workoutExerciseId;
-        // Skip exercises with local IDs that failed to insert (would cause FK violation)
-        if (ex.isAddedDuringSession && !localToRealId.has(ex.workoutExerciseId)) {
-          console.log('[saveSession] skipping logs for exercise with failed insert:', ex.workoutExerciseId);
-          continue;
-        }
+      const logs = exercises.flatMap(ex => {
         const eqLower = (ex.equipment ?? '').toLowerCase();
         const isBarbelEx = eqLower.includes('barbell') || eqLower === 'z bar';
         const isZBarEx = eqLower === 'z bar';
@@ -3376,93 +3300,111 @@ export default function TrainerWorkoutSessionScreen() {
         const isCableMachineEx = eqLower === 'cable' || eqLower === 'machine';
         const machineBrandUsed = isCableMachineEx ? (machineBrandsRef.current.get(ex.workoutExerciseId) ?? null) : null;
         let dropOrder = 0;
-        ex.sets.forEach(s => {
-          const allSetNotes = [...s.trainerNotes, ...s.clientNotes];
-          const notesText = allSetNotes.length ? allSetNotes.map(n => `${n.date} — ${n.text}`).join('\n') : null;
-          logs.push({ session_id: sessionId, workout_exercise_id: weId, set_number: s.setNumber, reps_completed: s.repsCompleted ? parseInt(s.repsCompleted, 10) : null, weight_kg: s.weightKg ? parseFloat(s.weightKg) : null, barbell_weight_used_kg: barbellKgUsed, machine_brand: machineBrandUsed, is_removed: s.isRemoved, is_warmup: s.isWarmup, is_dropset: s.isDropset, dropset_order: s.isDropset ? ++dropOrder : null, notes: notesText });
+        return ex.sets.map(sx => {
+          const allSetNotes = [...sx.trainerNotes, ...sx.clientNotes];
+          return {
+            weId: ex.workoutExerciseId,
+            weIsLocal: addedLocalIds.has(ex.workoutExerciseId),
+            set_number: sx.setNumber,
+            reps_completed: sx.repsCompleted ? parseInt(sx.repsCompleted, 10) : null,
+            weight_kg: sx.weightKg ? parseFloat(sx.weightKg) : null,
+            barbell_weight_used_kg: barbellKgUsed,
+            machine_brand: machineBrandUsed,
+            is_removed: sx.isRemoved,
+            is_warmup: sx.isWarmup,
+            is_dropset: sx.isDropset,
+            dropset_order: sx.isDropset ? ++dropOrder : null,
+            notes: allSetNotes.length ? allSetNotes.map(n => `${n.date} — ${n.text}`).join('\n') : null,
+          };
         });
-      }
-      console.log(`[saveSession] Built ${logs.length} session_log rows`);
-      if (logs.length > 0) {
-        console.log('[saveSession] Sample logs (first 3):', JSON.stringify(logs.slice(0, 3)));
-        const { error: logsErr } = await supabase.from('session_logs').insert(logs);
-        if (logsErr) console.log('[saveSession] session_logs INSERT FAILED:', JSON.stringify(logsErr));
-        else console.log('[saveSession] session_logs INSERT ok');
-      }
+      });
 
-      // 5a. Safety net: persist any set notes not yet in DB (e.g. if live insert failed)
-      if (profile?.id) {
-        for (const ex of exercises) {
-          for (const s of ex.sets.filter(set => set.workoutSetId != null)) {
-            const unpersisted = [
-              ...s.trainerNotes.filter(n => !n.isDeleted && !persistedSetNoteIdsRef.current.has(n.id)).map(n => ({ ...n, role: 'trainer' as const })),
-              ...s.clientNotes.filter(n => !n.isDeleted && !persistedSetNoteIdsRef.current.has(n.id)).map(n => ({ ...n, role: 'client' as const })),
-            ];
-            if (unpersisted.length > 0) {
-              await supabase.from('notes').insert(
-                unpersisted.map(n => ({ id: n.id, content: n.text, role: n.role, level: 'set', reference_id: s.workoutSetId!, created_by: profile!.id }))
-              );
-            }
-          }
-        }
-      }
-
-      // 5b. Persist any training notes that were added before the session started (not yet in DB)
-      const unpersistedNotes = [
-        ...trainingTrainerNotes.filter(n => !n.isDeleted && !persistedTrainingNoteIdsRef.current.has(n.id)).map(n => ({ ...n, role: 'trainer' as const })),
-        ...trainingClientNotes.filter(n => !n.isDeleted && !persistedTrainingNoteIdsRef.current.has(n.id)).map(n => ({ ...n, role: 'client' as const })),
+      // Notes written before the session existed still need persisting (the live insert
+      // may have failed, or a training note had no session to point at until now).
+      const setNotes = exercises.flatMap(ex => ex.sets
+        .filter(sx => sx.workoutSetId != null)
+        .flatMap(sx => [
+          ...sx.trainerNotes.filter(n => !n.isDeleted && !persistedSetNoteIdsRef.current.has(n.id)).map(n => ({ id: n.id, content: n.text, role: 'trainer' as const, workoutSetId: sx.workoutSetId! })),
+          ...sx.clientNotes.filter(n => !n.isDeleted && !persistedSetNoteIdsRef.current.has(n.id)).map(n => ({ id: n.id, content: n.text, role: 'client' as const, workoutSetId: sx.workoutSetId! })),
+        ]));
+      const trainingNotes = [
+        ...trainingTrainerNotes.filter(n => !n.isDeleted && !persistedTrainingNoteIdsRef.current.has(n.id)).map(n => ({ id: n.id, content: n.text, role: 'trainer' as const })),
+        ...trainingClientNotes.filter(n => !n.isDeleted && !persistedTrainingNoteIdsRef.current.has(n.id)).map(n => ({ id: n.id, content: n.text, role: 'client' as const })),
       ];
-      if (unpersistedNotes.length > 0 && profile?.id) {
-        await supabase.from('notes').insert(
-          unpersistedNotes.map(n => ({ id: n.id, content: n.text, role: n.role, level: 'training', reference_id: sessionId, created_by: profile.id }))
-        );
-      }
+      const deleteNoteIds = [...new Set([
+        ...exercises.flatMap(ex => [
+          ...ex.sets.flatMap(sx => [...sx.trainerNotes, ...sx.clientNotes]).filter(n => n.isDeleted && persistedSetNoteIdsRef.current.has(n.id)).map(n => n.id),
+          ...[...ex.trainerNotes, ...ex.clientNote].filter(n => n.isDeleted && persistedExerciseNoteIdsRef.current.has(n.id)).map(n => n.id),
+        ]),
+        ...[...trainingTrainerNotes, ...trainingClientNotes].filter(n => n.isDeleted && persistedTrainingNoteIdsRef.current.has(n.id)).map(n => n.id),
+        ...flushPendingNoteDeletes(),
+      ])];
 
-      // 5d. Permanently delete notes that were soft-deleted during the session
-      const deletedNoteIds: string[] = [];
-      for (const ex of exercises) {
-        for (const s of ex.sets) {
-          [...s.trainerNotes, ...s.clientNotes].forEach(n => {
-            if (n.isDeleted && persistedSetNoteIdsRef.current.has(n.id)) deletedNoteIds.push(n.id);
-          });
-        }
-        [...ex.trainerNotes, ...ex.clientNote].forEach(n => {
-          if (n.isDeleted && persistedExerciseNoteIdsRef.current.has(n.id)) deletedNoteIds.push(n.id);
-        });
-      }
-      [...trainingTrainerNotes, ...trainingClientNotes].forEach(n => {
-        if (n.isDeleted && persistedTrainingNoteIdsRef.current.has(n.id)) deletedNoteIds.push(n.id);
-      });
-      // Also flush any note deletes pending from exercise-detail
-      const bridgeNoteDeletes = flushPendingNoteDeletes();
-      const allDeleteIds = [...new Set([...deletedNoteIds, ...bridgeNoteDeletes])];
-      if (allDeleteIds.length > 0) {
-        await supabase.from('notes').delete().in('id', allDeleteIds);
-      }
-
-      // 5c. Insert session photos for exercises added during session (others already persisted on upload)
-      const photoRows: any[] = [];
+      const photos: { weId: string; weIsLocal: boolean; photoUrl: string }[] = [];
       exercisePhotos.forEach((urls, weId) => {
-        const ex = exercises.find(e => e.workoutExerciseId === weId);
-        if (!ex?.isAddedDuringSession) return; // already in DB, skip
-        const realWeId = localToRealId.get(weId) ?? weId;
-        urls.forEach(url => photoRows.push({ session_id: sessionId, workout_exercise_id: realWeId, photo_url: url }));
+        // Photos on existing exercises were written to the DB the moment they were taken.
+        if (!addedLocalIds.has(weId)) return;
+        urls.forEach(url => photos.push({ weId, weIsLocal: true, photoUrl: url }));
       });
-      if (photoRows.length > 0) {
-        const { error: photoErr } = await supabase.from('session_exercise_photos').insert(photoRows);
-        if (photoErr) console.log('[saveSession] session_exercise_photos INSERT FAILED:', JSON.stringify(photoErr));
-      }
+
+      // ── Commit. This is the save, and it cannot fail for network reasons. ────────
+      await enqueueFinishJob({
+        version: 1,
+        jobId: generateUUID(),
+        queuedAt: Date.now(),
+        sessionId,
+        runningSessionId: runningId,
+        clientId,
+        workoutId: isFreeSession ? null : workoutId ?? null,
+        isFreeSession,
+        freeSessionName: isFreeSession ? freeSessionNameRef.current : null,
+        logDate,
+        durationSeconds: duration,
+        authorId: profile?.id ?? null,
+        addedExercises,
+        extraSets,
+        replacedExercises,
+        interactionOrder,
+        logs,
+        setNotes,
+        trainingNotes,
+        deleteNoteIds,
+        photos,
+        done: {},
+      });
+      completedSessionId = sessionId;
+
+      // Try to upload right now, but don't hold the client hostage to it. Whatever
+      // happens next, the session is already saved and will reach the server on its own.
+      await Promise.race([
+        flushSessionOutbox(),
+        new Promise(res => setTimeout(res, IMMEDIATE_UPLOAD_WAIT_MS)),
+      ]);
+      uploadedNow = !(await isSessionPending(sessionId));
     } catch (err) {
       console.log('[saveSession] unexpected error:', err);
     } finally {
+      savingSessionRef.current = false;
+      setSavingSession(false);
       if (!completedSessionId) {
-        // Nothing was written. Keep the session running and everything logged in
-        // it — dropping out of Do Mode here is what used to throw the data away.
+        // The queue write itself failed — that is device storage, not the network, so it
+        // is genuinely exceptional. Keep the session running and everything in it.
         setConfirmModal({
           title: "Couldn't save the session",
-          message: 'Everything you logged is still here. Check your connection and try Finish again.',
+          message: 'Everything you logged is still here. Try Finish again.',
           actions: [{ text: 'Try again', primary: true, onPress: async () => { await saveSessionRef.current(); } }],
           cancelText: 'Back to session',
+        });
+      } else if (!uploadedNow) {
+        // Saved, but still on the phone. The session ENDS here either way — that is the
+        // whole point of the outbox, and it is why no IN PROGRESS card is left behind.
+        // The overview needs his history from the server to work out records, so it waits.
+        finishSession();
+        void clearSessionDraft(clientId, isFreeSession ? 'free' : workoutId!);
+        setConfirmModal({
+          title: 'Session saved on your phone',
+          message: 'No internet right now — every weight and rep is logged and will upload by itself as soon as you are back online. Your session overview will be there then.',
+          actions: [{ text: 'Done', primary: true, onPress: () => router.back() }],
         });
       } else {
         finishSession();
@@ -4028,13 +3970,23 @@ export default function TrainerWorkoutSessionScreen() {
                   item.kind === 'exercise' ? item.exercise.workoutExerciseId : item.groupId
                 }
                 ListFooterComponent={isRunning && !isEditMode ? (
-                  <TouchableOpacity style={styles.finishFooterBtn} onPress={handleFinish} activeOpacity={0.85}>
+                  <TouchableOpacity style={styles.finishFooterBtn} onPress={handleFinish} activeOpacity={0.85} disabled={savingSession}>
                     <View style={styles.finishFooterTitleRow}>
-                      <Text style={styles.finishFooterTitle}>Finish session</Text>
-                      <View style={styles.finishFooterSep} />
-                      <Text style={styles.finishFooterTimer}>{formatTimer(elapsed)}</Text>
+                      <Text style={styles.finishFooterTitle}>{savingSession ? 'Saving…' : 'Finish session'}</Text>
+                      {savingSession ? (
+                        <ActivityIndicator size="small" color={ACCENT} style={{ marginLeft: 10 }} />
+                      ) : (
+                        <>
+                          <View style={styles.finishFooterSep} />
+                          <Text style={styles.finishFooterTimer}>{formatTimer(elapsed)}</Text>
+                        </>
+                      )}
                     </View>
-                    <Text style={styles.finishFooterSub}>{exercises.filter(e => e.isDone).length} / {exercises.length} exercises done</Text>
+                    <Text style={styles.finishFooterSub}>
+                      {savingSession
+                        ? 'Everything you logged is safe on this phone'
+                        : `${exercises.filter(e => e.isDone).length} / ${exercises.length} exercises done`}
+                    </Text>
                   </TouchableOpacity>
                 ) : null}
                 style={{ flex: 1, backgroundColor: '#fff' }}

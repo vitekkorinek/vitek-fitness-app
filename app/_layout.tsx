@@ -7,10 +7,12 @@ import {
 import { Stack, useRouter, useSegments } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { useEffect } from 'react';
+import { AppState } from 'react-native';
 import 'react-native-reanimated';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 import { AuthProvider, useAuth } from '@/context/AuthContext';
+import { flushSessionOutbox } from '@/lib/sessionOutbox';
 
 export { ErrorBoundary } from 'expo-router';
 
@@ -52,6 +54,21 @@ function RootLayoutNav() {
   const { session, profile, loading, passwordRecovery } = useAuth();
   const segments = useSegments();
   const router = useRouter();
+
+  // ── Finished sessions waiting to reach the server ──────────────────────────────
+  // Finishing a session is a LOCAL act (lib/sessionOutbox) — it queues, the session ends,
+  // and the upload happens here: once we're signed in, and again on every return to the
+  // foreground. It lives at the ROOT on purpose. The previous attempt at this was a retry
+  // timer inside Do Mode, which died the moment the screen unmounted or the app was
+  // force-quit — exactly what a client does when the gym wifi is playing up.
+  useEffect(() => {
+    if (loading || !session) return;
+    void flushSessionOutbox();
+    const sub = AppState.addEventListener('change', state => {
+      if (state === 'active') void flushSessionOutbox();
+    });
+    return () => sub.remove();
+  }, [loading, session]);
 
   useEffect(() => {
     if (loading) return;

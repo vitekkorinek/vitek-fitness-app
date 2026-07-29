@@ -1689,6 +1689,22 @@ function TrainingTab({
               workoutName={scheduledMenu.workoutName ?? 'Session'}
               status={scheduledMenu.status}
               onViewDetails={() => { const s = scheduledMenu; setScheduledMenu(null); openSessionDetailsSheet(s); }}
+              onSeeHowItWent={() => {
+                const s = scheduledMenu;
+                // Dismiss the menu FIRST, then push — the overview arrives from the right
+                // over a settled screen, and back lands exactly where he tapped ⋯.
+                setScheduledMenu(null);
+                router.push({
+                  pathname: '/(trainer)/client/[id]/workout/session-complete',
+                  params: {
+                    id: clientId,
+                    sessionId: s.id,
+                    workoutId: s.workoutId ?? 'free',
+                    clientName: client?.name ?? '',
+                    review: '1',
+                  },
+                } as any);
+              }}
               onEditWorkout={() => {
                 const wid = scheduledMenu.workoutId;
                 setScheduledMenu(null);
@@ -2444,6 +2460,7 @@ function ScheduledSessionMenu({
   workoutName,
   status,
   onViewDetails,
+  onSeeHowItWent,
   onEditWorkout,
   onMove,
   onDelete,
@@ -2455,6 +2472,7 @@ function ScheduledSessionMenu({
   // is mid-session would change the workout beneath them.
   status: 'scheduled' | 'completed' | 'in_progress';
   onViewDetails: () => void;
+  onSeeHowItWent: () => void;
   onEditWorkout: () => void;
   onMove: () => void;
   onDelete: () => void;
@@ -2472,6 +2490,18 @@ function ScheduledSessionMenu({
             <Text style={menuStyles.optionText}>View details</Text>
           </TouchableOpacity>
           <View style={[menuStyles.optionDivider, { backgroundColor: 'rgba(0,0,0,0.08)' }]} />
+          {/* Details = the facts (what was logged, set by set). This = the story
+              (records, better/tougher than last time). Only a session that HAPPENED
+              has one — there is nothing to tell about a plan. */}
+          {status === 'completed' && (
+            <>
+              <TouchableOpacity style={menuStyles.option} onPress={onSeeHowItWent} activeOpacity={0.7}>
+                <SymbolView name="trophy" size={16} tintColor={TEXT} />
+                <Text style={menuStyles.optionText}>See how it went</Text>
+              </TouchableOpacity>
+              <View style={[menuStyles.optionDivider, { backgroundColor: 'rgba(0,0,0,0.08)' }]} />
+            </>
+          )}
           {status === 'scheduled' && (
             <>
               <TouchableOpacity style={menuStyles.option} onPress={onEditWorkout} activeOpacity={0.7}>

@@ -4,6 +4,7 @@ import {
   TextInput,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { SymbolView } from 'expo-symbols';
 import { useRouter } from 'expo-router';
 import Svg, { Polygon } from 'react-native-svg';
 import { VFIcon } from '@/components/VFIcon';
@@ -119,6 +120,14 @@ interface Props {
   durationSeconds: number;
   exercisesDone: number;
   exercisesTotal: number;
+  /**
+   * Opened AFTERWARDS from a session's ⋯ menu ("See how it went") rather than at the end
+   * of a workout. Same screen, but it is a place you visited, not a moment you are in:
+   * back chevron instead of a dead end, the session's OWN date instead of today, the
+   * post-workout stretch prompt hidden (that offer expired weeks ago), and the numbers
+   * looked up rather than handed over — a menu row shouldn't have to carry eight params.
+   */
+  review?: boolean;
   isTrainer: boolean;
 }
 
@@ -158,7 +167,7 @@ function formatShortDate(ymd: string): string {
 
 export function SessionCompleteScreen({
   sessionId, workoutId, clientId, clientName,
-  sessionNumber, durationSeconds, exercisesDone, exercisesTotal, isTrainer,
+  sessionNumber, durationSeconds, exercisesDone, exercisesTotal, isTrainer, review,
 }: Props) {
   const insets = useSafeAreaInsets();
   const router = useRouter();
@@ -170,6 +179,8 @@ export function SessionCompleteScreen({
   const [firstTimes, setFirstTimes] = useState<FirstTimeResult[]>([]);
   const [stretchWorkout, setStretchWorkout] = useState<{ id: string; name: string } | null>(null);
   const [sessionNote, setSessionNote] = useState('');
+  // Filled only in review mode — see the `review` prop.
+  const [meta, setMeta] = useState<{ date: string; durationSeconds: number; sessionNumber: number; exercisesDone: number; exercisesTotal: number } | null>(null);
   const initialNoteRef = useRef('');
   const [canScrollMore, setCanScrollMore] = useState(false);
   const scrollContentHeightRef = useRef(0);
@@ -208,16 +219,47 @@ export function SessionCompleteScreen({
           .not('is_removed', 'eq', true),
         supabase
           .from('sessions')
-          .select('client_notes')
+          .select('client_notes, date, duration_seconds')
           .eq('id', sessionId)
           .single(),
       ]);
 
       const todayLogs = todayLogsData ?? [];
 
+      const thisSessionDate = (sessionRes.data as any)?.date as string | undefined;
       const existingNote = (sessionRes.data as any)?.client_notes ?? '';
       setSessionNote(existingNote);
       initialNoteRef.current = existingNote;
+
+      // Review mode looks its own numbers up. "Session N" counts the client's completed
+      // sessions of THIS workout up to and including this one, so the label still reads
+      // the same as it did on the day.
+      if (review) {
+        const [{ count: doneBefore }, { data: weAll }] = await Promise.all([
+          workoutId && workoutId !== 'free' && thisSessionDate
+            ? supabase.from('sessions').select('id', { count: 'exact', head: true })
+                .eq('client_id', clientId).eq('workout_id', workoutId)
+                .eq('status', 'completed').lte('date', thisSessionDate)
+            : Promise.resolve({ count: null } as any),
+          workoutId && workoutId !== 'free'
+            ? supabase.from('workout_exercises').select('id').eq('workout_id', workoutId).eq('is_active', true)
+            : Promise.resolve({ data: null } as any),
+        ]);
+        // An exercise counts as done if anything was logged against it — the done-marks
+        // themselves never reach the DB, only the numbers do.
+        const loggedWeIds = new Set(
+          (todayLogsData ?? [])
+            .filter((l: any) => (l.reps_completed ?? 0) > 0 || (l.weight_kg ?? 0) > 0)
+            .map((l: any) => l.workout_exercise_id as string)
+        );
+        setMeta({
+          date: thisSessionDate ?? '',
+          durationSeconds: (sessionRes.data as any)?.duration_seconds ?? 0,
+          sessionNumber: doneBefore ?? sessionNumber,
+          exercisesDone: loggedWeIds.size,
+          exercisesTotal: (weAll as any[])?.length ?? loggedWeIds.size,
+        });
+      }
 
       const weIds = [...new Set(todayLogs.map((l: any) => l.workout_exercise_id))];
 
@@ -291,6 +333,17 @@ export function SessionCompleteScreen({
           .order('created_at', { ascending: false });
         histSess = data ?? [];
       }
+      // ⚠️ REVIEWING A PAST SESSION MUST NOT SEE ITS OWN FUTURE. Finishing a workout has
+      // no history after it, so this query never needed a bound — but opening the overview
+      // of a session from three weeks ago would compare it against everything trained
+      // since, and report a lift as beaten by a session that hadn't happened yet. Nothing
+      // dated later than the session being looked at is history TO it.
+      if (review && thisSessionDate) {
+        histSess = histSess.filter((x: any) => (x.date as string) <= thisSessionDate);
+        const allowed = new Set(histSess.map((x: any) => x.id as string));
+        histLogs = histLogs.filter((l: any) => allowed.has(l.session_id));
+      }
+
       const sessRank = new Map(histSess.map((x: any, i: number) => [x.id as string, i]));
       const sessDate = new Map(histSess.map((x: any) => [x.id as string, x.date as string]));
 
@@ -497,6 +550,9 @@ export function SessionCompleteScreen({
         .update({ client_notes: trimmed || null })
         .eq('id', sessionId);
     }
+    // Reviewing is a detour — go back exactly where it was opened from, rather than
+    // resetting the stack to the tab root the way finishing a session does.
+    if (review) { router.back(); return; }
     if (isTrainer) {
       router.replace({ pathname: '/(trainer)/client/[id]', params: { id: clientId } } as any);
     } else {
@@ -513,11 +569,15 @@ export function SessionCompleteScreen({
     }
   };
 
-  const today = new Date();
-  const dateStr = formatDate(today);
+  // Review shows the day it HAPPENED; the finish flow is always "now".
+  const dateStr = review && meta?.date ? formatDate(new Date(meta.date + 'T12:00:00')) : formatDate(new Date());
+  const shownNumber = meta?.sessionNumber ?? sessionNumber;
+  const shownDuration = meta?.durationSeconds ?? durationSeconds;
+  const shownDone = meta?.exercisesDone ?? exercisesDone;
+  const shownTotal = meta?.exercisesTotal ?? exercisesTotal;
   const sessionLabel = isFreeSession
     ? `Free session · ${dateStr}`
-    : `Session ${sessionNumber} · ${dateStr}`;
+    : `Session ${shownNumber} · ${dateStr}`;
 
   const formatDelta = (r: ExerciseResult) =>
     r.deltaType === 'kg' ? `${r.delta % 1 === 0 ? r.delta : r.delta.toFixed(1)} kg` : `${r.delta} reps`;
@@ -526,6 +586,16 @@ export function SessionCompleteScreen({
     <View style={[s.root, { paddingBottom: insets.bottom }]}>
       {/* Header */}
       <View style={[s.header, { paddingTop: insets.top + 24 }]}>
+        {review && (
+          <TouchableOpacity
+            style={[s.reviewBack, { top: insets.top + 4 }]}
+            onPress={() => router.back()}
+            activeOpacity={0.7}
+            hitSlop={10}
+          >
+            <SymbolView name="chevron.left" size={20} tintColor="#fff" />
+          </TouchableOpacity>
+        )}
         <View style={s.logoWrap}>
           <Star size={20} style={{ position: 'absolute', left: 8, top: 16 }} />
           <Star size={12} style={{ position: 'absolute', left: 24, top: 4 }} />
@@ -565,11 +635,11 @@ export function SessionCompleteScreen({
               {/* Stats row */}
               <View style={s.statsRow}>
                 <View style={s.statCard}>
-                  <Text style={s.statValue}>{formatDuration(durationSeconds)}</Text>
+                  <Text style={s.statValue}>{formatDuration(shownDuration)}</Text>
                   <Text style={s.statLabel}>Duration</Text>
                 </View>
                 <View style={s.statCard}>
-                  <Text style={s.statValue}>{exercisesDone} / {exercisesTotal}</Text>
+                  <Text style={s.statValue}>{shownDone} / {shownTotal}</Text>
                   <Text style={s.statLabel}>Exercises done</Text>
                 </View>
               </View>
@@ -684,7 +754,7 @@ export function SessionCompleteScreen({
               )}
 
               {/* Stretch card */}
-              {stretchWorkout && (
+              {stretchWorkout && !review && (
                 <TouchableOpacity style={s.stretchCard} onPress={handleStretchPress} activeOpacity={0.8}>
                   <View style={s.stretchIconWrap}>
                     <VFIcon size={18} color={HEADER} />
@@ -750,6 +820,7 @@ const s = StyleSheet.create({
     justifyContent: 'center',
     marginBottom: 16,
   },
+  reviewBack: { position: 'absolute', left: 12, width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.20)' },
   greeting: { fontSize: 21, fontWeight: '500', color: '#fff', textAlign: 'center', marginBottom: 6 },
   sessionLabel: { fontSize: 11, color: 'rgba(255,255,255,0.38)', textAlign: 'center' },
   scroll: { flex: 1 },

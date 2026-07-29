@@ -2,7 +2,7 @@ import { useLocalSearchParams } from 'expo-router';
 import { SessionCompleteScreen } from '@/components/SessionCompleteScreen';
 
 export default function TrainerSessionComplete() {
-  const { id: clientId, sessionId, workoutId, clientName, sessionNumber, durationSeconds, exercisesDone, exercisesTotal } =
+  const { id: clientId, sessionId, workoutId, clientName, sessionNumber, durationSeconds, exercisesDone, exercisesTotal, review } =
     useLocalSearchParams<{
       id: string;
       sessionId: string;
@@ -12,6 +12,7 @@ export default function TrainerSessionComplete() {
       durationSeconds: string;
       exercisesDone: string;
       exercisesTotal: string;
+      review: string;
     }>();
 
   return (
@@ -24,6 +25,7 @@ export default function TrainerSessionComplete() {
       durationSeconds={parseInt(durationSeconds ?? '0', 10)}
       exercisesDone={parseInt(exercisesDone ?? '0', 10)}
       exercisesTotal={parseInt(exercisesTotal ?? '0', 10)}
+      review={review === '1'}
       isTrainer
     />
   );
