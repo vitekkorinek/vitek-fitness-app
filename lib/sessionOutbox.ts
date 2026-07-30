@@ -70,6 +70,12 @@ export type FinishJob = {
   workoutId: string | null;
   isFreeSession: boolean;
   freeSessionName: string | null;
+  /**
+   * The workout created BEHIND a free session to hold its exercises (Vitek's call, July 30
+   * 2026). Minted on the device like `sessionId`, null unless this is a free session that
+   * actually has exercises. See the free-workout stage in `uploadJob` for why it must exist.
+   */
+  freeWorkoutId: string | null;
   /** The training day (YYYY-MM-DD) — a past-day log keeps the day it was logged for. */
   logDate: string;
   durationSeconds: number | null;
@@ -92,6 +98,7 @@ export type FinishJob = {
    * would give the client a duplicate exercise in their workout, forever).
    */
   done: {
+    freeWorkout?: boolean;
     session?: boolean;
     extraSets?: boolean;
     replaced?: boolean;
@@ -215,13 +222,44 @@ async function uploadJob(job: FinishJob): Promise<boolean> {
 
   // 1. The session row. Finalise the running row if there is one; otherwise insert with
   //    OUR id, so a retry after a timeout updates the same row instead of adding a second.
+  // 0. A free session's exercises need somewhere to live. `session_logs.workout_exercise_id`
+  //    is NOT NULL REFERENCES workout_exercises(id), so with no workout the numbers cannot be
+  //    written at all — before July 30 2026 a free session with exercises failed on that FK,
+  //    reverted itself to `in_progress`, and requeued forever. So the free session now creates
+  //    a workout BEHIND it (Vitek's call): named after the session and `status:'completed'`, so
+  //    it stays out of the active list while history, progress and the session summary all work
+  //    with no special-casing.
+  //    ⚠️ Its id is minted on the DEVICE, like the session's — a request can time out AFTER the
+  //    server applied it, and an insert would then leave the client with two identical workouts.
+  //    ⚠️ RLS: `workouts` is trainer-insert-only, which today matches exactly who can add
+  //    exercises to a free session (the `+` is `isFreeSession && isTrainer`). If the client ever
+  //    gets that button, this stage needs a policy for them or it will fail here.
+  if (job.freeWorkoutId && !job.done.freeWorkout) {
+    const { error } = await supabase.from('workouts').upsert({
+      id: job.freeWorkoutId,
+      name: job.freeSessionName ?? 'Free Session',
+      client_id: job.clientId,
+      created_by: job.authorId ?? job.clientId,
+      status: 'completed',
+    });
+    if (error) { console.log('[outbox] free-session workout upsert failed:', error.message); return false; }
+    job.done.freeWorkout = true;
+    await patchJob(job);
+  }
+
   if (!job.done.session) {
     let landed = false;
     if (job.runningSessionId) {
       // Deliberately does NOT set `date` — a past-day log must keep the day it was for.
+      // A free session picks up its backing workout here, so it stops reading as a session of
+      // nothing: "last done" on that workout, its history and its progress all follow from it.
       const { data, error } = await supabase
         .from('sessions')
-        .update({ status: 'completed', duration_seconds: job.durationSeconds })
+        .update({
+          status: 'completed',
+          duration_seconds: job.durationSeconds,
+          ...(job.freeWorkoutId ? { workout_id: job.freeWorkoutId } : {}),
+        })
         .eq('id', job.runningSessionId)
         .select('id');
       if (error) console.log('[outbox] sessions update error:', error.message);
@@ -230,7 +268,7 @@ async function uploadJob(job: FinishJob): Promise<boolean> {
     if (!landed) {
       const { error } = await supabase.from('sessions').upsert({
         id: sessionId,
-        workout_id: job.isFreeSession ? null : job.workoutId,
+        workout_id: job.isFreeSession ? job.freeWorkoutId : job.workoutId,
         client_id: job.clientId,
         date: job.logDate,
         status: 'completed',
@@ -245,11 +283,14 @@ async function uploadJob(job: FinishJob): Promise<boolean> {
 
   // 2. Exercises added mid-session. NOT idempotent, so each one records its real id the
   //    moment it lands — a re-run would otherwise give the client the same exercise twice.
-  if (job.addedExercises.some(a => !a.realWeId) && !job.isFreeSession && job.workoutId) {
+  // A free session's exercises are ALL "added mid-session" and go into the workout created
+  // above; a normal session's go into its own workout.
+  const targetWorkoutId = job.isFreeSession ? job.freeWorkoutId : job.workoutId;
+  if (job.addedExercises.some(a => !a.realWeId) && targetWorkoutId) {
     const { data: topWe } = await supabase
       .from('workout_exercises')
       .select('order_index')
-      .eq('workout_id', job.workoutId)
+      .eq('workout_id', targetWorkoutId)
       .order('order_index', { ascending: false })
       .limit(1);
     let nextIdx = ((topWe as any[])?.[0]?.order_index ?? 0) + 1;
@@ -257,7 +298,7 @@ async function uploadJob(job: FinishJob): Promise<boolean> {
       if (added.realWeId) continue;
       const { data: inserted, error } = await supabase
         .from('workout_exercises')
-        .insert({ workout_id: job.workoutId, exercise_id: added.exerciseId, order_index: nextIdx })
+        .insert({ workout_id: targetWorkoutId, exercise_id: added.exerciseId, order_index: nextIdx })
         .select('id')
         .single();
       if (error || !inserted) { console.log('[outbox] workout_exercises insert failed:', error?.message); return false; }

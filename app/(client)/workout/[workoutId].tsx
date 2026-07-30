@@ -1214,11 +1214,53 @@ export default function TrainerWorkoutSessionScreen() {
   const load = useCallback(async () => {
     if (!workoutId || !clientId) return;
 
-    // Free session: no workout to load, just resolve client name and finish
+    // Free session: no workout to load — but there may be one still RUNNING, with a draft of
+    // everything logged into it. It gets the same treatment as a normal session now (adopt the
+    // open row instead of starting a second one, replay the draft), which is what lets a free
+    // session survive the app being killed and lets the resume chip land back inside it.
     if (isFreeSession) {
-      const { data: clientData } = await supabase.from('users').select('name').eq('id', clientId).single();
+      const todayStr = new Date().toISOString().split('T')[0];
+      const [{ data: clientData }, { data: liveSess }, draft] = await Promise.all([
+        supabase.from('users').select('name').eq('id', clientId).single(),
+        supabase.from('sessions').select('id, date, name, created_at, started_by')
+          .eq('client_id', clientId).is('workout_id', null).eq('status', 'in_progress')
+          .order('created_at', { ascending: false }).limit(1).maybeSingle(),
+        loadSessionDraft(clientId, 'free'),
+      ]);
       setClientName((clientData as any)?.name?.split(' ')[0] ?? '');
-      setExercises([]);
+
+      // Same two rules as the workout path, for the same reasons: today's row only — tested on
+      // `date`, never `created_at` — and never adopt a session somebody else started.
+      const freeOwner = (liveSess as any)?.started_by ?? null;
+      const freeIsToday = ((liveSess as any)?.date ?? null) === todayStr;
+      const freeOwnedByOther = freeIsToday && !!freeOwner && !!profile?.id && freeOwner !== profile.id;
+      if (freeOwnedByOther) setBlockedByOtherSession(true);
+      const freeLiveId = !isViewOnly && freeIsToday && !freeOwnedByOther ? (liveSess as any).id as string : null;
+
+      if (freeLiveId && !resumeSessionId) {
+        activeSessionIdRef.current = freeLiveId;
+        setActiveSessionId(freeLiveId);
+        setBridgeActiveSessionId(freeLiveId);
+        // The session was named when it started; keep that name rather than today's default.
+        const savedName = (liveSess as any).name as string | null;
+        if (savedName) { setFreeSessionName(savedName); freeSessionNameRef.current = savedName; }
+        const createdMs = (liveSess as any).created_at ? new Date((liveSess as any).created_at).getTime() : NaN;
+        const createdToday = Number.isFinite(createdMs)
+          && new Date(createdMs).toISOString().split('T')[0] === todayStr;
+        resumeSession('free', draft?.startedAt ?? (createdToday ? createdMs : Date.now()));
+      }
+
+      // The draft belongs to a session that is still open — never replay one over a fresh start.
+      const freeDraft = draft
+        && (freeLiveId != null || resumeSessionId != null)
+        && (draft.activeSessionId == null || draft.activeSessionId === (resumeSessionId ?? freeLiveId))
+        ? draft : null;
+      if (freeDraft) {
+        barbellWeightsRef.current = new Map(freeDraft.barbellWeights ?? []);
+        machineBrandsRef.current = new Map(freeDraft.machineBrands ?? []);
+      }
+      // A free session has no exercises of its own in the DB, so the draft IS the list.
+      setExercises(freeDraft ? freeDraft.exercises : []);
       setLoading(false);
       return;
     }
@@ -1802,10 +1844,20 @@ export default function TrainerWorkoutSessionScreen() {
   useEffect(() => {
     if (!isFreeSession || loading || freeAutoStarted.current) return;
     freeAutoStarted.current = true;
+    // ⚠️ load() may have just ADOPTED a free session that was left running, and the resume chip
+    // hands one over directly. Inserting here regardless is how resuming a free session used to
+    // leave a second in_progress row behind — the same duplicate-session bug the workout path
+    // was fixed for in July.
+    // ⚠️ No startSession() here — it is the store's `start`, which stamps startedAt = now and
+    // would throw away the original clock. load()'s adoption (and the resume effect, for the
+    // chip) have already called resumeSession with the real one.
+    if (activeSessionIdRef.current || resumeSessionId) return;
     const today = new Date().toISOString().split('T')[0];
     supabase
       .from('sessions')
-      .insert({ workout_id: null, client_id: clientId, date: today, status: 'in_progress', duration_seconds: null, name: freeSessionNameRef.current })
+      // `started_by` was missing here while every other session insert set it — which left free
+      // sessions with no owner, so the adoption check above could never tell whose they were.
+      .insert({ workout_id: null, client_id: clientId, date: today, status: 'in_progress', duration_seconds: null, started_by: profile?.id ?? null, name: freeSessionNameRef.current })
       .select('id')
       .single()
       .then(({ data }) => {
@@ -1848,7 +1900,10 @@ export default function TrainerWorkoutSessionScreen() {
   // on every change while the session runs. Leaving Do Mode (or iOS reclaiming
   // the app) then no longer throws the logged data away — load() replays it.
   useEffect(() => {
-    if (loading || isViewOnly || pastSession || isFreeSession) return;
+    // `workoutId` is the literal 'free' for a free session, so the draft key is `…:free` — the
+    // same one the finish/discard paths already clear. Free sessions were excluded here until
+    // July 30 2026, which left them as the one session type that lost its numbers outright.
+    if (loading || isViewOnly || pastSession) return;
     if (!clientId || !workoutId) return;
     if (!activeSessionId && !startedAt) return; // nothing started yet — nothing to keep
     const t = setTimeout(() => {
@@ -3245,7 +3300,19 @@ export default function TrainerWorkoutSessionScreen() {
       if (!runningId) useSessionStore.getState().clearPendingLogDate();
       const sessionId = runningId ?? generateUUID();
 
-      const addedExercises = isFreeSession ? [] : exercises
+      // The workout created BEHIND a free session, so its exercises have somewhere to live.
+      // Minted here for the same reason the session id is: identity before the server knows it
+      // exists, so a retry after a timed-out request upserts rather than creating a second one.
+      const freeWorkoutId = isFreeSession && exercises.some(ex => ex.isAddedDuringSession)
+        ? generateUUID()
+        : null;
+
+      // ⚠️ Free sessions used to be excluded here (`isFreeSession ? [] : …`) and that is exactly
+      // why they could never save: every one of their exercises IS "added during the session",
+      // so skipping them left every log pointing at a local id with no row behind it, and
+      // `session_logs.workout_exercise_id` is a NOT NULL foreign key. They go through the same
+      // path as any other added exercise now — into the workout minted just above.
+      const addedExercises = exercises
         .filter(ex => ex.isAddedDuringSession)
         .map(ex => ({
           localWeId: ex.workoutExerciseId,
@@ -3358,6 +3425,7 @@ export default function TrainerWorkoutSessionScreen() {
         workoutId: isFreeSession ? null : workoutId ?? null,
         isFreeSession,
         freeSessionName: isFreeSession ? freeSessionNameRef.current : null,
+        freeWorkoutId,
         logDate,
         durationSeconds: duration,
         authorId: profile?.id ?? null,
