@@ -2316,51 +2316,63 @@ function WeekStripCard({
         </Modal>
       )}
 
+      {/* ⚠️ A MENU, so it slides up (§2) — and it is the twin of the header +, which was
+          already a BottomSheet. This one had drifted into a centered glass popup, which is for
+          confirms and single-value entry only. Same options, but scheduled to the SELECTED day
+          rather than today. */}
       {noSessModal && (
-        <Modal visible transparent animationType="fade" onRequestClose={() => setNoSessModal(false)} statusBarTranslucent>
-          <Pressable style={addPopStyles.overlay} onPress={() => setNoSessModal(false)}>
-            <Pressable style={addPopStyles.cardShadow} onPress={() => {}}>
-            <GlassPanel style={addPopStyles.card}>
-              <Text style={[addPopStyles.heading, addPopStyles.headingOnGlass]}>Add Session</Text>
+        <BottomSheet onClose={() => setNoSessModal(false)}>
+          {close => (
+            <View style={addPopStyles.sheetContent}>
+              <Text style={addPopStyles.heading}>Add Session</Text>
+
               <TouchableOpacity style={addPopStyles.option} activeOpacity={0.7}
-                onPress={() => { setNoSessModal(false); router.push(`/(trainer)/workout-builder?clientId=${clientId}&scheduleDate=${selectedDate}` as any); }}>
+                onPress={() => close(() => router.push(`/(trainer)/workout-builder?clientId=${clientId}&scheduleDate=${selectedDate}` as any))}>
                 <SymbolView name="square.and.pencil" size={18} tintColor="#244e43" />
                 <Text style={addPopStyles.optionText}>Create new workout</Text>
               </TouchableOpacity>
-              <View style={[addPopStyles.divider, addPopStyles.dividerOnGlass]} />
+
+              <View style={addPopStyles.divider} />
+
               <TouchableOpacity style={addPopStyles.option} activeOpacity={0.7}
-                onPress={() => { setNoSessModal(false); router.push(`/(trainer)/client/${clientId}/add-workout?date=${selectedDate}` as any); }}>
+                onPress={() => close(() => router.push(`/(trainer)/client/${clientId}/add-workout?date=${selectedDate}` as any))}>
                 <SymbolView name="plus.rectangle.on.rectangle" size={18} tintColor="#244e43" />
                 <Text style={addPopStyles.optionText}>Add workout to this day</Text>
               </TouchableOpacity>
-              <View style={[addPopStyles.divider, addPopStyles.dividerOnGlass]} />
-              <TouchableOpacity style={addPopStyles.option} activeOpacity={0.7} onPress={() => { setNoSessModal(false); setPlanOpen(true); }}>
+
+              <View style={addPopStyles.divider} />
+
+              <TouchableOpacity style={addPopStyles.option} activeOpacity={0.7}
+                onPress={() => close(() => setPlanOpen(true))}>
                 <SymbolView name="calendar" size={18} tintColor="#244e43" />
                 <Text style={addPopStyles.optionText}>Plan a workout</Text>
               </TouchableOpacity>
+
               {activeRoutine && (
                 <>
-                  <View style={[addPopStyles.divider, addPopStyles.dividerOnGlass]} />
+                  <View style={addPopStyles.divider} />
                   <TouchableOpacity style={addPopStyles.option} activeOpacity={0.7}
-                    onPress={() => { setNoSessModal(false); router.push(`/(trainer)/client/${clientId}/routine/${activeRoutine.id}` as any); }}>
+                    onPress={() => close(() => router.push(`/(trainer)/client/${clientId}/routine/${activeRoutine.id}` as any))}>
                     <SymbolView name="arrow.triangle.2.circlepath" size={18} tintColor="#244e43" />
                     <Text style={addPopStyles.optionText}>Continue routine</Text>
                   </TouchableOpacity>
                 </>
               )}
-              <View style={[addPopStyles.divider, addPopStyles.dividerOnGlass]} />
+
+              <View style={addPopStyles.divider} />
+
               <TouchableOpacity style={addPopStyles.option} activeOpacity={0.7}
-                onPress={() => { setNoSessModal(false); router.push(`/(trainer)/client/${clientId}/workout/free` as any); }}>
+                onPress={() => close(() => router.push(`/(trainer)/client/${clientId}/workout/free` as any))}>
                 <SymbolView name="timer" size={18} tintColor="#24ac88" />
                 <Text style={[addPopStyles.optionText, { color: '#24ac88' }]}>Start Free Session</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={addPopStyles.cancelBtn} onPress={() => setNoSessModal(false)}>
-                <Text style={[addPopStyles.cancelText, addPopStyles.cancelTextOnGlass]}>Cancel</Text>
+
+              <TouchableOpacity style={addPopStyles.cancelBtn} onPress={() => close()}>
+                <Text style={addPopStyles.cancelText}>Cancel</Text>
               </TouchableOpacity>
-            </GlassPanel>
-            </Pressable>
-          </Pressable>
-        </Modal>
+            </View>
+          )}
+        </BottomSheet>
       )}
 
       {/* Plan a workout — shared flow (pick → schedule) */}
@@ -2479,51 +2491,53 @@ function ScheduledSessionMenu({
   onClose: () => void;
 }) {
   return (
-    <Modal visible transparent animationType="fade" onRequestClose={onClose} statusBarTranslucent>
-      <Pressable style={menuStyles.overlay} onPress={onClose}>
-        <Pressable style={menuStyles.sheetShadow}>
-        <GlassPanel style={menuStyles.sheet}>
-          <Text style={[menuStyles.sheetTitle, { color: '#414b45' }]} numberOfLines={1}>{workoutName}</Text>
-          <View style={[menuStyles.sheetDivider, { backgroundColor: 'rgba(0,0,0,0.08)' }]} />
-          <TouchableOpacity style={menuStyles.option} onPress={onViewDetails} activeOpacity={0.7}>
+    // ⚠️ A ⋯ MENU, so it slides up (§2) — and the identical menu on the trainer's all-workouts
+    // screen is a BottomSheet using these very styles (`sheetTitle`, `sheetDivider`). This copy
+    // had drifted to a centered glass popup, which made the same menu behave differently
+    // depending on which screen you opened it from.
+    <BottomSheet onClose={onClose}>
+      {close => (
+        <>
+          <Text style={menuStyles.sheetTitle} numberOfLines={1}>{workoutName}</Text>
+          <View style={menuStyles.sheetDivider} />
+          <TouchableOpacity style={menuStyles.option} onPress={() => close(onViewDetails)} activeOpacity={0.7}>
             <SymbolView name="list.bullet.rectangle" size={16} tintColor={TEXT} />
             <Text style={menuStyles.optionText}>View details</Text>
           </TouchableOpacity>
-          <View style={[menuStyles.optionDivider, { backgroundColor: 'rgba(0,0,0,0.08)' }]} />
+          <View style={menuStyles.optionDivider} />
           {/* Details = the facts (what was logged, set by set). This = the story
               (records, better/tougher than last time). Only a session that HAPPENED
               has one — there is nothing to tell about a plan. */}
           {status === 'completed' && (
             <>
-              <TouchableOpacity style={menuStyles.option} onPress={onSeeHowItWent} activeOpacity={0.7}>
+              <TouchableOpacity style={menuStyles.option} onPress={() => close(onSeeHowItWent)} activeOpacity={0.7}>
                 <SymbolView name="trophy" size={16} tintColor={TEXT} />
                 <Text style={menuStyles.optionText}>See how it went</Text>
               </TouchableOpacity>
-              <View style={[menuStyles.optionDivider, { backgroundColor: 'rgba(0,0,0,0.08)' }]} />
+              <View style={menuStyles.optionDivider} />
             </>
           )}
           {status === 'scheduled' && (
             <>
-              <TouchableOpacity style={menuStyles.option} onPress={onEditWorkout} activeOpacity={0.7}>
+              <TouchableOpacity style={menuStyles.option} onPress={() => close(onEditWorkout)} activeOpacity={0.7}>
                 <SymbolView name="pencil" size={16} tintColor={TEXT} />
                 <Text style={menuStyles.optionText}>Edit workout</Text>
               </TouchableOpacity>
-              <View style={[menuStyles.optionDivider, { backgroundColor: 'rgba(0,0,0,0.08)' }]} />
+              <View style={menuStyles.optionDivider} />
             </>
           )}
-          <TouchableOpacity style={menuStyles.option} onPress={onMove} activeOpacity={0.7}>
+          <TouchableOpacity style={menuStyles.option} onPress={() => close(onMove)} activeOpacity={0.7}>
             <SymbolView name="calendar" size={16} tintColor={TEXT} />
             <Text style={menuStyles.optionText}>Move training</Text>
           </TouchableOpacity>
-          <View style={[menuStyles.optionDivider, { backgroundColor: 'rgba(0,0,0,0.08)' }]} />
-          <TouchableOpacity style={menuStyles.option} onPress={onDelete} activeOpacity={0.7}>
+          <View style={menuStyles.optionDivider} />
+          <TouchableOpacity style={menuStyles.option} onPress={() => close(onDelete)} activeOpacity={0.7}>
             <SymbolView name="trash" size={16} tintColor="#ef4444" />
             <Text style={[menuStyles.optionText, menuStyles.deleteText]}>Delete</Text>
           </TouchableOpacity>
-        </GlassPanel>
-        </Pressable>
-      </Pressable>
-    </Modal>
+        </>
+      )}
+    </BottomSheet>
   );
 }
 
