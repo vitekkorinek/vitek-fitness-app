@@ -59,9 +59,11 @@ function RootLayoutNav() {
   const router = useRouter();
 
   // ── Remember the screen the user is on ─────────────────────────────────────────
-  // So a restart — ours for an update, or iOS evicting the app — comes back where they left off
-  // instead of the home screen. Params are needed because `segments` reports dynamic routes as
-  // their file names (`[id]`), which are not navigable. See lib/lastRoute.
+  // So that OUR OWN restart — reloading the JS to apply an update — comes back where they left
+  // off instead of the home screen. Opening the app is not that: it starts at home, whatever was
+  // on screen when it was last killed (lib/lastRoute honours this only right after a reload we
+  // announced). Params are needed because `segments` reports dynamic routes as their file names
+  // (`[id]`), which are not navigable. See lib/lastRoute.
   const params = useGlobalSearchParams();
   const currentHref = useMemo(
     () => buildHref(segments as string[], params as Record<string, unknown>),
@@ -155,7 +157,9 @@ function RootLayoutNav() {
     hideSplash();
 
     /**
-     * Send the user into their side of the app — to the screen they left, if we have one.
+     * Send the user into their side of the app — home, or to the screen they left when this
+     * launch is the tail end of an update we applied (`takeRememberedRoute` returns null for an
+     * ordinary opening, so `remembered` is null and this is a plain trip home).
      *
      * The remembered screen is used ONCE per sign-in (`restoreRef` is emptied here), so it can
      * only ever affect the first routing decision after launch; later redirects always go home.

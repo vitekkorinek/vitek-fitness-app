@@ -313,7 +313,14 @@ export default function MeScreen() {
 
   const handleSignOut = async () => {
     setSigningOut(true);
-    await signOut();
+    // A sign-out that couldn't reach the server leaves the user signed in — say so and give the
+    // button back, instead of spinning forever (which is exactly what it did).
+    const { ok } = await signOut();
+    if (!ok) {
+      setSigningOut(false);
+      setSignOutOpen(false);
+      Alert.alert(t.common.error, t.common.signOutFailed);
+    }
   };
 
   const memberSince = profile?.created_at

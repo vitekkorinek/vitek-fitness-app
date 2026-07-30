@@ -13,7 +13,7 @@ type AuthContextType = {
   loading: boolean;
   passwordRecovery: boolean;
   clearPasswordRecovery: () => void;
-  signOut: () => Promise<void>;
+  signOut: () => Promise<{ ok: boolean }>;
   refreshProfile: () => Promise<void>;
 };
 
@@ -24,7 +24,7 @@ const AuthContext = createContext<AuthContextType>({
   loading: true,
   passwordRecovery: false,
   clearPasswordRecovery: () => {},
-  signOut: async () => {},
+  signOut: async () => ({ ok: false }),
   refreshProfile: async () => {},
 });
 
@@ -73,6 +73,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     let mounted = true;
+    // Only the newest profile fetch may write. Signing out must never be undone by a profile
+    // request that was already in flight when it happened.
+    let profileSeq = 0;
+
+    /** Load (or clear) the profile for whoever is signed in, off the auth callback's stack. */
+    const applyUser = (userId: string | null) => {
+      const seq = ++profileSeq;
+      if (!userId) {
+        setProfile(null);
+        return;
+      }
+      void (async () => {
+        const p = await fetchUserProfile(userId).catch(() => null);
+        if (!mounted || seq !== profileSeq) return;
+        setProfile(p);
+      })();
+    };
 
     // A recovery deep link opens the app with the tokens in the URL fragment.
     // We flip on recovery mode and establish the session manually (the client
@@ -93,22 +110,31 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
 
     const initialize = async () => {
-      // Process a cold-start recovery link before the normal session lookup so
-      // we don't briefly route into the app.
-      const initialUrl = await Linking.getInitialURL();
-      const recovered = await handleRecoveryUrl(initialUrl);
-      if (!mounted) return;
-
-      if (!recovered) {
-        const { data: { session } } = await supabase.auth.getSession();
+      try {
+        // Process a cold-start recovery link before the normal session lookup so
+        // we don't briefly route into the app.
+        const initialUrl = await Linking.getInitialURL();
+        const recovered = await handleRecoveryUrl(initialUrl);
         if (!mounted) return;
-        setSession(session);
-        if (session?.user) {
-          const p = await fetchUserProfile(session.user.id);
-          if (mounted) setProfile(p);
+
+        if (!recovered) {
+          const { data: { session } } = await supabase.auth.getSession();
+          if (!mounted) return;
+          setSession(session);
+          if (session?.user) {
+            const seq = ++profileSeq;
+            const p = await fetchUserProfile(session.user.id).catch(() => null);
+            if (mounted && seq === profileSeq) setProfile(p);
+          }
         }
+      } catch {
+        // ⚠️ Launching must never hang on the network answering. Anything thrown here used to
+        // skip `setLoading(false)`, and the root layout renders NOTHING while loading — so one
+        // failed request at launch was a permanently black app. Whatever failed, we still have
+        // to reach a routable state.
+      } finally {
+        if (mounted) setLoading(false);
       }
-      if (mounted) setLoading(false);
     };
 
     initialize();
@@ -118,17 +144,33 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       handleRecoveryUrl(url);
     });
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (_event, session) => {
-        setSession(session);
-        if (session?.user) {
-          const p = await fetchUserProfile(session.user.id);
-          setProfile(p);
-        } else {
-          setProfile(null);
-        }
-      }
-    );
+    /**
+     * ⚠️⚠️ THIS CALLBACK IS SYNCHRONOUS AND NEVER TOUCHES SUPABASE. It is not a style choice —
+     * it is the difference between a working app and one that has to be force-quit.
+     *
+     * supabase-js emits these events from INSIDE its auth lock and `await`s every callback
+     * before releasing it (`_notifyAllSubscribers`, GoTrueClient). Any Supabase call made in
+     * here needs the access token, and asking for it (`auth.getSession()`) queues behind the
+     * very operation that is waiting for this callback to return — a circular wait with no
+     * timeout anywhere in it. The lock then stays held for the life of the process, and from
+     * that moment EVERY request in the app hangs forever: no screen loads, no save lands, and
+     * `signOut()` spins for good. The app looks alive — taps work, menus open — and does
+     * nothing. Only force-quitting clears it.
+     *
+     * That is exactly what a long spell in the background triggers: iOS suspends the app, the
+     * access token expires, and the first foreground refreshes it and fires `TOKEN_REFRESHED`
+     * from inside the lock. (`app/change-password.tsx` hit the same wall from `USER_UPDATED`
+     * and worked around it locally; this is the root cause it was working around.)
+     *
+     * Deferring to a task of its own lets the callback return, the lock release, and the
+     * profile fetch then run like any other query.
+     */
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (!mounted) return;
+      setSession(session);
+      const userId = session?.user?.id ?? null;
+      setTimeout(() => { if (mounted) applyUser(userId); }, 0);
+    });
 
     return () => {
       mounted = false;
@@ -158,8 +200,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
-  const signOut = async () => {
-    await supabase.auth.signOut();
+  /**
+   * Sign out, and say whether it actually happened.
+   *
+   * ⚠️ A sign-out that can't reach the server is NOT a sign-out: supabase-js returns the error
+   * and keeps the stored session (`_signOut` returns before `_removeSession`), so the user is
+   * still signed in. The screens used to ignore that and left their spinner running forever —
+   * which is what a hung sign-out looked like on device. Report it instead.
+   */
+  const signOut = async (): Promise<{ ok: boolean }> => {
+    let failed = false;
+    try {
+      const { error } = await supabase.auth.signOut();
+      if (error) failed = true;
+    } catch {
+      failed = true; // offline, or the request hit its deadline
+    }
+    if (failed) return { ok: false };
+
     setProfile(null);
     setPasswordRecovery(false);
     // ⚠️ The session store is plain in-memory zustand — nothing clears it on its own,
@@ -170,6 +228,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     useSessionStore.getState().clearSuspendedSession();
     useSessionStore.getState().finish();
     useSessionStore.getState().clearPendingLogDate();
+    return { ok: true };
   };
 
   return (

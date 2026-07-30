@@ -1,21 +1,45 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 /**
- * Come back to the screen you left.
+ * Come back to the screen you left — but ONLY when it was US who restarted the app.
  *
- * iOS does this for free while the app is still in memory — switch to another app, come back,
- * everything is exactly as you left it. It does NOT survive the process actually restarting
- * (iOS evicting the app, or us applying an OTA update), and Expo Router has no built-in
- * restoration: it owns React Navigation's `initialState` internally (ExpoRoot.js), so the
- * supported way in this stack is to remember the route ourselves and go there on launch.
+ * iOS keeps your screen for free while the app is still in memory: switch to another app, come
+ * back, everything is as you left it. It does NOT survive the process actually restarting, and
+ * Expo Router has no built-in restoration (it owns React Navigation's `initialState` internally,
+ * ExpoRoot.js), so a restart lands on the home screen unless we remember the route ourselves.
  *
- * What this restores is the SCREEN, not what you had typed into it. A list re-fetches from
- * Supabase; a half-written note is gone. That is fine for every screen in the app because the
- * one place with unsaved work in memory — Do Mode — keeps its own AsyncStorage draft and adopts
- * the running `in_progress` session on load, so landing back in it resumes the real session.
+ * ⚠️ THE ONLY RESTART WORTH PAPERING OVER IS OUR OWN. Applying an OTA update reloads the JS out
+ * from under someone who did not ask for it, and dumping them on the home screen mid-flow is the
+ * bug this file exists to fix. **Opening the app is different: that is a deliberate act and it
+ * belongs on the home screen.** Vitek, 30 Jul 2026: *"when opening the app i should always land
+ * on the opening page not on a random open page that i perhaps opened two days ago"* — a phone
+ * that force-quits or evicts the app is indistinguishable from him swiping it away, and being
+ * dropped back into a screen from days ago is disorienting either way.
+ *
+ * So the remembered route is honoured only when `markSelfRestart()` ran moments earlier — i.e.
+ * `lib/otaUpdates.ts` is about to call `reloadAsync()`. Every other launch starts at home.
+ *
+ * ⚠️ NONE OF THIS TOUCHES UNSAVED WORK — it is only about which screen you land on. A session
+ * being trained (`lib/sessionOutbox` + Do Mode's AsyncStorage draft + the `in_progress` row), a
+ * workout being built and availability being ticked (`lib/formDraft`) all survive a force-quit
+ * on their own and are picked up when you next open that screen. Landing at home first costs a
+ * tap, not the work.
  */
 
 const KEY_PREFIX = 'lastRoute:';
+
+/**
+ * Written immediately before we reload the JS ourselves. Its presence — and nothing else — is
+ * what makes the next launch a continuation rather than an opening.
+ */
+const SELF_RESTART_KEY = 'lastRoute:selfRestart';
+
+/**
+ * How long that marker counts for. `reloadAsync()` relaunches immediately, so this only has to
+ * cover a launch, and it stops a marker left behind by a reload that never happened from
+ * resurrecting a screen hours later.
+ */
+const SELF_RESTART_WINDOW_MS = 60_000;
 
 /**
  * Screens whose contents live only in memory until Save: a workout being built, an exercise
@@ -102,17 +126,49 @@ export async function rememberRoute(userId: string, href: string): Promise<void>
 }
 
 /**
- * Read the remembered route AND forget it, in one step.
+ * Say that the next launch is one we caused. Called by `lib/otaUpdates.ts` in the breath before
+ * `reloadAsync()`, and cleared again if that reload never happens.
+ */
+export async function markSelfRestart(): Promise<void> {
+  try {
+    await AsyncStorage.setItem(SELF_RESTART_KEY, String(Date.now()));
+  } catch {
+    // Worst case the update lands on the home screen — not worth surfacing.
+  }
+}
+
+/** Undo the above: the reload we announced didn't happen, so the next launch is an opening. */
+export async function clearSelfRestart(): Promise<void> {
+  try {
+    await AsyncStorage.removeItem(SELF_RESTART_KEY);
+  } catch {
+    // The window expires on its own.
+  }
+}
+
+/**
+ * Read the remembered route AND forget it, in one step — returning it only if we are resuming
+ * from our own reload (see the file header: opening the app lands at home).
  *
- * ⚠️ The forgetting is deliberate. If a stored route ever fails to open — a screen removed in a
- * later version, a workout that no longer exists — clearing it first means the next launch
- * starts clean instead of walking into the same wall forever. The recorder writes wherever we
- * actually land a moment later, so nothing is lost in the normal case.
+ * ⚠️ The forgetting is deliberate, and it happens either way. If a stored route ever fails to
+ * open — a screen removed in a later version, a workout that no longer exists — clearing it
+ * first means the next launch starts clean instead of walking into the same wall forever. The
+ * recorder writes wherever we actually land a moment later, so nothing is lost.
  */
 export async function takeRememberedRoute(userId: string): Promise<string | null> {
   try {
-    const href = await AsyncStorage.getItem(KEY_PREFIX + userId);
-    if (href) await AsyncStorage.removeItem(KEY_PREFIX + userId);
+    const [href, marker] = await Promise.all([
+      AsyncStorage.getItem(KEY_PREFIX + userId),
+      AsyncStorage.getItem(SELF_RESTART_KEY),
+    ]);
+    const forget: Promise<void>[] = [];
+    if (href) forget.push(AsyncStorage.removeItem(KEY_PREFIX + userId));
+    if (marker) forget.push(AsyncStorage.removeItem(SELF_RESTART_KEY));
+    if (forget.length) await Promise.all(forget);
+
+    if (!href || !marker) return null;
+    const at = Number(marker);
+    if (!Number.isFinite(at) || Date.now() - at > SELF_RESTART_WINDOW_MS) return null;
     return href;
   } catch {
     return null;

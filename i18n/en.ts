@@ -715,6 +715,7 @@ const en = {
     confirm: 'Confirm',
     back: 'Back',
     signOut: 'Sign Out',
+    signOutFailed: "Couldn't sign out — check your connection and try again.",
     ok: 'OK',
   },
 } as const;

@@ -98,6 +98,8 @@ export default function ChangePasswordScreen() {
     // left the Save spinner spinning forever. Refreshing here (outside the callback)
     // and navigating directly is deterministic. refreshProfile() updates the context
     // profile so _layout.tsx won't bounce back to this screen.
+    // (That callback no longer queries Supabase at all — see the warning above it in
+    // context/AuthContext.tsx — but doing it here explicitly is still the clearer flow.)
     await refreshProfile();
     router.replace('/(client)');
   };

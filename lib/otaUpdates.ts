@@ -3,6 +3,7 @@ import * as Updates from 'expo-updates';
 import { useCallback, useEffect, useRef } from 'react';
 import { AppState } from 'react-native';
 
+import { clearSelfRestart, markSelfRestart } from '@/lib/lastRoute';
 import { outboxCount } from '@/lib/sessionOutbox';
 import { useSessionStore } from '@/store/sessionStore';
 
@@ -91,11 +92,16 @@ export function useOtaUpdates(canRestart: boolean): void {
       if ((await AsyncStorage.getItem(LAST_ATTEMPT_KEY).catch(() => null)) === bundleId) return;
 
       await AsyncStorage.setItem(LAST_ATTEMPT_KEY, bundleId).catch(() => {});
+      // The one restart that comes back to the screen it left. Opening the app is a deliberate
+      // act and starts at home; this is us reloading the JS out from under someone who didn't
+      // ask for it, so it has to be invisible. See lib/lastRoute.
+      await markSelfRestart();
       await Updates.reloadAsync();
     } catch {
       // Couldn't relaunch — clear the marker so this bundle is still allowed to launch on its
-      // own at the next cold start.
+      // own at the next cold start, and so the next launch is treated as an opening.
       await AsyncStorage.removeItem(LAST_ATTEMPT_KEY).catch(() => {});
+      await clearSelfRestart();
     } finally {
       restartingRef.current = false;
     }

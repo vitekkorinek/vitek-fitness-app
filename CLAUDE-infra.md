@@ -23,6 +23,23 @@ React Native's `fetch` has **no timeout** and supabase-js sets none. Over a conn
 
 ---
 
+## The auth lock — `context/AuthContext.tsx`
+
+**⚠️ NEVER call Supabase from inside `onAuthStateChange`, and never make that callback `async`.** The deadline above cannot save you here, because nothing is ever sent.
+
+supabase-js emits auth events from **inside its auth lock** and `await`s every callback before releasing it (`_notifyAllSubscribers`). Any Supabase call in the callback needs the access token, and asking for it (`auth.getSession()`) queues behind the very operation waiting for the callback to return — **a circular wait with no timeout in it**. `lockAcquired` then stays true for the life of the process and *every* request in the app queues behind it forever: no screen loads, no save lands, `signOut()` spins for good. The app looks alive — taps work, sheets open, stale data sits on screen — and does nothing. **Only force-quitting clears it.**
+
+**What triggers it is ordinary use:** the app sits in the background long enough for the access token to expire, and the first foreground refreshes it and fires `TOKEN_REFRESHED` from inside the lock. That is the 30 Jul 2026 "screen is on but nothing works" report; `app/change-password.tsx` had already been bitten from `USER_UPDATED` and worked around it locally.
+
+- The callback is **synchronous**: set the session, then hand the user id to a `setTimeout(…, 0)` that does the profile fetch after the lock releases.
+- A **sequence number** guards the fetch — signing out must never be undone by a profile request already in flight.
+- **`initialize()` is wrapped in try/finally.** Anything thrown there skipped `setLoading(false)`, and the root layout renders **nothing** while loading — one failed request at launch was a permanently black app.
+- **A sign-out that can't reach the server is not a sign-out.** supabase-js returns the error and **keeps** the stored session (`_signOut` returns before `_removeSession`), so `signOut()` reports `{ ok }` and the two Me/Account screens stop their spinner and say so. They used to ignore it and spin forever — that is the spinner in Vitek's screenshot.
+
+**The evidence is in `node_modules/@supabase/auth-js/dist/main/GoTrueClient.js`** (`_acquireLock`, `_notifyAllSubscribers`, `_callRefreshToken`, `_signOut`) — read it, not the docs, when auth misbehaves.
+
+---
+
 ## Finishing a session is local; uploading is a background chore — `lib/sessionOutbox.ts`
 
 Full spec in **CLAUDE-domode.md "Session survival"**. What belongs here is the root-level half:
@@ -64,9 +81,13 @@ isUpdatePending && downloadedUpdate && downloadedUpdate.updateId !== currentlyRu
 
 ## Route restore — `lib/lastRoute.ts`
 
-**The app comes back to the screen you left.** Applying an update restarts the JS and a restart throws away the navigation stack. iOS restores a *backgrounded* app's screen for free, but nothing restores it across a real process restart, and **Expo Router has no state restoration to switch on** — it owns React Navigation's `initialState` internally (`ExpoRoot.js:144`), so remembering the screen ourselves is the supported route.
+**The app comes back to the screen you left — but ONLY when the restart was ours.** Applying an update restarts the JS and a restart throws away the navigation stack. iOS restores a *backgrounded* app's screen for free, but nothing restores it across a real process restart, and **Expo Router has no state restoration to switch on** — it owns React Navigation's `initialState` internally (`ExpoRoot.js:144`), so remembering the screen ourselves is the supported route.
 
-`app/_layout.tsx` records every navigation (`rememberRoute`, keyed **per user id** — one phone, two accounts) and on launch sends the user to the remembered screen instead of home.
+**⚠️ OPENING THE APP ALWAYS LANDS ON HOME (30 Jul 2026).** Restoring across *every* launch was wrong: a force-quit or an iOS eviction is indistinguishable from swiping the app away, so opening it dropped Vitek onto "some random screen" he had opened days earlier. *"when opening the app i should always land on the opening page not on a random open page that i perhaps opened two days ago."* The remembered route is now honoured **only** when `markSelfRestart()` ran moments before — i.e. `lib/otaUpdates.ts` is about to call `reloadAsync()`. Marker key `lastRoute:selfRestart`, a timestamp, valid **60 s**, read-and-cleared; cleared too if the reload throws.
+
+**⚠️ This is only about which screen you LAND on — nothing about it discards work.** A session being trained (outbox + Do Mode draft + the `in_progress` row), a workout being built, availability being ticked (`lib/formDraft`) all survive a force-quit on their own and are picked up when that screen is next opened. Landing at home costs a tap, not the work — that is exactly the arrangement Vitek asked for.
+
+`app/_layout.tsx` records every navigation (`rememberRoute`, keyed **per user id** — one phone, two accounts); `takeRememberedRoute` clears the stored route on **every** launch and returns it only in the self-restart case.
 
 - **⚠️ `useSegments()` alone is NOT navigable** — it reports dynamic routes as their file names (`[id]`, `[workoutId]`), so `buildHref` substitutes `useGlobalSearchParams()` back in. *(`lib/navHistory.ts` has this bug latent in its crumbs — `'/' + segments.join('/')` — worth fixing when that file is next touched.)*
 - **⚠️ A deep screen is restored as home → screen** (`replace`, then a deferred `navigate`), never on its own, or the back button has nowhere to go.
@@ -77,7 +98,7 @@ isUpdatePending && downloadedUpdate && downloadedUpdate.updateId !== currentlyRu
 - **`UNSAVED_WORK`** — workout-builder, add-exercise, plan-week, availability, the pickers, recipe create. Never restart there, never restore there.
 - **`NEEDS_ITS_PARAMS`** — session-complete, stretch-complete, exercise-detail. We remember the **path, not the query string**, so these would reopen blank.
 
-**⚠️ Do Mode is in neither list in the way you'd expect:** it is **protected from restarts** (a session being trained is not interrupted for a code update) but deliberately **restorable** — it is the one screen built to survive a restart (AsyncStorage draft + adopting the `in_progress` row), so a phone that kills the app mid-session reopens *into the session*.
+**⚠️ Do Mode is in neither list in the way you'd expect:** it is **protected from restarts** (a session being trained is not interrupted for a code update) but deliberately **restorable** — it is the one screen built to survive a restart (AsyncStorage draft + adopting the `in_progress` row). Since 30 Jul 2026 that only pays out on **our own reload**: a phone that force-quits mid-session opens at home, with the header timer chip back (`hydrateSuspendedSession`) as the way in, and the session itself intact when that screen is opened.
 
 ---
 
