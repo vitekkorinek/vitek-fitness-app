@@ -3,7 +3,7 @@ import * as Linking from 'expo-linking';
 import { Session, User } from '@supabase/supabase-js';
 import { supabase } from '@/lib/supabase';
 import { bindCardVariantToUser } from '@/lib/cardVariant';
-import { useSessionStore } from '@/store/sessionStore';
+import { bindSuspendedSessionToUser, useSessionStore } from '@/store/sessionStore';
 import type { User as UserProfile } from '@/types/database';
 
 type AuthContextType = {
@@ -143,6 +143,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // trainer and a client signed into the same phone no longer share one setting.
   useEffect(() => {
     bindCardVariantToUser(profile?.id ?? null);
+    // Same reason, same shape: a suspended session is stored under the SIGNED-IN account, so the
+    // trainer and a client sharing this phone never inherit each other's running session.
+    bindSuspendedSessionToUser(profile?.id ?? null);
   }, [profile?.id]);
 
   const clearPasswordRecovery = useCallback(() => setPasswordRecovery(false), []);
