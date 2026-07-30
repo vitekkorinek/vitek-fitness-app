@@ -139,6 +139,7 @@ Each card is an `AppointmentCard` component with a single PanResponder handling 
 
 ## 10b. Client Availability Screen (`app/(client)/availability.tsx`)
 
+- **Crash draft (July 30 2026)** — ticked slots live only in state until Save, so `lib/formDraft` mirrors them to disk while `editing && isDirty`, keyed **per week** (`availability:<userId>:<weekStart>`) so one week's ticks can never reappear on another. Restored **after** the week's saved slots have loaded (the draft sits on top of them) and with `editing: true`, while **`baselineRef` stays the SAVED week** — that is what keeps `isDirty` honest and Cancel reverting to what the trainer actually has. Cleared by Cancel, and **explicitly inside `doSave`**, which leaves via `smartBack` and so never gets a render for the effect to notice.
 - **No ScrollView on the screen** — prevents gesture conflicts with per-column PanResponders. The grid fills remaining space via `flex:1` on the card.
 - **Slot cells use `flex:1`** — no explicit height needed. Slot height measured from slot 0's `onLayout` → `slotHRef`.
 - **`pageY` approach for hit-testing** — `locationY` is relative to the touched child cell. Use `e.nativeEvent.pageY - colTopYRef.current[col]` (populated via `measureInWindow` on each column's `onLayout`).

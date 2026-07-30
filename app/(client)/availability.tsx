@@ -9,6 +9,7 @@ import { LightHeader, HeaderIcon, HEADER_ICON, useHeaderHeight } from '@/compone
 import { SymbolView } from 'expo-symbols';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { smartBack } from '@/lib/navHistory';
+import { clearFormDraft, loadFormDraft, saveFormDraft } from '@/lib/formDraft';
 import { useAuth } from '@/context/AuthContext';
 import { VFIcon } from '@/components/VFIcon';
 import { BottomSheet } from '@/components/BottomSheet';
@@ -123,6 +124,36 @@ export default function AvailabilityScreen() {
                   : `In ${weekOffset} weeks`;
 
   const isDirty = !setsEqual(selected, baselineRef.current);
+
+  // ── Crash draft ────────────────────────────────────────────────────────────
+  // Ticked slots live only in state until Save, so a phone that dies mid-week-planning used to
+  // lose them all. One draft per week — a week's ticks must never reappear on another week.
+  const draftKey = profile?.id ? `availability:${profile.id}:${weekStart}` : null;
+  const [draftApplied, setDraftApplied] = useState(false);
+  useEffect(() => { setDraftApplied(false); }, [weekStart, profile?.id]);
+
+  // After the week's saved slots have loaded, not before — the draft is what the user had on
+  // top of them, so it has to be applied last.
+  useEffect(() => {
+    if (!draftKey || loadingSlots || draftApplied) return;
+    let cancelled = false;
+    void loadFormDraft<string[]>(draftKey).then(saved => {
+      if (cancelled) return;
+      // baselineRef stays the SAVED week, so the grid reads as dirty and Cancel still reverts
+      // to what the trainer actually has.
+      if (saved?.length) { setSelected(new Set(saved)); setEditing(true); }
+      setDraftApplied(true);
+    });
+    return () => { cancelled = true; };
+  }, [draftKey, loadingSlots, draftApplied]);
+
+  // Only while there is genuinely unsaved work on screen.
+  useEffect(() => {
+    if (!draftKey || !draftApplied) return;
+    if (!editing || !isDirty) { void clearFormDraft(draftKey); return; }
+    const t = setTimeout(() => { void saveFormDraft<string[]>(draftKey, Array.from(selected)); }, 500);
+    return () => clearTimeout(t);
+  }, [draftKey, draftApplied, editing, isDirty, selected]);
 
   // colTopYRef[col] = screen Y of each column
   const colTopYRef  = useRef<number[]>(Array(DAY_COLS).fill(0));
@@ -356,6 +387,7 @@ export default function AvailabilityScreen() {
           .delete().eq('client_id', profile.id).eq('week_start', weekStart);
       }
 
+      if (draftKey) await clearFormDraft(draftKey);
       smartBack(router);
     } catch {
       Alert.alert('Error', 'Could not save availability. Please try again.');
@@ -375,6 +407,7 @@ export default function AvailabilityScreen() {
   function handleCancelEdit() {
     setSelected(new Set(baselineRef.current));
     setEditing(false);
+    if (draftKey) void clearFormDraft(draftKey);
   }
 
   function handleSaveWeekOnly() {

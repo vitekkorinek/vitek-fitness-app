@@ -25,6 +25,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/context/AuthContext';
 import { registerPickHandler } from '@/lib/exercisePicker';
+import { clearFormDraft, loadFormDraft, saveFormDraft } from '@/lib/formDraft';
 import { BottomSheet } from '@/components/BottomSheet';
 import { SessionResumeChip } from '@/components/SessionResumeChip';
 import GlassPanel from '@/components/GlassPanel';
@@ -67,6 +68,23 @@ type BuilderExercise = {
   // so save can update/keep the original workout_exercise row (and its logged
   // history) instead of deleting + re-inserting it.
   originalWeId?: string;
+};
+
+/**
+ * What survives the app dying mid-build (lib/formDraft). Plain JSON — `items` carries the whole
+ * exercise list including each set's typed reps/weight, which is the work that cannot be
+ * reconstructed. The three `loaded*` fields are context, not input: they decide whether Save
+ * updates the original workout or writes a copy.
+ */
+type BuilderDraft = {
+  workoutName: string;
+  workoutCategory: WorkoutCategory | null;
+  stretchType: 'upper_body' | 'lower_body' | 'full_body' | null;
+  coverImageUri: string | null;
+  items: BuilderExercise[];
+  loadedWorkoutClientId: string | null;
+  loadedRoutineId: string | null;
+  loadedCoverUrl: string | null;
 };
 
 type SaveIntent =
@@ -396,6 +414,22 @@ export default function WorkoutBuilderScreen() {
   const isStretchingCategory = workoutCategory != null && workoutCategory in STRETCHING_CATEGORY_TO_STRETCH_TYPE;
   const [coverImageUri, setCoverImageUri] = useState<string | null>(null);
   const [items, setItems] = useState<BuilderExercise[]>([]);
+
+  // ── Crash draft ────────────────────────────────────────────────────────────
+  // Everything above lives only in state until Save, so a phone call that gets the app
+  // reclaimed, or a crash, used to take a half-built workout with it. See lib/formDraft: the
+  // restore is silent because every deliberate exit (Save, Discard) clears the draft, so one
+  // that is still here means the screen was never finished on purpose.
+  // One draft per thing being built — editing workout X is different work from starting a new
+  // one for client Y, and they must never restore over each other.
+  const draftKey = profile?.id
+    ? `workoutBuilder:${profile.id}:${editWorkoutId ?? templateId ?? 'new'}:${clientId || 'any'}`
+    : null;
+  // The two preload effects below fill the form from the DB asynchronously. The draft is NEWER
+  // than what they load (it contains those edits plus whatever came after), so it must be
+  // applied AFTER them — never racing them.
+  const [preloadSettled, setPreloadSettled] = useState(!templateId && !editWorkoutId);
+  const [draftApplied, setDraftApplied] = useState(false);
   const [saveSheetOpen, setSaveSheetOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   // Synchronous re-entrancy guard. `saving` is async React state, so a fast double-tap
@@ -505,7 +539,7 @@ export default function WorkoutBuilderScreen() {
         loaded.push({ key: uid(), exercise: ex, sets, is_superset: !!te.is_superset, expanded: false });
       }
       if (!cancelled) setItems(loaded);
-    })();
+    })().finally(() => { if (!cancelled) setPreloadSettled(true); });
     return () => { cancelled = true; };
   }, [templateId]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -565,9 +599,50 @@ export default function WorkoutBuilderScreen() {
         loaded.push({ key: uid(), exercise: ex, sets, is_superset: !!we.is_superset, expanded: false, originalWeId: we.id });
       }
       if (!cancelled) setItems(loaded);
-    })();
+    })().finally(() => { if (!cancelled) setPreloadSettled(true); });
     return () => { cancelled = true; };
   }, [editWorkoutId, clientId, scheduleDate]);
+
+  // Put back what was on screen when the app died. Runs once, after any preload has settled,
+  // so it overwrites the DB copy rather than being overwritten by it.
+  useEffect(() => {
+    if (!draftKey || !preloadSettled || draftApplied) return;
+    let cancelled = false;
+    void loadFormDraft<BuilderDraft>(draftKey).then(draft => {
+      if (cancelled) { return; }
+      if (draft) {
+        setWorkoutName(draft.workoutName ?? '');
+        setWorkoutCategory((draft.workoutCategory ?? null) as WorkoutCategory | null);
+        setStretchType(draft.stretchType ?? null);
+        setCoverImageUri(draft.coverImageUri ?? null);
+        setItems(draft.items ?? []);
+        // Only when the preload could not supply them (it failed, or we were offline) — these
+        // decide update-in-place vs save-a-copy, so a wrong value silently forks the workout.
+        setLoadedWorkoutClientId(prev => prev ?? draft.loadedWorkoutClientId ?? null);
+        setLoadedRoutineId(prev => prev ?? draft.loadedRoutineId ?? null);
+        setLoadedCoverUrl(prev => prev ?? draft.loadedCoverUrl ?? null);
+      }
+      setDraftApplied(true);
+    });
+    return () => { cancelled = true; };
+  }, [draftKey, preloadSettled, draftApplied]);
+
+  // Mirror the work to disk as it changes. Never before the restore has run — that would
+  // overwrite the draft with the empty form we are about to replace.
+  useEffect(() => {
+    if (!draftKey || !draftApplied) return;
+    // Emptied out — clear rather than leave the last non-empty draft behind, or exercises the
+    // trainer deliberately removed would come back after a crash.
+    if (!workoutName.trim() && items.length === 0) { void clearFormDraft(draftKey); return; }
+    const t = setTimeout(() => {
+      void saveFormDraft<BuilderDraft>(draftKey, {
+        workoutName, workoutCategory, stretchType, coverImageUri, items,
+        loadedWorkoutClientId, loadedRoutineId, loadedCoverUrl,
+      });
+    }, 500);
+    return () => clearTimeout(t);
+  }, [draftKey, draftApplied, workoutName, workoutCategory, stretchType, coverImageUri, items,
+      loadedWorkoutClientId, loadedRoutineId, loadedCoverUrl]);
 
   const updateItem = useCallback((key: string, patch: Partial<BuilderExercise>) => {
     setItems(prev => prev.map(i => i.key === key ? { ...i, ...patch } : i));
@@ -707,7 +782,9 @@ export default function WorkoutBuilderScreen() {
     if (workoutName.trim() || items.length > 0) {
       Alert.alert('Discard workout?', 'Your changes will not be saved.', [
         { text: 'Keep editing', style: 'cancel' },
-        { text: 'Discard', style: 'destructive', onPress: () => router.back() },
+        // ⚠️ Discarding must clear the draft, or the workout comes back next time as if it had
+        // never been thrown away.
+        { text: 'Discard', style: 'destructive', onPress: () => { if (draftKey) void clearFormDraft(draftKey); router.back(); } },
       ]);
     } else {
       router.back();
@@ -839,6 +916,7 @@ export default function WorkoutBuilderScreen() {
         }
 
         setSaving(false);
+        if (draftKey) await clearFormDraft(draftKey);
         router.back();
         return;
       }
@@ -996,6 +1074,7 @@ export default function WorkoutBuilderScreen() {
 
       setSaving(false);
       setSaveSheetOpen(false);
+      if (draftKey) await clearFormDraft(draftKey);
       router.back();
     } catch (e: any) {
       console.error('[WorkoutBuilder] save error:', JSON.stringify(e), e?.message, e?.details, e?.hint);
