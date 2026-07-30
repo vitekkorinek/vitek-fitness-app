@@ -23,6 +23,41 @@ const MUSCLE_MAP: Record<string, string[]> = {
   'Full Body': ['Full Body'],
 };
 
+/**
+ * Does a stored muscle-name list satisfy the active body-part filters? Empty set = no
+ * filtering, so everything passes.
+ *
+ * Exported because callers that don't hold `Exercise` rows need the SAME test — Do Mode's
+ * in-file `ExerciseLibraryPicker` works with its own camelCase `LibraryExercise` shape.
+ * ⚠️ Take this rather than re-deriving the mapping: a second copy of `MUSCLE_MAP` is exactly
+ * how the body-part filter silently stopped matching once (see CLAUDE.md section 8).
+ */
+export function matchesMuscleFilters(muscleGroups: string[], filters: Set<string>): boolean {
+  if (filters.size === 0) return true;
+  for (const f of filters) {
+    const targets = MUSCLE_MAP[f] ?? [f];
+    if (targets.some(t => muscleGroups.includes(t))) return true;
+  }
+  return false;
+}
+
+/**
+ * Which body-part filter labels a stored muscle-name list falls under — e.g.
+ * `['Lats','Rear Delts'] -> {Back, Shoulders}`.
+ *
+ * Used to rank replacement suggestions: two exercises that share a body part are sensible
+ * swaps for each other even when their granular muscles differ (Pull Down Bar hits Lats,
+ * Seated Row hits Mid Traps — both are "Back").
+ */
+export function muscleFilterLabels(muscleGroups: string[]): Set<string> {
+  const out = new Set<string>();
+  for (const label of MUSCLE_FILTER_OPTIONS) {
+    const targets = MUSCLE_MAP[label] ?? [label];
+    if (targets.some(t => muscleGroups.includes(t))) out.add(label);
+  }
+  return out;
+}
+
 export function filterExercises(
   exercises: Exercise[],
   query: string,
@@ -35,13 +70,7 @@ export function filterExercises(
   if (q) list = list.filter(e => e.name.toLowerCase().includes(q));
 
   if (muscleFilters.size > 0) {
-    list = list.filter(e => {
-      for (const f of muscleFilters) {
-        const targets = MUSCLE_MAP[f] ?? [f];
-        if (targets.some(t => e.muscle_groups.includes(t))) return true;
-      }
-      return false;
-    });
+    list = list.filter(e => matchesMuscleFilters(e.muscle_groups, muscleFilters));
   }
 
   if (equipmentFilters.size > 0) {

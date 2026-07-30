@@ -1204,6 +1204,41 @@ export default function TrainTabScreen() {
                           );
                         })()}
 
+                        {/* Free session — TODAY ONLY. Vitek: "they cant plan free session."
+                            A free session has no workout behind it until it is finished (the
+                            outbox creates one from what was actually done), so there is
+                            nothing to put on a future day.
+                            ⚠️ IT IS AN ORDINARY ROW — dark bold label + ACCENT sub-line, no icon,
+                            no coloured label. The first cut copied the trainer's ACCENT-tinted
+                            "Start Free Session" (green label + `timer` glyph) and Vitek rejected
+                            it on device: "we should keep the same system of design as we have
+                            with log.. so bold dark and under the description can be light green
+                            and perhaps no emoji?" — which is the rule these rows already had
+                            (the icons were taken out of ALL of them in July, see
+                            CLAUDE-screens.md). The trainer's popup is a different menu with its
+                            own conventions; do not port its styling here. */}
+                        {isToday && (
+                          <>
+                            <View style={startModalStyles.sep} />
+                            <TouchableOpacity
+                              style={startModalStyles.option}
+                              activeOpacity={0.8}
+                              onPress={() => {
+                                // Free sessions are always for today — never let a date the
+                                // client picked earlier leak into the session row's `date`.
+                                useSessionStore.getState().setPendingLogDate(null);
+                                close(() => router.push('/(client)/workout/free' as any));
+                              }}
+                            >
+                              <View style={startModalStyles.optionText}>
+                                <Text style={startModalStyles.optionLabel}>Start free session</Text>
+                                <Text style={[startModalStyles.optionSub, startModalStyles.optionSubAccent, ft(600)]} numberOfLines={1}>Add exercises as you go.</Text>
+                              </View>
+                              <Text style={startModalStyles.optionChevron}>›</Text>
+                            </TouchableOpacity>
+                          </>
+                        )}
+
                         <TouchableOpacity style={startModalStyles.cancel} onPress={() => close()}>
                           <Text style={startModalStyles.cancelText}>Cancel</Text>
                         </TouchableOpacity>

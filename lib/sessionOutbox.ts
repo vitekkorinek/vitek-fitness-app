@@ -231,9 +231,12 @@ async function uploadJob(job: FinishJob): Promise<boolean> {
   //    with no special-casing.
   //    ⚠️ Its id is minted on the DEVICE, like the session's — a request can time out AFTER the
   //    server applied it, and an insert would then leave the client with two identical workouts.
-  //    ⚠️ RLS: `workouts` is trainer-insert-only, which today matches exactly who can add
-  //    exercises to a free session (the `+` is `isFreeSession && isTrainer`). If the client ever
-  //    gets that button, this stage needs a policy for them or it will fail here.
+  //    ⚠️ RLS: `workouts` used to be trainer-insert-only, which matched who could add exercises
+  //    to a free session (the `+` was `isFreeSession && isTrainer`). The client got that button
+  //    on July 30 2026, so this stage — and the `workout_exercises` insert below — depend on
+  //    migration `20260730000001_client_adds_exercises.sql`. Without it the insert errors, the
+  //    stage returns false, and the job requeues forever rather than failing quietly.
+  //    The upsert is also why that migration grants UPDATE and not just INSERT.
   if (job.freeWorkoutId && !job.done.freeWorkout) {
     const { error } = await supabase.from('workouts').upsert({
       id: job.freeWorkoutId,

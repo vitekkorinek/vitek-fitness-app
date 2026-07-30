@@ -127,6 +127,8 @@ import { BottomSheet } from '@/components/BottomSheet';
 import CategoryCover, { categoryHasCover } from '@/components/CategoryCover';
 import { exerciseBodyCfg } from '@/lib/muscleSilhouette';
 import { HeaderPhoto } from '@/components/HeaderPhoto';
+import { LightHeader, HeaderIcon, HEADER_ICON, useHeaderHeight } from '@/components/LightHeader';
+import { MUSCLE_FILTER_OPTIONS, matchesMuscleFilters, muscleFilterLabels } from '@/lib/exerciseFilters';
 import { fd } from '@/lib/appType';
 
 // ─── Types ──────────────────────────────────────────────────────────────────────
@@ -1521,34 +1523,18 @@ export default function TrainerWorkoutSessionScreen() {
 
   useEffect(() => { load(); }, [load]);
 
-  // Auto-start free sessions once loading finishes
-  const freeAutoStarted = useRef(false);
-  useEffect(() => {
-    if (!isFreeSession || loading || freeAutoStarted.current) return;
-    freeAutoStarted.current = true;
-    // ⚠️ load() may have just ADOPTED a free session that was left running, and the resume chip
-    // hands one over directly. Inserting here regardless is how resuming a free session used to
-    // leave a second in_progress row behind — the same duplicate-session bug the workout path
-    // was fixed for in July.
-    // ⚠️ No startSession() here — it is the store's `start`, which stamps startedAt = now and
-    // would throw away the original clock. load()'s adoption (and the resume effect, for the
-    // chip) have already called resumeSession with the real one.
-    if (activeSessionIdRef.current || resumeSessionId) return;
-    const today = new Date().toISOString().split('T')[0];
-    supabase
-      .from('sessions')
-      .insert({ workout_id: null, client_id: clientId, date: today, status: 'in_progress', duration_seconds: null, started_by: profile?.id ?? null, name: freeSessionNameRef.current })
-      .select('id')
-      .single()
-      .then(({ data }) => {
-        if (data) {
-          activeSessionIdRef.current = (data as any).id;
-          setActiveSessionId((data as any).id);
-          setBridgeActiveSessionId((data as any).id);
-          startSession();
-        }
-      });
-  }, [isFreeSession, loading]);
+  // ⚠️ A FREE SESSION DOES NOT AUTO-START (July 30 2026, Vitek — both sides).
+  // Opening one used to insert the `sessions` row and stamp `startedAt` on the spot, so the
+  // clock was already running before you had added a single exercise. It now behaves like
+  // every other session: the screen opens not-started, the header shows the Start-morph
+  // `[00:00 · START]` pill, and `createInProgressSession` (which already handles the free
+  // branch — `workout_id: null` + the session name) inserts the row when START is pressed.
+  // Because nothing is running, the normal pre-start prompts apply here too and need no
+  // wiring of their own: the soft "Start workout?" (`handleEditBeforeStart`) on the first
+  // edit and the hard block ("You must start the workout to do this") on a done-tick or
+  // photo — both gate on `startedAtRef.current`, which is what auto-start was hiding.
+  // Resuming is unaffected: `load()` adopts an open `workout_id IS NULL` row for today and
+  // replays the draft over it, and the resume chip's `resumeSessionId` effect does the same.
 
   // Auto-resume a suspended session when navigated back via the header timer
   const resumeAutoStarted = useRef(false);
@@ -4663,6 +4649,8 @@ export default function TrainerWorkoutSessionScreen() {
       {/* ── Exercise library picker ───────────────────────────────────── */}
       {pickMode !== null && (
         <ExerciseLibraryPicker
+          // Only a REPLACE has an exercise to be like — Add below / add-to-superset don't.
+          suggestFor={pickMode.type === 'replace' ? exercises[pickMode.exIdx] ?? null : null}
           onPick={picked => {
             if (pickMode.type === 'add') addExerciseAfter(picked, pickMode.afterExIdx);
             else if (pickMode.type === 'replace') replaceExercise(picked, pickMode.exIdx);
@@ -4978,7 +4966,10 @@ export default function TrainerWorkoutSessionScreen() {
                 onChangeText={setFreeSessionNameDraft}
                 autoFocus
                 selectTextOnFocus
-                returnKeyType="done"
+                // No `returnKeyType` — iOS paints the prominent return types (Search/Go/Send/Done)
+                // as a filled system-blue key, which is off-palette everywhere in this app; see the
+                // picker's search field, where Vitek rejected it. `onSubmitEditing` below still fires
+                // on the plain return key, so nothing about the behaviour changes.
                 onSubmitEditing={() => { if (freeSessionNameDraft.trim()) { setFreeSessionName(freeSessionNameDraft.trim()); freeSessionNameRef.current = freeSessionNameDraft.trim(); } setEditFreeSessionName(false); }}
               />
               <TouchableOpacity
@@ -5910,7 +5901,10 @@ function MachineBrandModal({
               onChangeText={setCustomText}
               placeholder={en.machineSelector.customPlaceholder}
               placeholderTextColor="#bbb"
-              returnKeyType="done"
+              // No `returnKeyType` — iOS paints the prominent return types (Search/Go/Send/Done)
+              // as a filled system-blue key, which is off-palette everywhere in this app; see the
+              // picker's search field, where Vitek rejected it. `onSubmitEditing` below still fires
+              // on the plain return key, so nothing about the behaviour changes.
               onSubmitEditing={() => { if (customText.trim()) { const v = customText.trim(); close(() => onSelect(v)); } }}
             />
             <TouchableOpacity
@@ -7239,14 +7233,69 @@ function InfoSheet({ title, onClose, onBack, children }: {
 
 // ─── ExerciseLibraryPicker ───────────────────────────────────────────────────────
 
-function ExerciseLibraryPicker({ onPick, onClose }: {
+/**
+ * Row thumbnail for the exercise picker (July 30 2026, Vitek: "can we have a small picture
+ * next to the names so the person can see the exercise, if not then the silhouette of the
+ * body type").
+ *
+ * Same fallback chain as Do Mode's own banner, so a given exercise looks the same wherever
+ * you meet it: its own photo → its video's auto-thumbnail → the muscles it trains.
+ *
+ * ⚠️ `MuscleThumb` opens its own muscle modal when tapped, which would swallow the row's
+ * "pick this exercise" tap. `pointerEvents="none"` on the wrapper hands the touch straight
+ * through to the row. Do NOT give MuscleThumb an onPress here — picking is the only thing
+ * this row does.
+ * ⚠️ The unlit body renders charcoal, not white: `react-native-body-highlighter`'s
+ * `background` prop does nothing (see [[body_highlighter_background_prop_dead]]). That is
+ * the same look Do Mode's collapsed rows already have, so it is consistent, not a bug.
+ */
+function PickerThumb({ exercise }: { exercise: LibraryExercise }) {
+  const photo = exercise.extraPhotoUrls?.[0] ?? exercise.thumbnailUrl;
+  if (photo) return <Image source={{ uri: photo }} style={pickerStyles.thumb} />;
+  return (
+    <View style={pickerStyles.thumb} pointerEvents="none">
+      <MuscleThumb
+        muscleGroups={exercise.muscleGroups}
+        secondaryMuscleGroups={exercise.secondaryMuscleGroups}
+        size={40}
+      />
+    </View>
+  );
+}
+
+/** One rendered line in the picker: an exercise, or a section label between the two tiers. */
+type PickerRow =
+  | { kind: 'sep'; label: string }
+  | { kind: 'ex'; ex: LibraryExercise };
+
+function ExerciseLibraryPicker({ onPick, onClose, suggestFor }: {
   onPick: (exercise: LibraryExercise) => void;
   onClose: () => void;
+  /**
+   * The exercise being REPLACED, when that is why the picker is open. Its muscles rank the
+   * list: like-for-like swaps float to the top under a SUGGESTED heading (Vitek, July 30
+   * 2026: "if its biceps lets have biceps exercises suggested first and then the rest").
+   * Undefined for Add below / add-to-superset, where there is no exercise to be like.
+   * ⚠️ It RANKS, it does not FILTER — everything stays reachable, which is the difference
+   * between a suggestion and a decision made for you.
+   */
+  suggestFor?: { muscleGroups: string[]; secondaryMuscleGroups: string[] } | null;
 }) {
-  const insets = useSafeAreaInsets();
+  const headerH = useHeaderHeight();
   const [items, setItems] = useState<LibraryExercise[]>([]);
   const [query, setQuery] = useState('');
+  const [muscleFilters, setMuscleFilters] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
+
+  // Own keyboard listener — this picker is a `Modal`, so the SCREEN's `kbHeight` (and its
+  // Done pill) do not reach inside it. Same pair of events as the screen's: `didShow` for
+  // the height, `willHide` so the pill leaves with the keyboard rather than after it.
+  const [kbHeight, setKbHeight] = useState(0);
+  useEffect(() => {
+    const show = Keyboard.addListener('keyboardDidShow', e => setKbHeight(e.endCoordinates.height));
+    const hide = Keyboard.addListener('keyboardWillHide', () => setKbHeight(0));
+    return () => { show.remove(); hide.remove(); };
+  }, []);
 
   useEffect(() => {
     supabase
@@ -7270,22 +7319,61 @@ function ExerciseLibraryPicker({ onPick, onClose }: {
       });
   }, []);
 
-  const filtered = query.trim()
-    ? items.filter(e => e.name.toLowerCase().includes(query.toLowerCase().trim()))
-    : items;
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return items.filter(e =>
+      (!q || e.name.toLowerCase().includes(q)) && matchesMuscleFilters(e.muscleGroups, muscleFilters)
+    );
+  }, [items, query, muscleFilters]);
+
+  // Replacement ranking. Tier 2 = shares an exact primary muscle (Biceps for Biceps);
+  // tier 1 = shares a body part (Lats and Mid Traps are both "Back"), which catches the
+  // sensible swaps whose granular muscles differ; tier 0 = everything else.
+  const rows = useMemo<PickerRow[]>(() => {
+    const plain = (list: LibraryExercise[]): PickerRow[] => list.map(ex => ({ kind: 'ex', ex }));
+    if (!suggestFor) return plain(filtered);
+
+    const primary = new Set(suggestFor.muscleGroups);
+    const labels = muscleFilterLabels(suggestFor.muscleGroups);
+    const score = (ex: LibraryExercise) => {
+      if (ex.muscleGroups.some(m => primary.has(m))) return 2;
+      for (const l of muscleFilterLabels(ex.muscleGroups)) if (labels.has(l)) return 1;
+      return 0;
+    };
+
+    const scored = filtered.map(ex => ({ ex, s: score(ex) }));
+    const suggested = scored.filter(x => x.s > 0).sort((a, b) => b.s - a.s).map(x => x.ex);
+    const rest = scored.filter(x => x.s === 0).map(x => x.ex);
+    // Headings only earn their space when there are actually two groups to tell apart.
+    if (!suggested.length || !rest.length) return plain(filtered);
+    return [
+      { kind: 'sep', label: 'SUGGESTED' },
+      ...plain(suggested),
+      { kind: 'sep', label: 'ALL EXERCISES' },
+      ...plain(rest),
+    ];
+  }, [filtered, suggestFor]);
+
+  const toggleMuscle = (m: string) => {
+    // The pill row keeps taps (`keyboardShouldPersistTaps="handled"`) so the pill itself
+    // stays reachable while typing — which also means it will NOT drop the keyboard on its
+    // own. Filtering is a "done typing" move, so drop it explicitly.
+    Keyboard.dismiss();
+    setMuscleFilters(prev => {
+      const next = new Set(prev);
+      if (next.has(m)) next.delete(m); else next.add(m);
+      return next;
+    });
+  };
 
   return (
     <Modal visible animationType="slide" onRequestClose={onClose}>
       <View style={pickerStyles.root}>
-        <View style={[pickerStyles.headerSafe, { paddingTop: insets.top }]}>
-          <View style={pickerStyles.header}>
-            <TouchableOpacity onPress={onClose} hitSlop={10} style={pickerStyles.backBtn}>
-              <SymbolView name="chevron.left" size={20} tintColor="#fff" />
-            </TouchableOpacity>
-            <Text style={pickerStyles.title}>Exercise Library</Text>
-            <View style={{ width: 36 }} />
-          </View>
-        </View>
+        <StatusBar barStyle="dark-content" />
+        {/* Search is FIXED and only the list scrolls, so the content block is pushed
+            clear of the glass header rather than sliding under it — same arrangement as
+            the standalone `app/(trainer)/exercise-library.tsx`. */}
+        <View style={[pickerStyles.content, { paddingTop: headerH }]}>
         <View style={pickerStyles.searchWrap}>
           <TextInput
             style={pickerStyles.search}
@@ -7293,33 +7381,121 @@ function ExerciseLibraryPicker({ onPick, onClose }: {
             onChangeText={setQuery}
             placeholder="Search exercises..."
             placeholderTextColor="#bbb"
-            autoFocus
+            // ⚠️ NO `autoFocus` (July 30 2026, Vitek: "the keyboard is hard to dismiss").
+            // It made sense when typing was the ONLY way to find anything here; now the
+            // body-part filter and the SUGGESTED tier make this a list you browse, and an
+            // unbidden keyboard covers two thirds of it the moment the picker opens. Tap
+            // the field when you actually want to type.
+            //
+            // ⚠️ NO `returnKeyType` either — leave it default. `"search"` was tried the same
+            // day and rejected on device within the hour: iOS renders Search/Go/Send/Done as
+            // a PROMINENT TINTED key, which came out system-blue and was the only blue thing
+            // on the screen (Vitek: "i dont like this blue search button here, it doesnt work
+            // with the style of the app. in do mode the style of the keayboard is much
+            // nicer"). The plain grey return key is what Do Mode's note fields show, so
+            // leaving this alone is what makes the two keyboards match. It still dismisses —
+            // a single-line input blurs on submit by default.
             clearButtonMode="while-editing"
           />
+          {/* Body-part filter. Multi-select, matching the Library tab's behaviour, and it
+              scrolls horizontally because nine labels never fit. Deliberately NOT pre-set to
+              the replaced exercise's body part — `suggestFor` already floats those to the
+              top, and pre-filtering would hide everything else behind a control the user
+              didn't touch. */}
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+            contentContainerStyle={pickerStyles.filterRow}
+          >
+            {MUSCLE_FILTER_OPTIONS.map(m => {
+              const on = muscleFilters.has(m);
+              return (
+                <TouchableOpacity
+                  key={m}
+                  style={[pickerStyles.filterPill, on && pickerStyles.filterPillActive]}
+                  onPress={() => toggleMuscle(m)}
+                  activeOpacity={0.8}
+                >
+                  <Text style={[pickerStyles.filterPillText, on && pickerStyles.filterPillTextActive]}>{m}</Text>
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
         </View>
         {loading ? (
           <ActivityIndicator style={{ flex: 1 }} color={ACCENT} size="large" />
         ) : (
           <FlatList
-            data={filtered}
-            keyExtractor={e => e.id}
+            data={rows}
+            keyExtractor={(r, i) => r.kind === 'sep' ? `sep-${r.label}-${i}` : r.ex.id}
             keyboardShouldPersistTaps="handled"
-            renderItem={({ item }) => (
-              <TouchableOpacity style={pickerStyles.row} onPress={() => onPick(item)} activeOpacity={0.7}>
-                <View style={pickerStyles.rowInfo}>
-                  <Text style={pickerStyles.rowName}>{item.name}</Text>
-                  {item.muscleGroups.length > 0 && (
-                    <Text style={pickerStyles.rowMeta}>{item.muscleGroups.join(' · ')}</Text>
-                  )}
-                </View>
-                {item.equipment && <Text style={pickerStyles.rowEquip}>{item.equipment}</Text>}
-              </TouchableOpacity>
-            )}
-            ItemSeparatorComponent={() => <View style={{ height: 1, backgroundColor: '#f0f0ee', marginLeft: 16 }} />}
+            // Scrolling the list puts the keyboard away — the gesture you already make when
+            // you start browsing results. `handled` alone only dismisses on a tap that no row
+            // claims, and in a full-width list there is barely any such space to hit.
+            keyboardDismissMode="on-drag"
+            // Each silhouette row draws an SVG body, so the default window (21 screens'
+            // worth) would mount a hundred of them off-screen on a full library. Photos
+            // are cheap; the bodies are not.
+            initialNumToRender={12}
+            windowSize={5}
+            renderItem={({ item }) => {
+              if (item.kind === 'sep') return <Text style={pickerStyles.sectionLabel}>{item.label}</Text>;
+              const ex = item.ex;
+              return (
+                <TouchableOpacity style={pickerStyles.row} onPress={() => onPick(ex)} activeOpacity={0.7}>
+                  <PickerThumb exercise={ex} />
+                  <View style={pickerStyles.rowInfo}>
+                    <Text style={pickerStyles.rowName}>{ex.name}</Text>
+                    {ex.muscleGroups.length > 0 && (
+                      <Text style={pickerStyles.rowMeta}>{ex.muscleGroups.join(' · ')}</Text>
+                    )}
+                  </View>
+                  {ex.equipment && <Text style={pickerStyles.rowEquip}>{ex.equipment}</Text>}
+                </TouchableOpacity>
+              );
+            }}
+            // No hairline above a section label — it would read as an orphan rule.
+            ItemSeparatorComponent={({ leadingItem }: any) =>
+              leadingItem?.kind === 'sep'
+                ? null
+                : <View style={{ height: 1, backgroundColor: '#f0f0ee', marginLeft: 16 }} />
+            }
             ListEmptyComponent={<Text style={pickerStyles.empty}>No exercises found</Text>}
           />
         )}
         <SafeAreaView edges={['bottom']} />
+        </View>
+
+        {/* Glass header — rendered LAST so it overlays the content, exactly like the
+            standalone picker screen. This copy kept the old dark-green bar when that one
+            was converted in July 2026; Vitek caught it on device reaching the picker from
+            Do Mode's Replace. `overlay` is deliberately a blank view: LightHeader defaults
+            it to <SessionResumeChip />, and a "resume your other session" chip has no place
+            on top of a session you are already inside. */}
+        <LightHeader
+          left={
+            <HeaderIcon onPress={onClose}>
+              <SymbolView name="chevron.left" size={24} tintColor={HEADER_ICON} weight="semibold" />
+            </HeaderIcon>
+          }
+          title="Exercise Library"
+          overlay={<View />}
+        />
+
+        {/* Keyboard "Done" — same pill, same position as Do Mode's (Vitek, July 30 2026:
+            "in do mode we have Done on the right side to dismiss it... i think the one in
+            do mode is good"). Do Mode needs it because numeric keypads have no return key;
+            here the text keyboard does have one, so this is for CONSISTENCY — one way out
+            of a keyboard everywhere in the app. Reuses `styles.kbdDoneBtn`/`kbdDoneText`
+            rather than a look-alike, so restyling one restyles both. */}
+        {kbHeight > 0 && (
+          <View style={{ position: 'absolute', right: 8, bottom: kbHeight + 4, zIndex: 100 }} pointerEvents="box-none">
+            <TouchableOpacity onPress={() => Keyboard.dismiss()} hitSlop={12} style={styles.kbdDoneBtn} activeOpacity={0.7}>
+              <Text style={styles.kbdDoneText}>Done</Text>
+            </TouchableOpacity>
+          </View>
+        )}
       </View>
     </Modal>
   );
@@ -7374,12 +7550,19 @@ function ReplacementHistoryModal({ workoutId, slotNumber, exerciseName, onReplac
               ))
           }
           <View style={[styles.infoSep, { backgroundColor: 'rgba(0,0,0,0.08)' }]} />
-          <TouchableOpacity style={replStyles.replaceRow} onPress={onReplacePress} activeOpacity={0.7}>
-            <Plus size={15} color={ACCENT} strokeWidth={2.5} />
-            <Text style={replStyles.replaceRowText}>Replace with different exercise</Text>
+          {/* ⚠️ Replace is the PRIMARY here — it is the only thing this popup does. It used
+              to be an ACCENT-outline row under a big filled green "Done", so the dismiss
+              button was the loudest thing on screen and the action read as secondary
+              (Vitek, July 30 2026: "the big done button and the button to replace is much
+              less visible... perhaps we can have back or cancel instead of the done button
+              so they dont fight?"). Now it follows the app-wide confirm convention in
+              CLAUDE.md section 2: green filled pill + a gray text cancel link below. */}
+          <TouchableOpacity style={[styles.confirmPrimaryBtn, replStyles.replacePrimary]} onPress={onReplacePress} activeOpacity={0.85}>
+            <Plus size={15} color="#fff" strokeWidth={2.5} />
+            <Text style={styles.confirmPrimaryBtnText}>Replace with different exercise</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.centeredModalDoneBtn} onPress={onClose} activeOpacity={0.85}>
-            <Text style={styles.centeredModalDoneBtnText}>Done</Text>
+          <TouchableOpacity style={replStyles.cancelLink} onPress={onClose} activeOpacity={0.7} hitSlop={8}>
+            <Text style={styles.confirmCancelText}>Cancel</Text>
           </TouchableOpacity>
         </GlassPanel>
         </View>
@@ -8016,17 +8199,35 @@ const styles = StyleSheet.create({
   actionBtnTextDisabled: { color: '#bbb' },
 });
 
-const HEADER_COLOR = '#244e43';
+// (`HEADER_COLOR` lived here for the picker's old dark-green bar; it went with the bar.
+//  Brand green for header glyphs now comes from LightHeader's exported `HEADER_ICON`.)
 
 const pickerStyles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: '#fff' },
-  headerSafe: { backgroundColor: HEADER_COLOR },
-  header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 12 },
-  backBtn: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
-  title: { flex: 1, textAlign: 'center', fontSize: 17, fontWeight: '600', color: '#fff' },
+  // `#faf9f7` app background, not white — the glass header tints toward it, and a white
+  // ground made the header read as a slightly grubby patch rather than a bar.
+  root: { flex: 1, backgroundColor: '#faf9f7' },
+  // `content` stays #faf9f7 so the strip its `paddingTop: headerH` leaves behind the glass
+  // header is the app background, not white. The search bar + rows below it stay WHITE —
+  // this list was always a full-bleed white list and adding thumbnails is no reason to
+  // redesign it into the floating-card layout the standalone screen uses.
+  content: { flex: 1, backgroundColor: '#faf9f7' },
   searchWrap: { backgroundColor: '#fff', paddingHorizontal: 12, paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: BORDER },
   search: { backgroundColor: '#f5f5f3', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 9, fontSize: 15, color: TEXT },
   row: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 13, backgroundColor: '#fff', gap: 10 },
+  // 40 matches Do Mode's own collapsed-row MuscleThumb, and the radius is MuscleThumb's
+  // (size * 0.185) so a photo row and a silhouette row are the same shape.
+  thumb: { width: 40, height: 40, borderRadius: 7, overflow: 'hidden', backgroundColor: '#f0f0ee' },
+  // Unselected pill = white + soft shadow, no border (CLAUDE.md section 2 borderless rule);
+  // selected = filled ACCENT with no border either.
+  filterRow: { paddingTop: 10, paddingBottom: 2, gap: 8, paddingRight: 4 },
+  filterPill: {
+    borderRadius: 100, paddingHorizontal: 12, paddingVertical: 7, backgroundColor: '#fff',
+    shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 3, elevation: 1,
+  },
+  filterPillActive: { backgroundColor: ACCENT },
+  filterPillText: { fontSize: 13, fontWeight: '600', color: '#555' },
+  filterPillTextActive: { color: '#fff' },
+  sectionLabel: { fontSize: 11, fontWeight: '700', color: '#999', letterSpacing: 0.5, paddingHorizontal: 16, paddingTop: 16, paddingBottom: 6, backgroundColor: '#fff' },
   rowInfo: { flex: 1, gap: 2 },
   rowName: { fontSize: 15, fontWeight: '600', color: TEXT },
   rowMeta: { fontSize: 12, color: MUTED },
@@ -8035,8 +8236,9 @@ const pickerStyles = StyleSheet.create({
 });
 
 const replStyles = StyleSheet.create({
-  replaceRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 13, paddingHorizontal: 16, borderRadius: 12, borderWidth: 1.5, borderColor: ACCENT, marginTop: 12 },
-  replaceRowText: { fontSize: 14, fontWeight: '600', color: ACCENT },
+  // Row layout on top of the shared `confirmPrimaryBtn` pill, so the + sits beside the label.
+  replacePrimary: { flexDirection: 'row', justifyContent: 'center', gap: 8, marginTop: 12 },
+  cancelLink: { alignSelf: 'center', marginTop: 14 },
   historyEmpty: { fontSize: 14, color: '#414b45', marginBottom: 4 },
   historyRow: { paddingVertical: 7, borderBottomWidth: 1, borderBottomColor: 'rgba(0,0,0,0.08)', gap: 2 },
   historyName: { fontSize: 14, fontWeight: '600', color: TEXT },
