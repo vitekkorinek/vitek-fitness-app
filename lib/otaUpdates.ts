@@ -1,3 +1,4 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Updates from 'expo-updates';
 import { useCallback, useEffect, useRef } from 'react';
 import { AppState } from 'react-native';
@@ -6,90 +7,113 @@ import { outboxCount } from '@/lib/sessionOutbox';
 import { useSessionStore } from '@/store/sessionStore';
 
 /**
- * OTA updates that land on the FIRST open.
+ * OTA updates that land without anyone having to open the app twice — and without ever
+ * restarting the app out from under someone.
  *
- * `app.json` sets `checkAutomatically: 'ON_LOAD'` + `fallbackToCacheTimeout: 5000`, so at every
- * launch the NATIVE layer checks the manifest and, if there is a new bundle, downloads it —
- * waiting up to 5 s before giving up and starting the app on the cached one. That wait is a
- * RACE, not a guarantee: the published bundle is 5.9 MiB of Hermes bytecode = **2.54 MiB gzipped
- * over the wire**, so 5 s only wins at ~4.3 Mbit/s. When it loses, the download simply CONTINUES
- * IN THE BACKGROUND and the new bundle launches next time — which IS the "open TestFlight twice"
- * behaviour, and why the July 28 build looked fixed for one lucky launch and then didn't.
+ * Two things make that awkward, and both were learned the hard way on device:
  *
- * ⚠️ **The fix is NOT to download it again ourselves.** The native layer is already fetching that
- * bundle; a `fetchUpdateAsync()` of our own at launch is a second manifest check and a second
- * 2.54 MiB transfer over the very connection that is already the bottleneck. Instead we watch the
- * native state machine (`Updates.useUpdates()`) and relaunch into whatever IT downloads:
- * `isUpdatePending` means "a new update is on disk and ready to launch", whoever fetched it. No
- * duplicate work — and no guess about how long a download will take, because we are told the
- * moment it finishes instead of racing a deadline of our own.
+ * **1. Applying an update restarts the JS, and the navigation stack does not survive that.**
+ * ⚠️ The first version of this file restarted on every return to the foreground, reasoning that
+ * iOS restarts backgrounded apps all the time so nobody would notice. iOS does — but when it
+ * does it RESTORES the screen you left, and we did not. Vitek, the next morning: switching to
+ * another app and coming back "brings you to the home screen instead of staying in the tab where
+ * you were". **The answer was to make the restart cheap rather than to hunt for a moment when
+ * it wasn't: `lib/lastRoute.ts` brings the app back to the screen it left.** With that in place
+ * a restart costs nothing on an ordinary screen — the only ones left to protect are those
+ * holding work that exists nowhere but memory, which is what `canRestart` reports.
  *
- * ⚠️ Startup NEVER waits on any of this. Holding the splash for an update would punish exactly
+ * **2. `isUpdatePending` does NOT mean "a new bundle is waiting".** expo-updates ends a
+ * `fetchUpdateAsync()` that found NOTHING to download by firing `downloadComplete`
+ * (FetchUpdateProcedure.swift:133), and that event sets `isUpdatePending = true`
+ * (UpdatesStateMachine.swift:410) even though nothing was downloaded. We check for updates on
+ * every foreground, so the flag went true on the first check and stayed true — and the app then
+ * restarted on the NEXT foreground, into the very same bundle, for nothing. That is what was
+ * throwing Vitek back to the home screen every other time he switched apps, with no update
+ * involved at all. ⚠️ Never treat that flag as the trigger on its own: the honest test is a
+ * DOWNLOADED MANIFEST whose id differs from the one we are running (`newBundleId` below).
+ *
+ * ⚠️ Startup never waits on any of this. Holding the splash for an update would punish exactly
  * the black-holing gym connections `lib/supabase.ts` exists to survive.
  */
 
 /**
- * How long after launch a silent relaunch still reads as "the app is starting up".
- * Past this we leave the pending bundle alone and wait for a natural moment (the next return to
- * the foreground) instead of restarting the app under whoever is holding it.
+ * The id of a bundle we already restarted into that is still not the one running — i.e. it
+ * failed to launch and expo-updates fell back. Restarting into it again would bounce the app in
+ * a loop, so we remember it across the restart.
  */
-const RELOAD_GRACE_MS = 20_000;
+const LAST_ATTEMPT_KEY = 'ota:lastRestartAttempt';
 
 /**
  * Apply waiting OTA updates without anyone having to open the app twice. Call once, from the
  * root layout.
  *
- * @param canReload Caller's veto, read at the moment an update becomes ready — not when this is
- *                  called. The root layout uses it to keep us out of Do Mode.
+ * @param canRestart Is the user standing somewhere a restart costs them nothing? False on a live
+ *                   session and on any screen holding unsaved input (`holdsUnsavedWork` in
+ *                   lib/lastRoute). Read again after the async guards below, so walking onto one
+ *                   of those screens mid-check still cancels the restart.
  */
-export function useOtaUpdates(canReload: () => boolean): void {
-  const { isUpdatePending, isChecking, isDownloading, isStartupProcedureRunning } =
-    Updates.useUpdates();
+export function useOtaUpdates(canRestart: boolean): void {
+  const {
+    isUpdatePending, downloadedUpdate, currentlyRunning,
+    isChecking, isDownloading, isStartupProcedureRunning,
+  } = Updates.useUpdates();
 
-  const launchedAt = useRef(Date.now()).current;
-  const reloadingRef = useRef(false);
+  /**
+   * A genuinely new bundle sitting on disk, ready to launch — whoever fetched it (the native
+   * ON_LOAD check at launch, or our own foreground check below). Null when there is nothing new,
+   * INCLUDING after a check that came back empty (see the header note on `isUpdatePending`).
+   * A rollback-to-embedded has no id of its own; it still differs from a running update.
+   */
+  const newBundleId =
+    isUpdatePending && downloadedUpdate && downloadedUpdate.updateId !== currentlyRunning.updateId
+      ? (downloadedUpdate.updateId ?? 'rollback-to-embedded')
+      : null;
 
-  // Mirrored into refs so the AppState listener below (registered once) always reads current
-  // values instead of the ones captured on its first render.
-  const canReloadRef = useRef(canReload);
-  canReloadRef.current = canReload;
-  const pendingRef = useRef(isUpdatePending);
-  pendingRef.current = isUpdatePending;
+  const restartingRef = useRef(false);
+  const canRestartRef = useRef(canRestart);
+  canRestartRef.current = canRestart;
   const nativeBusyRef = useRef(false);
   nativeBusyRef.current = isChecking || isDownloading || isStartupProcedureRunning;
 
   /** Relaunch into the downloaded bundle — unless restarting the JS would cost something. */
-  const applyPendingUpdate = useCallback(async () => {
-    if (reloadingRef.current) return;
-    if (useSessionStore.getState().startedAt != null) return; // a session is being trained
-    if (!canReloadRef.current()) return;
-    // A queued finish survives a reload by design (`lib/sessionOutbox` is AsyncStorage-backed and
-    // addressed by a device-minted session id), but restarting mid-upload would redo a photo push
-    // over the same bad connection for nothing. On error assume pending and stay put.
-    if ((await outboxCount().catch(() => 1)) > 0) return;
-
-    reloadingRef.current = true;
+  const restartInto = useCallback(async (bundleId: string) => {
+    if (restartingRef.current) return;
+    restartingRef.current = true;
     try {
+      if (useSessionStore.getState().startedAt != null) return; // a session is being trained
+      // A queued finish survives a restart by design (`lib/sessionOutbox` is AsyncStorage-backed
+      // and addressed by a device-minted session id), but restarting mid-upload would redo a
+      // photo push over the same bad connection for nothing. On error assume pending, stay put.
+      if ((await outboxCount().catch(() => 1)) > 0) return;
+      // Re-read: the guards above are async, and the user may have left the landing screen while
+      // we were reading them.
+      if (!canRestartRef.current) return;
+      if ((await AsyncStorage.getItem(LAST_ATTEMPT_KEY).catch(() => null)) === bundleId) return;
+
+      await AsyncStorage.setItem(LAST_ATTEMPT_KEY, bundleId).catch(() => {});
       await Updates.reloadAsync();
     } catch {
-      // Couldn't relaunch — the bundle is on disk and still applies on the next launch.
-      reloadingRef.current = false;
+      // Couldn't relaunch — clear the marker so this bundle is still allowed to launch on its
+      // own at the next cold start.
+      await AsyncStorage.removeItem(LAST_ATTEMPT_KEY).catch(() => {});
+    } finally {
+      restartingRef.current = false;
     }
   }, []);
 
-  // ── Ready while we're still starting up → go straight into it ─────────────────────────
-  // The common case: the native download crossed the 5 s line and finished a few seconds later.
+  // ── Apply it at the first moment it costs nothing ─────────────────────────────────────
+  // Fires when a bundle becomes ready (the launch download finishing, or our foreground check
+  // landing one) AND when the user arrives back on the landing screen with one already waiting.
   useEffect(() => {
-    if (!isUpdatePending) return;
-    if (Date.now() - launchedAt > RELOAD_GRACE_MS) return;
-    void applyPendingUpdate();
-  }, [isUpdatePending, applyPendingUpdate, launchedAt]);
+    if (!newBundleId || !canRestart) return;
+    void restartInto(newBundleId);
+  }, [newBundleId, canRestart, restartInto]);
 
-  // ── Returning to the foreground ───────────────────────────────────────────────────────
-  // A relaunch here is invisible — iOS restarts backgrounded apps all the time — so this is where
-  // a bundle that finished downloading too late for the window above gets applied. It is also the
-  // only place a long-lived app can notice new code at all: ON_LOAD checks at LAUNCH only, so an
-  // app that sat in the background for hours would otherwise never look again.
+  // ── Returning to the foreground: look for new code, never restart ─────────────────────
+  // This is the only way a long-lived app notices an update at all — ON_LOAD checks at LAUNCH
+  // only, so an app that sat in the background for hours would never look again. What it does
+  // NOT do any more is apply what it finds: that waits for the landing screen, or for the next
+  // cold start, which runs the downloaded bundle natively with no reload at all.
   useEffect(() => {
     let wasBackgrounded = false;
     const sub = AppState.addEventListener('change', state => {
@@ -98,28 +122,20 @@ export function useOtaUpdates(canReload: () => boolean): void {
         return;
       }
       // iOS also fires inactive→active during launch. Acting on that would start a second check
-      // while the native startup procedure is still running — the duplicate work this hook exists
-      // to avoid — so only a real return from the background counts.
+      // while the native startup procedure is still running — duplicate work over the connection
+      // that is already the bottleneck — so only a real return from the background counts.
       if (!wasBackgrounded) return;
       wasBackgrounded = false;
-
-      if (pendingRef.current) {
-        void applyPendingUpdate();
-        return;
-      }
       void checkForUpdateWhenIdle(nativeBusyRef.current);
     });
     return () => sub.remove();
-  }, [applyPendingUpdate]);
+  }, []);
 }
 
 /**
  * Ask for a new bundle, but only while the app is genuinely idle: an update download must never
  * compete with `lib/sessionOutbox` pushing a finished session over a struggling connection —
  * getting the client's numbers to the server outranks shipping new code.
- *
- * On success the native `isUpdatePending` flips, and the hook above applies it at the NEXT
- * foreground rather than mid-use.
  */
 async function checkForUpdateWhenIdle(nativeBusy: boolean): Promise<void> {
   if (!Updates.isEnabled) return; // Expo Go / dev-server build: no update system to talk to
