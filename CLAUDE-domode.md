@@ -382,6 +382,8 @@ Weights/reps/done-marks live **only in component state** until FINISH writes `se
   - **`isSessionPending(sessionId)` is narrower than "is it queued"** — it asks whether the session row and its logs are still stuck on the phone. A job hanging around for one unsent photo must not make Finish claim there is no internet.
   - **What the client sees.** Uploaded in time → the Session Complete overview, exactly as before. Not uploaded → a glass confirm, *"Session saved on your phone — no internet right now; every weight and rep is logged and will upload by itself as soon as you are back online. The session overview will be there then."* → Done → back. The overview needs the client's whole history to work out records, which is why it waits rather than rendering an empty one.
   - **Deleted by this, do not reintroduce:** the in-screen retry `setInterval`, the "Waiting for connection…" footer state, the resume-a-owed-finish-on-load path and its `finishRequestedAt` draft field, and the "Couldn't save the session" failure modal (that title now only appears if the *device storage* write fails, which is not a network problem). `finishRequestedAtRef` survives as the session's END TIME — stamped when Finish is confirmed (`requestFinish`), reused by nothing else, `Math.max(0, …)`-clamped — so a session that sits in the outbox for five hours is still recorded as the hour that was trained.
+  - **⚠️ `savingSession` + `savingSessionRef` — Finish must show that it is working, and must not be re-entrant.** Finish had no state of its own (unlike "Save changes" right beside it), so a slow save was indistinguishable from a dead button — which is why the client tapped it over and over. It now shows **"Saving…"** with a spinner and is disabled while it runs. The **ref** blocks re-entrancy, which previously let two overlapping saves each finalise the row and each insert a full set of `session_logs` (every set logged twice).
+  - **⚠️ The `session_logs` insert is a HARD REQUIREMENT.** It used to only `console.log` its error, so a finalised row with zero logs read as "saved" everywhere while the weights were gone. On failure the row goes **back to `in_progress`** and the whole save fails. Still unaddressed by design: if a later step throws after step 1, `completedSessionId` is already set, so the `finally` takes the SUCCESS branch — session marked `completed` with zero logs, reported to the user as saved.
 
 ### ⚠️ A logged weight REQUIRES reps (July 28 2026, both Do Mode files)
 Vitek: *"kg and no reps should not exist, so if i record weight and no reps and click like done the app should say you need to record a rep. reps without weight are ok."* Ticking a SET done, or the exercise's done circle, is **blocked** when any non-removed set has a weight but an empty reps box; a toast says so (`repsToast`, reusing `pendingDoneToast`'s styles) and the tick does not happen. Reps with no weight stay valid — that is bodyweight work. **Why it matters beyond tidiness:** the session summary's records compare weight AND reps, and a weight-only row can't be judged (it also printed as `0 × 40 kg`, reading as zero reps). Historic rows still have this shape, hence `setLabel()` in `SessionCompleteScreen`.
@@ -480,12 +482,47 @@ On `saveSession` completion (in both `app/(trainer)/client/[id]/workout/[workout
   - `sectionCard`: `{ backgroundColor:'#fff', borderRadius:16, borderWidth:1.5, borderColor:'#d0d0cc', overflow:'hidden' }` — inner card, clips content. No margin.
   - JSX: `<View style={styles.sectionCardWrap}><View style={styles.sectionCard}>…</View></View>`
 
+### Not the primary in-session path
+In V4 Do Mode, tapping the exercise name or **Play video** opens the **ExerciseVideoOverlay** (full-screen modal) — **not** this screen. `exercise-detail.tsx` still exists as a separate screen, but it is no longer how you view an exercise mid-session.
+
+### Navigation between exercises
+- **Swipe left/right anywhere** on the screen moves to the adjacent exercise.
+- A **thumbnail strip** at the bottom lists every exercise; the current one has an ACCENT border. Superset members are grouped with ACCENT lines above and below the group ("top+bottom" style; the alternative bracket is the "U line" — Vitek named both, see memory).
+- Each thumbnail shows a **15×15 filled ACCENT ✓ badge** bottom-right when that exercise is done (white ✓, 9px/700).
+
+### Info card
+Matches the Do Mode collapsed row exactly: `SUPERSET` overline + 1.5px ACCENT border on superset exercises · name + (i) note button · **camera icon as a read-only presence indicator** (rendered only when ≥1 photo exists for this session, no touch handler) · "Moved from position X · date" in grey italic when applicable · muscle tag + equipment · description · done circle on the right (empty grey → filled ACCENT), tap to toggle, synced back through the bridge.
+
+### Progression graph
+Single ACCENT polyline (`react-native-svg`). Time range Month / Year / All time; scope All workouts / This workout. **Each dot = one set from one session** (max weight for that set), grouped by `sessionId:workoutExerciseId` — **not by date**, so two sessions on the same day stay separate dots.
+- **Machine brand filtering:** for cable/machine exercises the graph always follows the brand selected above the sets — there are **no brand pills on the graph itself**. Sessions with `machine_brand = null` (legacy, pre-brand-tracking) are included alongside any selected brand as a fallback. Non-machine exercises show everything.
+- **Tappable dots** → tooltip with date, workout name, weight, reps, "Set X of Y", "Exercise N in training". The **"Best overall" / "Lowest overall" stat rows** below the graph open the same tooltip.
+- ⚠️ The tooltip's **slot number comes from the bridge** (`allExercisesRef.current`), **not** from a DB query; the **workout name** comes from a `workouts(id, name)` fetch in `loadGraphData`.
+- Warm-ups are excluded (see "Warm-up sets"). "No session data yet" when nothing matches.
+
+### Sets section
+Identical behaviour to a Do Mode expanded exercise: bar selector for barbell exercises (15 / 20 / Custom), and set rows `set number · KG · REPS · TOTAL · rest timer` — **no (i) button** on the row here.
+- **Peek** (long-press a set number, 250 ms) fires on **ALL sets simultaneously**, same yellow styling as Do Mode. `peekingSetLocalId` is lifted to the parent screen and every row gets `isPeeking={peekingSetLocalId !== null}`. The bar highlight reads `exercise.firstSessionBarbellWeightKg` from the bridge.
+- Dropset rows can be checkmarked; set-number press is disabled for dropsets.
+
+### Muscle groups diagram (below the graph)
+`react-native-body-highlighter`, front + back views side by side. Primary muscles ACCENT (`#24ac88`, intensity 1), secondary light green (`#a8dfd1`, intensity 2). Muscle strings map to body-highlighter slugs via `MUSCLE_SLUG_MAP`.
+- ⚠️ **Each mapping carries a `side: 'front' | 'back' | 'both'` flag**, so a muscle that exists on both SVGs is lit only on the correct one — `'front delts' → { slug:'deltoids', side:'front' }`, `'rear delts' → { slug:'deltoids', side:'back' }`. `muscleGroupsToBodyData(primary, secondary)` returns separate `frontData` / `backData`, each passed to its own `<Body>`.
+
+### Photos
+- "Add photo" (camera icon + label) when none exist; icon-only once photos are there. Upload **requires an active session** (`sessionId` URL param) — show the alert rather than crash.
+- `loadPhotos` queries `workout_exercise_id IN (all weIds)` with **NO session filter**; merge DB + memory with a Set dedup.
+- Thumbnails tap → white centered modal, `aspectRatio:4/3, overflow:'hidden'`.
+- ⚠️ **Photos bridge:** `registerOnPhotosChangedDoMode` and `registerOnPhotosChangedDetail` are **independent slots** — never share one registration. `exercisePhotosRef.current = exercisePhotos` is assigned synchronously in the component body.
+
+### Done-circle behaviour
+Tapping the circle marks the exercise done **and every one of its sets**, then **auto-navigates to the next unchecked exercise** — forward from the current index, wrapping to the start. If all are done → custom confirm "All exercises done! Finish the session?" (Cancel / Finish); Finish calls `setPendingFinish(true)` then `router.back()`, and **Do Mode reads `getPendingFinish()` on focus** and runs its own `handleFinish`. Tapping an already-checked circle unchecks the **exercise only** — its sets stay as they are.
+
+### Bridge — syncing state back to Do Mode (`lib/doModeBridge.ts`)
+- Set field changes → `addPendingSetUpdate()` · barbell weight → `addPendingBarbellUpdate()` · checkmarks → `addPendingCheckUpdate()`. All are flushed in Do Mode's `useFocusEffect` via `flushPendingUpdates()` and applied to `exercises`.
+- Direct callbacks `notifySetsChanged` / `notifyCheckChanged` are **also** registered from Do Mode, so edits appear immediately instead of waiting for the focus effect.
+- **⚠️ THE BRIDGE RULE: every bridge callback must be called OUTSIDE any `setState` updater.** Pre-compute the next array from `setsRef.current`, then call `setSets(next)` and `notifySetsChanged(...)` as separate statements. Calling one inside an updater throws "Cannot update a component while rendering". Same for `notifyPhotosChanged`.
+- **`sessionId`** is passed as a URL param from Do Mode as `activeSessionIdRef.current ?? ''` — required for photo upload, empty string when no session is running.
+
 ### Other rules
-- Hard block modal: custom white centered modal (state: `hardBlockModal`) — NOT Alert.alert
-- Photos bridge: `registerOnPhotosChangedDoMode` and `registerOnPhotosChangedDetail` are independent slots — never share one registration
-- `notifyPhotosChanged` must be called OUTSIDE setState
-- `exercisePhotosRef.current = exercisePhotos` assigned synchronously in component body
-- `loadPhotos`: queries by `workout_exercise_id IN (all weIds)` with NO session filter. Merge DB+memory with Set dedup.
-- Photo thumbnails tappable → white centered modal with `aspectRatio:4/3, overflow:'hidden'`
-- Dropset rows can be checkmarked. Set-number press disabled for dropsets.
-- Muscle diagram: `react-native-body-highlighter`, `MUSCLE_SLUG_MAP`, separate front/back `<Body>` components
+- Hard block modal: custom centered glass popup (state: `hardBlockModal`) — NOT `Alert.alert`.

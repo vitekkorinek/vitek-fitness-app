@@ -1,6 +1,48 @@
-# CLAUDE-history.md — Completed session changelog
+# CLAUDE-history.md — Changelog & rationale
 
-Context only. These are RESUME notes for work that is already **COMMITTED & PUSHED** (a few are noted as local/uncommitted). They are NOT active instructions — they record how things were built and why. The single active thread lives at the top of CLAUDE.md. Search here when you need the history/rationale behind an existing feature.
+**Context only — not active instructions.** Active rules live in CLAUDE.md and the per-area companions. Come here for *why* something is the way it is, or to check whether an approach was already tried and rejected.
+
+## Recovering the full pre-July-30 2026 docs
+
+Until July 30 2026, CLAUDE.md carried an 18-entry "RESUME HERE" block (~98k chars) and SPEC.md carried a 190k-byte §7 "Screen Map". Both were retired that day: their durable rules were merged into the companions, and the rest was narrative or already stale. **Both are permanently recoverable from git, byte for byte** — there is no need to keep a second copy here:
+
+```bash
+git show a3780f8:CLAUDE.md
+```
+```bash
+git show a3780f8:SPEC.md
+```
+
+Use those when you need the exact wording of a July 2026 decision, or per-screen detail for a screen whose companion coverage looks thin. Anything still *true* lives in CLAUDE.md and the companions — **where the old text disagrees with a companion, the companion wins.**
+
+## ⛔ Rejected en route — do not re-propose
+
+The expensive part of the archive: things that were built, reviewed on device, and turned down. Re-proposing any of these costs Vitek a round of his own testing time.
+
+**Workout & routine cards**
+- **Routine card:** green outline · beige/green diagonal gradient washes ("dirty") · strips-on-dark with a white-footer-name flip · exercise-list-style cover with inline marks, ring-right and 2×2 strip cells — **all rejected across ~6 device iterations.** The surviving anatomy is in CLAUDE.md §8.
+- **The Active/Closed pill and the "THIS WEEK X/Y" goal row were removed from My Routines** — redundant beside the Active/Closed filter; the goal row belongs to the workout gallery.
+- **Light covers must stay flat white** — a mirror of the dark gradient was tried and dropped the same day.
+- **Muscle tinting on the cover silhouette** — tried at three strengths, rejected. The category hue lives in the pill only.
+- **The all-dark seamless card** was retired everywhere once every card gained the contrast-footer anatomy; a seamless dark card then reads as inconsistency, not emphasis.
+- **`ActiveRoutineCard` v1–v3** (compact white row · dark card with the name list as cover text · one-zone tile with the pill row under the name) — all rejected before Vitek sketched v4, which itself was later replaced by the unboxed `RoutineReadout`.
+
+**Do Mode**
+- **Trainer `?viewOnly=1` on the IN PROGRESS card** — reverted within the hour. Trainer-led Do Mode on his own phone is the *normal* case (one-on-one PT), and view-only actively caused a duplicate session.
+- **Reopening a paused rest timer from "Start timer"** — reverted the same evening: *"start timer means start timer."* A paused rest is reachable via the mini pill.
+- **Bold reps in the set row** — at `700`, reps and kg differ by 1px and the row reads flat. The size/weight step *is* the hierarchy.
+- **A separate pre-session screen** (`session-intro.tsx`) — deleted July 26 2026, never rebuild it. The merged preview is the only client pre-session surface.
+- **The in-screen finish-retry interval, the "Waiting for connection…" footer, and resume-an-owed-finish-on-load** — all superseded by the outbox. They made the client wait for a connection instead of letting the session end.
+- **Warm-up sets as a single sequential run with display-only renumbering** — rejected: flagging a warm-up onto an existing workout would shift set 1's logged history onto set 2.
+
+**App-wide**
+- **Scroll-to-top on tab re-entry** — the old reset was an accident of the spinner unmounting the ScrollView, never a decision. Do not "fix" it back (see CLAUDE-infra.md).
+- **Calling `fetchUpdateAsync()` at launch**, and relaunching on `isUpdatePending` alone — both wrong, both replaced. See CLAUDE-infra.md "OTA updates".
+- **Client-body photos as workout covers** — rejected on body image and consent/GDPR grounds.
+- **The mint-green header wash** — rejected; one neutral tint app-wide. Revert flag `GREEN_TINT` in `components/LightHeader.tsx`.
+- **A web build** — the export is broken and Vitek does not want one. Always ship `--platform ios`.
+
+## Changelog
 
 > **▶️ RESUME HERE — Trainer FOOD LIBRARY seeded (~250 foods) + food-photo system + 2 food-log bugfixes (July 2026). DB work is LIVE in prod; the 2 code fixes are LOCAL/uncommitted.** Vitek's ask: instead of hand-creating trainer foods one by one, have Claude generate accurate nutrition data for common foods and bulk-insert them into `trainer_foods` (they show FIRST in client food search with his VF logo). Done this session — full detail in **CLAUDE-nutrition.md "Trainer food library (Claude-seeded foods) + photos"**. Summary:
 > 1. **Seeded `trainer_foods` from 1 → 249 rows** (trainer_id `28a75e2d-c81c-413c-ac2f-0d753c522eef`) via direct `INSERT` (Supabase MCP `execute_sql`). Coverage: whole foods (fruit/veg/meat/fish/dairy/legume/grain/nut/fat), German staples (Brötchen, Bratwurst, Leberkäse, Schnitzel, Quark, Magerquark…), common prepared dishes (Pizza, Spaghetti Bolognese, Rührei…), drinks, condiments, sweets. **Every row has `name_de` (German — search matches EN+DE), `food_groups`, and `portions`** (natural units Vitek asked for: "1 egg large/small", "1 apple medium/small/large", "1 cup" dry vs cooked, "1 slice", "1 handful", "1 tbsp/tsp", "1 glass"). **Dry+cooked and raw+cooked variants are separate rows labelled in the NAME** (e.g. `White rice (dry)` / `White rice (cooked)`, `Chicken breast (raw)` / `(cooked)`) so nobody logs the wrong state.
