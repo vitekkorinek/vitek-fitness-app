@@ -911,7 +911,11 @@ export default function TrainerWorkoutSessionScreen() {
       return {
         ...ex,
         sets: updatedSets,
-        ...(newChecked != null ? { isDone: newChecked } : {}),
+        // Explicit check state from Exercise Detail wins; otherwise a set added or
+        // unchecked over there un-checks the badge here (back to the partial fill).
+        ...(newChecked != null
+          ? { isDone: newChecked }
+          : { isDone: ex.isDone && allSetsChecked(updatedSets) }),
       };
     }));
     if (finishRequested) setPendingFinishTrigger(true);
@@ -2063,6 +2067,19 @@ export default function TrainerWorkoutSessionScreen() {
   };
   scrollFocusedInputAboveKeyboardRef.current = scrollFocusedInputAboveKeyboard;
 
+  // A fully-checked card checks itself off when it CLOSES (collapse, accordion
+  // switch, live-superset advance, or Finish) — deliberately never on the last
+  // set's ✓ itself, so "actually, one more set" stays a one-tap add.
+  const autoCheckOnClose = (weIds: string[]) => {
+    if (!startedAtRef.current) return;
+    const ids = new Set(weIds.filter(id => {
+      const ex = exercisesRef.current.find(e => e.workoutExerciseId === id);
+      return ex != null && !ex.isDone && allSetsChecked(ex.sets);
+    }));
+    if (ids.size === 0) return;
+    setExercises(prev => prev.map(ex => ids.has(ex.workoutExerciseId) ? { ...ex, isDone: true } : ex));
+  };
+
   const toggleExpand = (weId: string) => {
     const isExpanding = !expandedIds.has(weId);
     // Collapsing the LAST open card before the session started → the banner goes
@@ -2071,6 +2088,15 @@ export default function TrainerWorkoutSessionScreen() {
     if (!isExpanding && !startedAtRef.current && expandedIds.size === 1 && expandedIds.has(weId)) {
       setActiveHeaderId(null);
     }
+    // Which cards are about to close? Tap-collapse: this one. Accordion: every
+    // open card except this one and its same-group siblings (mirrors the
+    // setExpandedIds updater below). Pre-computed — no side effects in updaters.
+    autoCheckOnClose(!isExpanding ? [weId] : (() => {
+      const groupId = exercisesRef.current.find(e => e.workoutExerciseId === weId)?.supersetGroupId ?? null;
+      return [...expandedIds].filter(id =>
+        id !== weId
+        && !(groupId && exercisesRef.current.find(e => e.workoutExerciseId === id)?.supersetGroupId === groupId));
+    })());
     if (isExpanding) {
       setActiveHeaderId(weId); // fixed header follows the exercise you open
       // 140ms, not the default 80 — the other cards collapse first, so the list
@@ -2129,7 +2155,9 @@ export default function TrainerWorkoutSessionScreen() {
     handleEditBeforeStart();
     setExercises(prev => prev.map((ex, i) => {
       if (i !== exIdx) return ex;
-      return { ...ex, sets: [...ex.sets, makeEmptySet(nextSetNumber(ex.sets, false))] };
+      // A fresh (unchecked) set re-opens a checked-off exercise — the badge
+      // drops back to the partial fill. Same in the warm-up/dropset adders.
+      return { ...ex, isDone: false, sets: [...ex.sets, makeEmptySet(nextSetNumber(ex.sets, false))] };
     }));
   };
 
@@ -2144,7 +2172,7 @@ export default function TrainerWorkoutSessionScreen() {
       ex.sets.forEach((s, i2) => { if (s.isWarmup) insertAt = i2 + 1; });
       const newSets = [...ex.sets];
       newSets.splice(insertAt, 0, makeEmptySet(nextSetNumber(ex.sets, true), true));
-      return { ...ex, sets: newSets };
+      return { ...ex, isDone: false, sets: newSets };
     }));
   };
 
@@ -2159,7 +2187,7 @@ export default function TrainerWorkoutSessionScreen() {
       ex.sets.forEach((s, i2) => { if (s.localId === parentId || (s.isDropset && s.dropsetParentLocalId === parentId)) idx = i2; });
       const newSets = [...ex.sets];
       newSets.splice(idx + 1, 0, dropset);
-      return { ...ex, sets: newSets };
+      return { ...ex, isDone: false, sets: newSets };
     }));
   };
 
@@ -2249,8 +2277,12 @@ export default function TrainerWorkoutSessionScreen() {
   };
 
   const removeSet = (exIdx: number, setLocalId: string) => {
-    setExercises(prev => prev.map((ex, i) => i !== exIdx ? ex : {
-      ...ex, sets: ex.sets.map(s => s.localId !== setLocalId ? s : { ...s, isRemoved: !s.isRemoved }),
+    setExercises(prev => prev.map((ex, i) => {
+      if (i !== exIdx) return ex;
+      const sets = ex.sets.map(s => s.localId !== setLocalId ? s : { ...s, isRemoved: !s.isRemoved });
+      // Un-removing an unchecked set re-opens a checked-off exercise. This only
+      // ever CLEARS the badge — checking off always waits for the card to close.
+      return { ...ex, sets, isDone: ex.isDone && allSetsChecked(sets) };
     }));
   };
 
@@ -2276,13 +2308,13 @@ export default function TrainerWorkoutSessionScreen() {
 
     setExercises(prev => prev.map((e, i) => {
       if (i !== exIdx) return e;
-      return {
-        ...e, sets: e.sets.map(s => {
-          if (s.localId === setLocalId) return { ...s, isDone: done };
-          if (prevIds.has(s.localId)) return { ...s, isDone: true };
-          return s;
-        }),
-      };
+      const sets = e.sets.map(s => {
+        if (s.localId === setLocalId) return { ...s, isDone: done };
+        if (prevIds.has(s.localId)) return { ...s, isDone: true };
+        return s;
+      });
+      // Unchecking a set on a checked-off exercise un-checks the badge too — back to the fill.
+      return { ...e, sets, isDone: e.isDone && allSetsChecked(sets) };
     }));
 
     // Live mode: when set is checkmarked in a superset, clear when all done; advance only if live is active.
@@ -2328,6 +2360,12 @@ export default function TrainerWorkoutSessionScreen() {
           next.add(nextEx.workoutExerciseId);
           return next;
         });
+        // The advancing member collapses — if that ✓ completed its sets, check it
+        // off. (exercisesRef hasn't seen this toggle yet, so use updatedCurrentSets.)
+        if (allSetsChecked(updatedCurrentSets)) {
+          const completedId = ex.workoutExerciseId;
+          setExercises(prev => prev.map(e => e.workoutExerciseId === completedId ? { ...e, isDone: true } : e));
+        }
 
         if (flatListRef.current && nextExGlobalIdx >= 0) {
           setTimeout(() => {
@@ -2982,8 +3020,12 @@ export default function TrainerWorkoutSessionScreen() {
   const handleFinish = () => {
     // A save is already in flight — re-opening the confirm would let a second one start.
     if (savingSessionRef.current) return;
+    // Finishing is "moving on" too: any card with all sets ✓ checks itself off, so
+    // the confirm's count (and the badges behind it) agree with the work done. The
+    // setExercises hasn't flushed yet, so the count below applies the same predicate.
+    autoCheckOnClose(exercises.map(e => e.workoutExerciseId));
     const total = exercises.length;
-    const doneCount = exercises.filter(ex => ex.isDone).length;
+    const doneCount = exercises.filter(ex => ex.isDone || allSetsChecked(ex.sets)).length;
     const allDone = doneCount === total;
 
     if (allDone) {
@@ -3033,7 +3075,9 @@ export default function TrainerWorkoutSessionScreen() {
     const today = new Date().toISOString().split('T')[0];
     let completedSessionId: string | null = null;
     let uploadedNow = false;
-    const doneCount = exercises.filter(ex => ex.isDone).length;
+    // Same "moving on" rule as handleFinish — a card with all sets ✓ counts as done
+    // (the Exercise-Detail finish path lands here without passing handleFinish).
+    const doneCount = exercises.filter(ex => ex.isDone || allSetsChecked(ex.sets)).length;
     const total = exercises.length;
     savingSessionRef.current = true;
     setSavingSession(true);
@@ -4697,6 +4741,35 @@ function LiveSupersetLabel() {
   return <Animated.Text style={[styles.ssLabelText, { opacity: pulseAnim }]}>SUPERSET</Animated.Text>;
 }
 
+// ─── Set-progress badge fill ──────────────────────────────────────────────────
+// The number badge fills bottom-up as sets get checked (the Food Log LiquidPip
+// pattern at 22px). A fully-filled badge is NOT the done state — solid ACCENT + ✓
+// still only comes from tapping the circle.
+
+function checkedSetFraction(sets: SessionSet[]): number {
+  const active = sets.filter(s => !s.isRemoved);
+  if (active.length === 0) return 0;
+  return active.filter(s => s.isDone).length / active.length;
+}
+
+function allSetsChecked(sets: SessionSet[]): boolean {
+  const active = sets.filter(s => !s.isRemoved);
+  return active.length > 0 && active.every(s => s.isDone);
+}
+
+function SetProgressFill({ progress }: { progress: number }) {
+  const anim = useRef(new Animated.Value(progress)).current;
+  useEffect(() => {
+    Animated.timing(anim, { toValue: progress, duration: 400, useNativeDriver: false }).start();
+  }, [progress]);
+  return (
+    <Animated.View
+      pointerEvents="none"
+      style={[styles.numCircleFill, { height: anim.interpolate({ inputRange: [0, 1], outputRange: [0, 22] }) }]}
+    />
+  );
+}
+
 // ─── SupersetGroupCard ────────────────────────────────────────────────────────────
 
 function SupersetGroupCard({
@@ -4725,6 +4798,7 @@ function SupersetGroupCard({
         <Text style={styles.ssLabelText}>SUPERSET</Text>
       </View>
       {members.map((member, idx) => {
+        const setFraction = checkedSetFraction(member.sets);
         return (
           <View key={member.workoutExerciseId}>
             <View style={styles.collapsedPad}>
@@ -4734,9 +4808,10 @@ function SupersetGroupCard({
                   hitSlop={10}
                   style={[styles.numCircle, member.isDone && styles.numCircleDone]}
                 >
+                  {!member.isDone && <SetProgressFill progress={setFraction} />}
                   {member.isDone
                     ? <Text style={styles.numCircleCheck}>✓</Text>
-                    : <Text style={styles.numCircleText}>{member.slotNumber ?? ''}</Text>
+                    : <Text style={[styles.numCircleText, setFraction > 0 && styles.numCircleTextOnFill]}>{member.slotNumber ?? ''}</Text>
                   }
                 </TouchableOpacity>
                 <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 0 }}>
@@ -4997,6 +5072,9 @@ function ExerciseCard({
     prevIsDoneRef.current = exercise.isDone;
   }, [exercise.isDone]);
 
+  // Checked-sets fraction driving the badge's bottom-up fill
+  const setFraction = checkedSetFraction(exercise.sets);
+
   const dragHandleAnim = useRef(new Animated.Value(0)).current;
   useEffect(() => {
     Animated.timing(dragHandleAnim, { toValue: isEditMode ? 1 : 0, duration: 200, useNativeDriver: false }).start();
@@ -5107,9 +5185,10 @@ function ExerciseCard({
                   hitSlop={10}
                   style={[styles.numCircle, exercise.isDone && styles.numCircleDone, !isExpanded && styles.numCircleCollapsedShift]}
                 >
+                  {!exercise.isDone && <SetProgressFill progress={setFraction} />}
                   {exercise.isDone
                     ? <Text style={styles.numCircleCheck}>✓</Text>
-                    : <Text style={styles.numCircleText}>{exercise.slotNumber ?? ''}</Text>
+                    : <Text style={[styles.numCircleText, setFraction > 0 && styles.numCircleTextOnFill]}>{exercise.slotNumber ?? ''}</Text>
                   }
                 </TouchableOpacity>
               </Animated.View>
@@ -7608,9 +7687,11 @@ const styles = StyleSheet.create({
   collapsedMainRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   collapsedNameRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   collapsedBottomRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 0 },
-  numCircle: { width: 22, height: 22, borderRadius: 11, borderWidth: 0, backgroundColor: '#f0f0ee', alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
+  numCircle: { width: 22, height: 22, borderRadius: 11, borderWidth: 0, backgroundColor: '#f0f0ee', alignItems: 'center', justifyContent: 'center', flexShrink: 0, overflow: 'hidden' },
   numCircleDone: { backgroundColor: '#24ac88' },
+  numCircleFill: { position: 'absolute', left: 0, right: 0, bottom: 0, backgroundColor: '#b8ede0' },
   numCircleText: { fontSize: 10, fontWeight: '600', color: '#aaa' },
+  numCircleTextOnFill: { color: '#3a7d6b' },
   numCircleCheck: { color: '#fff', fontSize: 11, fontWeight: '700' },
 
   // 17/700 (was 16/600) — the bold set chips below stole the hierarchy from the name.
