@@ -61,7 +61,7 @@
 //   </View>
 // END SUPERSET_V1_BACKUP
 
-import { Fragment, memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -83,7 +83,6 @@ import {
   FlatList,
   Vibration,
   PanResponder,
-  Easing,
   Switch,
 } from 'react-native';
 import Svg, { Circle, Line as SvgLine, Polyline as SvgPolyline, Text as SvgLabel, Path as SvgPath } from 'react-native-svg';
@@ -128,7 +127,7 @@ import { setKey, setLabel, buildSetLabels, nextSetNumber } from '@/lib/warmupSet
 import MuscleThumb from '@/components/MuscleThumb';
 import CategoryCover, { categoryHasCover } from '@/components/CategoryCover';
 import { exerciseBodyCfg } from '@/lib/muscleSilhouette';
-import { HeaderPhoto, AnimatedHeaderPhoto } from '@/components/HeaderPhoto';
+import { HeaderPhoto } from '@/components/HeaderPhoto';
 import { LightHeader, HeaderIcon, HEADER_ICON, useHeaderHeight } from '@/components/LightHeader';
 import { MUSCLE_FILTER_OPTIONS, matchesMuscleFilters, muscleFilterLabels } from '@/lib/exerciseFilters';
 import { fd } from '@/lib/appType';
@@ -146,13 +145,14 @@ const PROTO_PUSH_PHOTO =
 // other change needed. Only affects the live/main Do Mode path (not past-session view).
 const FIXED_HEADER = true;
 
-// ─── MERGED PREVIEW (Stage 2 — real list, no replica) ─────────────────────
-// The REAL Do Mode exercise list (supersets, real cards, real Info/video) is
-// rendered read-only inside a sliding "preview panel" before the session starts,
-// then locks into the running session on Start (no separate overlay/replica).
-// Reversible: flip to false to fully disable. Launcher-only (all categories):
-// session-intro redirects launcher taps here without autoStart.
-const MERGED_PREVIEW = true;
+// ─── PRE-SESSION = the list itself (July 31 2026) ──────────────────────────
+// The sliding preview panel + photo-slideshow backdrop are GONE (client feedback:
+// the big green Start button got pressed by accident and the drag was not
+// discoverable). A client now lands directly in the fixed-banner list — same as
+// the trainer and same as free sessions — browses by scrolling, and starts via
+// the deliberate START pill in the header. Pre-start the banner shows the
+// WORKOUT's identity (category silhouette + name + notes); pressing START swaps
+// it to exercise 1 and opens that card.
 
 /**
  * How long Finish waits for the upload before telling the client it is saved on the phone.
@@ -537,136 +537,6 @@ function useSheetDismissGesture(onClose: () => void) {
   return { translateY, panHandlers: panResponder.panHandlers, dismiss };
 }
 
-// ─── PreviewBackdrop ────────────────────────────────────────────────────────────
-// The merged preview's backdrop: a slideshow that crossfades through the session's
-// exercises — each one's photo, or its muscle silhouette when it has none — inside a
-// box whose height follows the sliding panel.
-//
-// ⚠️ IT OWNS ITS OWN TICKING STATE, and must keep owning it. The slide index and the two
-// crossfade layers used to be `useState` in the screen component, so every 2-second tick
-// (and every layer swap) re-rendered ~7000 lines of Do Mode JSX — the exercise list
-// included — while a JS-driven animation was running. That is what made the photo swaps
-// hitch. Here a tick re-renders this subtree only. Keep `slides` memoised in the parent
-// so React.memo actually holds.
-type PreviewSlide = {
-  photo: string | null;
-  focusY: number;
-  muscleGroups: string[];
-  secondaryMuscleGroups: string[];
-};
-
-const PreviewBackdrop = memo(function PreviewBackdrop({
-  slides,
-  category,
-  boxH,
-  animH,
-  boxW,
-  minH,
-  maxH,
-  bleed,
-  paused,
-}: {
-  slides: PreviewSlide[];
-  category?: string | null;
-  boxH: Animated.AnimatedInterpolation<number> | Animated.AnimatedAddition<number>;
-  animH: Animated.AnimatedInterpolation<number>;
-  boxW: number;
-  minH: number;
-  maxH: number;
-  bleed: number;
-  paused: boolean;
-}) {
-  const [idx, setIdx] = useState(0);
-  const [layer1, setLayer1] = useState<number | null>(slides.length > 0 ? 0 : null);
-  const [layer2, setLayer2] = useState<number | null>(slides.length > 0 ? 0 : null);
-  const op = useRef(new Animated.Value(0)).current;
-  const layer2Top = useRef(false);
-  const fading = useRef(false);
-
-  // Warm the cache so a crossfade is never waiting on a download/decode — the other
-  // half of the hitching (the first pass through the slideshow used to fade in an
-  // image that had not arrived yet).
-  useEffect(() => {
-    slides.forEach(s => { if (s.photo) void Image.prefetch(s.photo).catch(() => {}); });
-  }, [slides]);
-
-  useEffect(() => {
-    if (layer1 == null && slides.length > 0) { setLayer1(0); setLayer2(0); }
-  }, [slides.length]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  useEffect(() => {
-    if (paused || slides.length <= 1) return;
-    const id = setInterval(() => setIdx(i => (i + 1) % slides.length), 2600);
-    return () => clearInterval(id);
-  }, [paused, slides.length]);
-
-  // Alternating layers — only the INVISIBLE layer's slide ever changes, so a visible
-  // image is never swapped under the user.
-  useEffect(() => {
-    const visible = layer2Top.current ? layer2 : layer1;
-    if (idx === visible || fading.current) return;
-    fading.current = true;
-    if (!layer2Top.current) {
-      op.setValue(0); setLayer2(idx);
-      Animated.timing(op, { toValue: 1, duration: 700, easing: Easing.inOut(Easing.quad), useNativeDriver: false })
-        .start(() => { layer2Top.current = true; fading.current = false; });
-    } else {
-      setLayer1(idx);
-      Animated.timing(op, { toValue: 0, duration: 700, easing: Easing.inOut(Easing.quad), useNativeDriver: false })
-        .start(() => { layer2Top.current = false; fading.current = false; });
-    }
-  }, [idx]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const renderSlide = (i: number | null) => {
-    if (i == null) return null;
-    const s = slides[i];
-    if (!s) return null;
-    // Photos shrink through the SAME focal crop the banner uses (header_focus_y), so the
-    // frame the trainer set in the exercise builder is what lands in the header — plain
-    // `resizeMode="cover"` crops from the centre and drifts off that framing as the box
-    // shrinks (Vitek: "it cuts the picture off and … doesn't match my setting").
-    if (s.photo) {
-      return (
-        <AnimatedHeaderPhoto
-          uri={s.photo}
-          focusY={s.focusY}
-          boxW={boxW}
-          minH={minH}
-          maxH={maxH}
-          animH={animH}
-          bleed={bleed}
-        />
-      );
-    }
-    // zoom 1.15 — nearly the whole figure, this box is a full screen (the banner's
-    // default 2.3 would crop it down to a single body part).
-    const body = exerciseBodyCfg(s.muscleGroups, s.secondaryMuscleGroups, 1.15);
-    if (!body && !categoryHasCover(category)) return null;
-    // Same 'banner' green as the header (July 27) — this is the same no-photo exercise
-    // seen a second before Start, and it would otherwise change colour on the way in.
-    // Blends into this backdrop's own base gradient, which is that identical triple.
-    return <CategoryCover category={category} variant="banner" body={body ?? undefined} />;
-  };
-
-  return (
-    <Animated.View
-      style={{ position: 'absolute', top: 0, left: 0, right: 0, height: boxH, overflow: 'hidden' }}
-      pointerEvents="none"
-    >
-      <LinearGradient colors={['#2d6b5a', '#244e43', '#1a3832']} style={StyleSheet.absoluteFill} />
-      {/* Backing for the bleed strip behind the panel's rounded corners. A photo whose
-          framing leaves nothing below the crop (focusY at the very bottom, or a landscape
-          shot at review) can't fill it — this makes what shows there read as the panel's
-          shadow instead of a green wedge. */}
-      <View style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: bleed + 8, backgroundColor: '#12100f' }} />
-      {layer1 != null ? <View style={StyleSheet.absoluteFill}>{renderSlide(layer1)}</View> : null}
-      {layer2 != null ? <Animated.View style={[StyleSheet.absoluteFill, { opacity: op }]}>{renderSlide(layer2)}</Animated.View> : null}
-      <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.30)' }]} />
-      <LinearGradient colors={['rgba(0,0,0,0.55)', 'transparent']} style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 220 }} />
-    </Animated.View>
-  );
-});
-
 // ─── Screen ─────────────────────────────────────────────────────────────────────
 
 export default function TrainerWorkoutSessionScreen() {
@@ -676,36 +546,22 @@ export default function TrainerWorkoutSessionScreen() {
   const COLLAPSE_END = HEADER_MAX - HEADER_MIN;
   const COLLAPSE_START = Math.max(0, COLLAPSE_END - 80);
 
-  // ── Merged pre-session preview geometry (MERGED_PREVIEW, Push launcher only) ──
-  // The real Do Mode list lives inside a sliding panel that starts at bannerH and
-  // is pushed DOWN to a bottom peek while previewing, then slides up on Start.
-  const PREVIEW_HANDLE_CONTENT = 112;                          // grip + hint + Start button block
-  const PREVIEW_LANDING_GAP = 12;                             // white below Start while parked (30 showed too much panel on device, July 26 — this is THE knob for the parked peek height)
-  const PREVIEW_REVIEW_GAP = 12;                              // tight gap below Start once raised
-  const PREVIEW_PEEK = PREVIEW_HANDLE_CONTENT + PREVIEW_LANDING_GAP; // visible sliver while parked (no card)
-  const PREVIEW_PARK = SCREEN_HEIGHT - PREVIEW_PEEK - HEADER_MAX; // panel translateY when parked
-  const PREVIEW_CORNER_BLEED = 40;                            // backdrop overshoot behind the panel's rounded top corners
-
-  const { workoutId, autoStart, resumeSessionId, resumeStartedAt, viewOnly, viewMode, previewLocked, plannedDate, sessionDate } = useLocalSearchParams<{ workoutId: string; autoStart?: string; resumeSessionId?: string; resumeStartedAt?: string; viewOnly?: string; viewMode?: string; previewLocked?: string; plannedDate?: string; sessionDate?: string }>();
-  // previewLocked=1 → a FUTURE planned session: show the merged preview (read-only, review
-  // its exercises) but with NO start affordance — it isn't its day yet.
+  const { workoutId, resumeSessionId, resumeStartedAt, viewOnly, viewMode, previewLocked, plannedDate, sessionDate } = useLocalSearchParams<{ workoutId: string; resumeSessionId?: string; resumeStartedAt?: string; viewOnly?: string; viewMode?: string; previewLocked?: string; plannedDate?: string; sessionDate?: string }>();
+  // previewLocked=1 → a FUTURE planned session: browsable read-only, but with NO
+  // start affordance — it isn't its day yet.
   const isPreviewLocked = previewLocked === '1';
   const isViewParam = viewOnly === '1';
-  // Pressing Start inside a view-only preview turns THIS mount into a real session (so it
-  // plays the normal lock animation instead of re-navigating, which flipped straight to
-  // the locked panel). Everything gated on `isViewOnly` — read-only cards, the FINISHED
-  // pill, draft persistence — flips with it.
+  // Pressing Start inside a view-only entry turns THIS mount into a real session (no
+  // re-navigation — a remount can't animate). Everything gated on `isViewOnly` —
+  // read-only cards, the FINISHED pill, draft persistence — flips with it.
   const [viewOnlyStarted, setViewOnlyStarted] = useState(false);
   const isViewOnly = isViewParam && !viewOnlyStarted;
   // load() skips adopting an open in_progress row while view-only; remember it so a start
   // from here continues that row instead of inserting a second one.
   const viewOnlyLiveSessionRef = useRef<string | null>(null);
-  // Header pill: a completed session shows a non-clickable "mm:ss · FINISHED" pill; every
-  // other view shows no pill.
-  const showFinishedPill = isViewOnly && viewMode === 'finished';
   // `sessionDate` = the day of the COMPLETED session being reviewed (week-strip tap on a
-  // done session). Since July 26 2026 those open this screen's merged preview too — the
-  // separate session-intro screen is gone, so this is the only pre-session look there is.
+  // done session). Those land in this screen's pre-start look too — there is no separate
+  // intro screen.
   // Local (not UTC) today, matching the week strip's YYYY-MM-DD day keys.
   const localTodayStr = (() => {
     const d = new Date();
@@ -716,6 +572,10 @@ export default function TrainerWorkoutSessionScreen() {
   const isCompletedView = isViewParam && !!sessionDate;
   // A past session can be repeated today; one completed TODAY is review-only.
   const canRepeatViewed = isCompletedView && (sessionDate as string) < localTodayStr;
+  // Header pill: a session completed TODAY shows the non-clickable "mm:ss · FINISHED"
+  // pill. A PAST-day completed session is repeatable, so it gets the START pill instead
+  // (the panel's "Start session today" button used to carry that case).
+  const showFinishedPill = isViewOnly && viewMode === 'finished' && !canRepeatViewed;
   const isFreeSession = workoutId === 'free';
   const router = useRouter();
   const { startedAt, start: startSession, resume: resumeSession, finish: finishSession, suspendSession, clearSuspendedSession } = useSessionStore();
@@ -750,28 +610,6 @@ export default function TrainerWorkoutSessionScreen() {
   const [sessionHistory, setSessionHistory] = useState<SessionHistoryEntry[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [pastSession, setPastSession] = useState<PastSession | null>(null);
-  const [previewClosed, setPreviewClosed] = useState(false);
-  // Captured once (first loaded render, before the session starts) so the overlay
-  // survives its own lock+fade even though onStart sets startedAt.
-  const previewInitRef = useRef<boolean | undefined>(undefined);
-  // Merged-preview panel: phase + animation values. previewY drives the panel
-  // translate (native); previewLock drives the landing→live cross-cues (non-native:
-  // banner opacity, panel radius, handle collapse). Slideshow crossfades the
-  // full-screen backdrop through the exercises' photos (alternating layers).
-  const [previewPhase, setPreviewPhase] = useState<'landing' | 'review' | 'live'>('landing');
-  const previewPhaseRef = useRef(previewPhase);
-  previewPhaseRef.current = previewPhase;
-  const previewY = useRef(new Animated.Value(PREVIEW_PARK)).current;
-  const previewYVal = useRef(PREVIEW_PARK);
-  const previewDragBase = useRef(PREVIEW_PARK);
-  const previewLock = useRef(new Animated.Value(0)).current;
-  // The backdrop slideshow lives entirely inside <PreviewBackdrop> — see the ⚠️ there
-  // for why its ticking state must NOT sit in this component.
-  useEffect(() => {
-    const id = previewY.addListener(({ value }) => { previewYVal.current = value; });
-    return () => previewY.removeListener(id);
-  }, [previewY]);
-
   // Keyboard height — drives the "Done" button (numeric keypads have no return key)
   // + extra list padding so a focused set row can be scrolled clear of the keyboard.
   const [kbHeight, setKbHeight] = useState(0);
@@ -790,101 +628,6 @@ export default function TrainerWorkoutSessionScreen() {
   // Ref indirection so the keyboard listener (mounted once) always calls the latest impl.
   const scrollFocusedInputAboveKeyboardRef = useRef<(kbTopScreenY: number) => void>(() => {});
 
-  // Backdrop height = exactly the strip left above the panel (panel top = HEADER_MAX +
-  // previewY). So dragging the panel up SHRINKS the photo/silhouette box instead of just
-  // covering it, and at review (previewY 0) the box IS the banner box. Clamped because
-  // the snap springs can overshoot past either end.
-  // useMemo'd: `interpolate`/`add` mint a NEW animated node on every call, so building
-  // them inline would hand <PreviewBackdrop> fresh props each render and defeat its memo.
-  const previewBackdropH = useMemo(
-    () => previewY.interpolate({
-      inputRange: [0, PREVIEW_PARK],
-      outputRange: [HEADER_MAX, HEADER_MAX + PREVIEW_PARK],
-      extrapolate: 'clamp',
-    }),
-    [previewY, PREVIEW_PARK, HEADER_MAX],
-  );
-  // ⚠️ The CLIP box runs a little PAST the panel's top edge. The panel's rounded top
-  // corners are cut out of a white sheet — they only read as rounded if the photo shows
-  // THROUGH them, which it did for free while the backdrop was full-screen. Ending the
-  // backdrop exactly at the panel top puts the page background in those cutouts and the
-  // panel goes visually square. The photo's own geometry still uses previewBackdropH, so
-  // the extra strip is just more of the same image, hidden behind the panel.
-  const previewBackdropBoxH = useMemo(
-    () => Animated.add(previewBackdropH, PREVIEW_CORNER_BLEED),
-    [previewBackdropH, PREVIEW_CORNER_BLEED],
-  );
-  // Memoised so <PreviewBackdrop>'s React.memo holds — otherwise every render of this
-  // screen would hand it a new array and defeat the whole point of isolating it.
-  const previewSlides = useMemo<PreviewSlide[]>(
-    () => exercises.map(ex => ({
-      // The exercise's own media only — no workout-cover fallback (same rule as the banner).
-      photo: ex.extraPhotoUrls?.[0] ?? ex.thumbnailUrl ?? null,
-      focusY: ex.headerFocusY ?? 0.5,
-      muscleGroups: ex.muscleGroups,
-      secondaryMuscleGroups: ex.secondaryMuscleGroups,
-    })),
-    [exercises],
-  );
-
-  // NOTE: everything in the preview uses the JS driver (useNativeDriver:false). The
-  // panel view mixes a translate (previewY) with JS-only props (previewLock → height,
-  // borderRadius) on the same node, so it must NOT be native, else RN moves previewLock
-  // to native and then throws when animating its height/opacity with the JS driver.
-  const snapPreview = (to: number, phase: 'landing' | 'review') => {
-    previewPhaseRef.current = phase;
-    setPreviewPhase(phase);
-    Animated.spring(previewY, { toValue: to, useNativeDriver: false, tension: 60, friction: 11 }).start();
-  };
-  // Start pressed → fire the real session underneath + run the landing→live lock.
-  const startFromPreview = () => {
-    if (previewPhaseRef.current === 'live') return;
-    guardStart(() => {
-      // Repeating a session you were only REVIEWING: drop view-only here (not by
-      // re-navigating with autoStart, which skipped the lock animation), adopting the
-      // in_progress row load() left alone so no duplicate session is inserted.
-      if (isViewParam) {
-        const adopt = viewOnlyLiveSessionRef.current;
-        if (adopt) {
-          activeSessionIdRef.current = adopt;
-          setActiveSessionId(adopt);
-          setBridgeActiveSessionId(adopt);
-        }
-        setViewOnlyStarted(true);
-      }
-      previewPhaseRef.current = 'live';
-      setPreviewPhase('live');
-      startSession(workoutId!);
-      createInProgressSessionRef.current();
-      Animated.parallel([
-        Animated.spring(previewY, { toValue: 0, useNativeDriver: false, tension: 55, friction: 10 }),
-        Animated.timing(previewLock, { toValue: 1, duration: 430, useNativeDriver: false }),
-      ]).start();
-      // TODO: Haptics.impactAsync on lock (expo-haptics not installed)
-      setTimeout(() => setPreviewClosed(true), 520);
-    });
-  };
-  const previewPan = useRef(
-    PanResponder.create({
-      onStartShouldSetPanResponder: () => previewPhaseRef.current !== 'live',
-      onMoveShouldSetPanResponder: (_, g) => previewPhaseRef.current !== 'live' && Math.abs(g.dy) > 4,
-      onPanResponderGrant: () => { previewDragBase.current = previewYVal.current; },
-      onPanResponderMove: (_, g) => {
-        if (previewPhaseRef.current === 'live') return;
-        previewY.setValue(Math.max(0, Math.min(PREVIEW_PARK, previewDragBase.current + g.dy)));
-      },
-      onPanResponderRelease: (_, g) => {
-        if (previewPhaseRef.current === 'live') return;
-        if (Math.abs(g.dy) < 6) {
-          if (previewPhaseRef.current === 'landing') snapPreview(0, 'review');
-          else snapPreview(PREVIEW_PARK, 'landing');
-          return;
-        }
-        if (g.dy < 0) snapPreview(0, 'review');
-        else snapPreview(PREVIEW_PARK, 'landing');
-      },
-    })
-  ).current;
   // Duration of the most recent completed session — shown in the view-only FINISHED pill.
   const [viewedSessionDuration, setViewedSessionDuration] = useState<number | null>(null);
   const [lastCompletedSessionAt, setLastCompletedSessionAt] = useState<string | null>(null);
@@ -1018,8 +761,7 @@ export default function TrainerWorkoutSessionScreen() {
 
   const [trainingNotesOpen, setTrainingNotesOpen] = useState(false);
   const [trainingNotesViewed, setTrainingNotesViewed] = useState(false);
-  // Centered popup opened by tapping the preview's note line — deliberately NOT a
-  // bottom sheet (a panel sliding up would step on the preview panel's own slide).
+  // Centered glass popup opened by tapping a pre-start note line in the banner.
   const [previewNotesOpen, setPreviewNotesOpen] = useState(false);
   const [trainingTrainerNotes, setTrainingTrainerNotes] = useState<NoteEntry[]>([]);
   const [trainingClientNotes, setTrainingClientNotes] = useState<NoteEntry[]>([]);
@@ -1340,8 +1082,7 @@ export default function TrainerWorkoutSessionScreen() {
     }
 
     // ── 48h same-muscle rest check — preload the conflict for guardStart ──────
-    // Awaited so the autoStart path can't race past it (it fires the moment
-    // loading flips false). Skipped when a session is already open (nothing to
+    // Awaited so nothing can race past it. Skipped when a session is already open (nothing to
     // warn about), on locked previews (can't start), and for stretch workouts.
     if (categoryVal && !isStretchSessionRef.current && !isPreviewLocked && !liveSessionId && !resumeSessionId) {
       const restRefDate = logDatePending ?? new Date().toISOString().split('T')[0];
@@ -1860,18 +1601,8 @@ export default function TrainerWorkoutSessionScreen() {
   // Resuming is unaffected: `load()` adopts an open `workout_id IS NULL` row for today and
   // replays the draft over it, and the resume chip's `resumeSessionId` effect does the same.
 
-  // Auto-start when arriving from session-intro screen
-  const introAutoStarted = useRef(false);
-  useEffect(() => {
-    if (!autoStart || loading || isFreeSession || introAutoStarted.current) return;
-    introAutoStarted.current = true;
-    timerPromptShown.current = true;
-    setPastSession(null);
-    guardStart(() => {
-      startSession(workoutId!);
-      createInProgressSessionRef.current();
-    });
-  }, [autoStart, loading]);
+  // (The old `autoStart` param + its effect are gone — the deleted session-intro
+  // screen was its only sender.)
 
   // Auto-resume a suspended session when navigated back via the session indicator
   const resumeAutoStarted = useRef(false);
@@ -2309,15 +2040,10 @@ export default function TrainerWorkoutSessionScreen() {
         : it.members.some(m => m.workoutExerciseId === weId)
     );
     if (di < 0) return;
-    // Where "top" is depends on the layout: while previewing, the handle + Start
-    // overlay sits at the top of the panel — land the card below it. Live in the
-    // panel, the panel itself already starts at the banner's bottom edge → 0. But
-    // WITHOUT the panel (resumed/adopted/autoStart sessions) the list runs under
-    // the absolute banner from y=0, so the card must land bannerH+10 down or its
-    // header hides behind the banner (you'd land looking at the card's toolbar).
-    const viewOffset = previewInitRef.current === true
-      ? (previewPhaseRef.current !== 'live' ? PREVIEW_HANDLE_CONTENT + PREVIEW_REVIEW_GAP : 0)
-      : HEADER_MAX + 10;
+    // The list runs under the absolute banner from y=0, so the card must land
+    // bannerH+10 down or its header hides behind the banner (you'd land looking
+    // at the card's toolbar).
+    const viewOffset = HEADER_MAX + 10;
     setTimeout(() => { try { flatListRef.current?.scrollToIndex({ index: di, animated: true, viewPosition: 0, viewOffset }); } catch {} }, delay);
   };
 
@@ -2339,6 +2065,12 @@ export default function TrainerWorkoutSessionScreen() {
 
   const toggleExpand = (weId: string) => {
     const isExpanding = !expandedIds.has(weId);
+    // Collapsing the LAST open card before the session started → the banner goes
+    // back to the workout's own identity (silhouette + name). Pre-computed here,
+    // NOT inside the setExpandedIds updater (no side effects in updaters).
+    if (!isExpanding && !startedAtRef.current && expandedIds.size === 1 && expandedIds.has(weId)) {
+      setActiveHeaderId(null);
+    }
     if (isExpanding) {
       setActiveHeaderId(weId); // fixed header follows the exercise you open
       // 140ms, not the default 80 — the other cards collapse first, so the list
@@ -3159,6 +2891,38 @@ export default function TrainerWorkoutSessionScreen() {
     Animated.timing(editBarAnim, { toValue: 100, duration: 200, useNativeDriver: true }).start();
   }, [commitSupersetCandidates, editBarAnim]);
 
+  // Open exercise 1's card + point the banner at it — the "you're in the session
+  // now" move after START (Vitek's spec: the header swaps from the workout's
+  // silhouette to the first exercise, and its card opens). Deliberately does NOT
+  // go through toggleExpand: the auto-open must not register an interaction for
+  // slot_order_history (the client hasn't chosen anything yet).
+  const openFirstExerciseCard = () => {
+    const first = exercisesRef.current[0];
+    if (!first) return;
+    setActiveHeaderId(first.workoutExerciseId);
+    setExpandedIds(new Set([first.workoutExerciseId]));
+    scrollCardToTop(first.workoutExerciseId, 140);
+  };
+
+  // The one fresh-start body every START affordance funnels through (callers wrap
+  // it in guardStart). Folds in what the old preview panel's Start did: adopting
+  // the in_progress row load() left alone during a view-only review — without it
+  // createInProgressSession would insert a SECOND session for today.
+  const beginSession = () => {
+    if (isViewParam) {
+      const adopt = viewOnlyLiveSessionRef.current;
+      if (adopt) {
+        activeSessionIdRef.current = adopt;
+        setActiveSessionId(adopt);
+        setBridgeActiveSessionId(adopt);
+      }
+      setViewOnlyStarted(true);
+    }
+    startSession(workoutId!);
+    createInProgressSessionRef.current();
+    openFirstExerciseCard();
+  };
+
   const handleStartPress = () => {
     if (pastSession) {
       setConfirmModal({
@@ -3196,26 +2960,22 @@ export default function TrainerWorkoutSessionScreen() {
         cancelText: 'Cancel',
       });
     } else if (isViewOnly) {
+      // Reviewing a past session — starting re-dates it to today, so make it a
+      // deliberate two-step (this replaced the panel's "Start session today" button).
       setConfirmModal({
-        title: 'Leave view-only and start session?',
-        message: "You're viewing this workout. Start now to begin logging.",
+        title: 'Start this session today?',
+        message: "You're viewing a past session. Start now to begin logging a new one.",
         actions: [
           { text: 'Start session', primary: true, onPress: () => {
             timerPromptShown.current = true;
-            guardStart(() => {
-              startSession(workoutId!);
-              createInProgressSession();
-            });
+            guardStart(beginSession);
           }},
         ],
         cancelText: 'Keep viewing',
       });
     } else {
       timerPromptShown.current = true;
-      guardStart(() => {
-        startSession(workoutId!);
-        createInProgressSession();
-      });
+      guardStart(beginSession);
     }
   };
 
@@ -3652,7 +3412,13 @@ export default function TrainerWorkoutSessionScreen() {
   // ── Fixed-header banner data (option 2) ───────────────────────────────
   const showFixedHeader = FIXED_HEADER && !pastSession;
   const bannerH = HEADER_MAX; // same height as the old header
-  const activeHeaderEx = exercises.find(e => e.workoutExerciseId === activeHeaderId) ?? exercises[0] ?? null;
+  // Pre-start (July 31 2026): no active exercise → the banner shows the WORKOUT's
+  // identity (category silhouette + name + notes) instead of falling back to
+  // exercise 1 — that fallback only applies once the session runs (resumed/adopted
+  // mounts land mid-session with no card expanded yet). Expanding a card still
+  // points the banner at it, before or after START.
+  const activeHeaderEx = exercises.find(e => e.workoutExerciseId === activeHeaderId)
+    ?? (isRunning ? exercises[0] ?? null : null);
   const activeHeaderIdx = activeHeaderEx ? exercises.findIndex(e => e.workoutExerciseId === activeHeaderEx.workoutExerciseId) : -1;
   // Photo/video-thumbnail of the ACTIVE EXERCISE only. The workout's cover photo is
   // deliberately NOT a fallback here (Vitek, July 2026): the banner describes the
@@ -3667,51 +3433,18 @@ export default function TrainerWorkoutSessionScreen() {
     ? new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
     : `Session ${sessionCount + 1} · ${new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}`;
   const bannerWorkoutName = (isFreeSession ? freeSessionName : workout?.name) ?? '';
-  const bannerOverline = [bannerWorkoutName.toUpperCase(), bannerSessionLabel].filter(Boolean).join('   ·   ');
 
-  // ── Merged pre-session overlay (Stage 2) ──────────────────────────────
-  // Shows before the session starts, then hands off to this running Do Mode.
-  // Eligibility is captured once (lazy init) so onStart setting startedAt does
-  // not unmount the overlay before its lock+fade finishes.
-  if (previewInitRef.current === undefined && workout) {
-    previewInitRef.current =
-      MERGED_PREVIEW &&
-      !isFreeSession && !pastSession && !autoStart && !resumeSessionId &&
-      !startedAt &&
-      exercises.length > 0;
-  }
-  // usePanel: this session shows the real Do Mode list inside the sliding
-  // preview panel — launcher taps, planned sessions AND view-only reviews of a
-  // completed one (July 26 2026: the old session-intro screen is deleted, so this
-  // panel is the ONE pre-session look; `isViewOnly` used to disqualify it).
-  const usePanel = showFixedHeader && previewInitRef.current === true;
-  const showPreviewChrome = usePanel && !previewClosed;
-  const previewReadOnly = usePanel && previewPhase !== 'live';
-  // Landing→live cross-cues driven by previewLock (non-native: opacity/height/radius).
-  const previewChromeOpacity = previewLock.interpolate({ inputRange: [0, 0.55], outputRange: [1, 0], extrapolate: 'clamp' });
-  const previewBannerOpacity = usePanel
-    ? previewLock.interpolate({ inputRange: [0.3, 1], outputRange: [0, 1], extrapolate: 'clamp' })
-    : 1;
-  const previewPanelRadius = previewLock.interpolate({ inputRange: [0, 1], outputRange: [26, 0] });
-  // Handle overlay (grip+hint+Start) height — collapses to 0 on lock.
-  const previewOverlayH = previewLock.interpolate({ inputRange: [0, 1], outputRange: [PREVIEW_HANDLE_CONTENT, 0] });
-  // List-header spacer = overlay height + a gap below Start that is BIG while parked
-  // (hides the first card + lifts Start off the home indicator) and TIGHT once raised,
-  // driven by the panel position; both parts collapse to 0 on lock.
-  const previewSpacerH = Animated.add(
-    previewOverlayH,
-    Animated.multiply(
-      previewLock.interpolate({ inputRange: [0, 1], outputRange: [1, 0] }),
-      previewY.interpolate({ inputRange: [0, PREVIEW_PARK], outputRange: [PREVIEW_REVIEW_GAP, PREVIEW_LANDING_GAP], extrapolate: 'clamp' }),
-    ),
-  );
-  const previewHandleOpacity = previewLock.interpolate({ inputRange: [0, 0.5], outputRange: [1, 0], extrapolate: 'clamp' });
+  // ── Pre-start banner content (July 31 2026 — replaced the sliding panel) ──
+  // While the session hasn't started, the banner carries what the panel's chrome
+  // used to: the overline (which KIND of entry this is), the meta line, and the
+  // stacked note lines. Once running (or in the history-sheet past view) they go.
+  const preStartBanner = showFixedHeader && !isRunning;
   // A note for the whole session (latest trainer training note), plus which
-  // exercises carry notes — surfaced under the workout name in the preview.
-  const previewSessionNote = usePanel
+  // exercises carry notes — surfaced as note lines in the pre-start banner.
+  const previewSessionNote = preStartBanner
     ? ([...trainingTrainerNotes].reverse().find(n => !n.isDeleted)?.text ?? null)
     : null;
-  const previewNotedExercises = usePanel
+  const previewNotedExercises = preStartBanner
     ? exercises
         .map(ex => ({
           weId: ex.workoutExerciseId,
@@ -3743,11 +3476,15 @@ export default function TrainerWorkoutSessionScreen() {
     ? 'PLANNED SESSION'
     : canRepeatViewed
     ? 'PAST SESSION'
+    : isViewParam && !isCompletedView
+    ? 'VIEW ONLY' // opened from the session-details sheet with no date — a pure review
     : "TODAY'S SESSION";
   const previewMetaText = isCompletedView
     ? `Done · ${fmtPreviewDate(sessionDate as string)}`
     : isPreviewLocked && plannedDate
     ? `Planned · ${fmtPreviewDate(plannedDate)}`
+    : isFreeSession
+    ? new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
     : `Session ${sessionCount + 1} · ${new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}`;
 
   // The timer / START / FINISH control — shared by the old nav bar and the new banner.
@@ -3770,7 +3507,11 @@ export default function TrainerWorkoutSessionScreen() {
       )}
       <Text style={styles.combinedPillFinishText}>FINISHED</Text>
     </GlassPill>
-  ) : isViewOnly || isPreviewLocked ? null : (
+  ) : (isViewOnly && !canRepeatViewed) || isPreviewLocked ? null : (
+    // Startable — incl. a view-only PAST-day session (repeatable today; tapping
+    // START runs the deliberate confirm in handleStartPress first). A locked
+    // (future planned) entry and a today-completed review show no start control:
+    // the banner overline + meta already say why.
     <GlassPill onPress={handleStartPress}>
       <Text style={styles.combinedPillTimerText}>{formatTimer(elapsed)}</Text>
       <View style={styles.combinedPillSep} />
@@ -3781,21 +3522,6 @@ export default function TrainerWorkoutSessionScreen() {
   return (
     <View style={styles.root}>
       <StatusBar barStyle="light-content" />
-
-      {/* ── Merged preview backdrop — full-screen slideshow behind the sliding panel */}
-      {showPreviewChrome && (
-        <PreviewBackdrop
-          slides={previewSlides}
-          category={workout?.category}
-          boxH={previewBackdropBoxH}
-          animH={previewBackdropH}
-          boxW={SCREEN_W}
-          minH={HEADER_MAX}
-          maxH={HEADER_MAX + PREVIEW_PARK}
-          bleed={PREVIEW_CORNER_BLEED}
-          paused={previewPhase === 'live'}
-        />
-      )}
 
       {/* ── Static nav bar (old scroll-away header) — only when NOT using the fixed banner */}
       {!showFixedHeader && (
@@ -3870,12 +3596,12 @@ export default function TrainerWorkoutSessionScreen() {
       </View>
       )}
 
-      {/* ── Fixed banner header (option 2): shows the ACTIVE exercise's photo + name + count */}
+      {/* ── Fixed banner header (option 2). Running: the ACTIVE exercise's photo +
+          name + count. Pre-start: the WORKOUT's identity — category silhouette,
+          overline + meta in the top row, note lines, workout name in the title slot
+          — until START swaps it to exercise 1 (July 31 2026, panel replacement). */}
       {showFixedHeader && (
-        <Animated.View
-          style={[styles.fixedBanner, { height: bannerH, opacity: previewBannerOpacity }]}
-          pointerEvents={showPreviewChrome && previewPhase !== 'live' ? 'none' : 'auto'}
-        >
+        <View style={[styles.fixedBanner, { height: bannerH }]}>
           <Pressable
             style={StyleSheet.absoluteFill}
             onLongPress={bannerPhoto ? () => setBannerPeek(bannerPhoto) : undefined}
@@ -3902,14 +3628,33 @@ export default function TrainerWorkoutSessionScreen() {
             <LinearGradient colors={['rgba(0,0,0,0.30)', 'transparent', 'rgba(0,0,0,0.38)']} locations={[0, 0.45, 1]} style={StyleSheet.absoluteFill} pointerEvents="none" />
           </Pressable>
 
-          {/* top row: back (left) · workout title + session·date (center) · ⋯ (right) */}
+          {/* top row: back (left) · center (running: workout title + session·date /
+              pre-start: overline + meta — the name moves to the big title slot) · ⋯ (right) */}
           <View style={{ flexDirection: 'row', alignItems: 'center', paddingTop: insets.top, paddingHorizontal: 12, height: insets.top + 52 }}>
             <GlassIconBtn onPress={handleBack}>
               <SymbolView name="chevron.left" size={20} tintColor="#fff" />
             </GlassIconBtn>
             <View style={{ flex: 1, alignItems: 'center', paddingHorizontal: 4 }}>
-              <Text style={styles.bannerTopTitle} numberOfLines={1}>{bannerWorkoutName}</Text>
-              <Text style={styles.bannerTopMeta} numberOfLines={1}>{bannerSessionLabel}</Text>
+              {preStartBanner ? (
+                <>
+                  <Text style={styles.bannerTopOverline} numberOfLines={1}>{previewTopLabel}</Text>
+                  <Text style={styles.bannerTopMeta} numberOfLines={1}>{previewMetaText}</Text>
+                </>
+              ) : isFreeSession ? (
+                // Free session: the name is editable — pencil + tap, trainer-file parity.
+                <>
+                  <TouchableOpacity onPress={() => { setFreeSessionNameDraft(freeSessionName); setEditFreeSessionName(true); }} activeOpacity={0.75} style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+                    <Text style={styles.bannerTopTitle} numberOfLines={1}>{bannerWorkoutName}</Text>
+                    <SymbolView name="pencil" size={11} tintColor="rgba(255,255,255,0.5)" />
+                  </TouchableOpacity>
+                  <Text style={styles.bannerTopMeta} numberOfLines={1}>{bannerSessionLabel}</Text>
+                </>
+              ) : (
+                <>
+                  <Text style={styles.bannerTopTitle} numberOfLines={1}>{bannerWorkoutName}</Text>
+                  <Text style={styles.bannerTopMeta} numberOfLines={1}>{bannerSessionLabel}</Text>
+                </>
+              )}
             </View>
             <View style={{ position: 'relative' }}>
               <GlassIconBtn onPress={() => setDotsMenuOpen(true)}>
@@ -3921,61 +3666,61 @@ export default function TrainerWorkoutSessionScreen() {
             </View>
           </View>
 
-          {/* bottom: exercise name + count (left) · timer control (right) */}
+          {/* pre-start note lines (session note + noted exercises) — tap opens the
+              full glass popup. Lives in the header per Vitek (July 31 2026); gone
+              once the session runs (notes live on the cards then). */}
+          {preStartBanner && previewNoteLines.length > 0 && (
+            <View style={styles.bannerNotesWrap}>
+              {previewNoteLines.slice(0, 3).map(l => (
+                <TouchableOpacity key={l.key} onPress={() => setPreviewNotesOpen(true)} activeOpacity={0.85} style={styles.previewNoteRow}>
+                  <SymbolView name="note.text" size={13} tintColor="rgba(255,255,255,0.9)" />
+                  <Text style={styles.previewNoteText} numberOfLines={1}>
+                    {l.exName ? (
+                      <>
+                        <Text style={styles.previewNoteExName}>{l.exName}</Text>
+                        {` — ${l.text}`}
+                      </>
+                    ) : l.text}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+              {previewNoteLines.length > 3 && (
+                <TouchableOpacity onPress={() => setPreviewNotesOpen(true)} activeOpacity={0.85} style={styles.previewNoteRow}>
+                  <Text style={[styles.previewNoteText, styles.previewNoteMore]}>{`+${previewNoteLines.length - 3} more note${previewNoteLines.length - 3 > 1 ? 's' : ''}`}</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          )}
+
+          {/* bottom: exercise name + count (running) / workout name + exercise count
+              (pre-start) on the left · timer control (right) */}
           <View style={styles.bannerBottom}>
             <View style={{ flex: 1 }}>
-              <Text style={styles.bannerTitle} numberOfLines={1}>{bannerTitle}</Text>
-              {activeHeaderIdx >= 0 && exercises.length > 0 && (
-                <Text style={styles.bannerCount}>{activeHeaderIdx + 1} / {exercises.length}</Text>
+              {preStartBanner && isFreeSession ? (
+                // Pre-start free session: the workout name IS the title slot, and it's
+                // the editable free-session name — keep the rename reachable here too.
+                <TouchableOpacity onPress={() => { setFreeSessionNameDraft(freeSessionName); setEditFreeSessionName(true); }} activeOpacity={0.75} style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                  <Text style={[styles.bannerTitle, { flexShrink: 1 }]} numberOfLines={1}>{bannerTitle}</Text>
+                  <SymbolView name="pencil" size={13} tintColor="rgba(255,255,255,0.5)" />
+                </TouchableOpacity>
+              ) : (
+                <Text style={styles.bannerTitle} numberOfLines={1}>{bannerTitle}</Text>
               )}
+              {activeHeaderIdx >= 0 && exercises.length > 0 ? (
+                <Text style={styles.bannerCount}>{activeHeaderIdx + 1} / {exercises.length}</Text>
+              ) : exercises.length > 0 ? (
+                <Text style={styles.bannerCount}>{exercises.length} exercise{exercises.length > 1 ? 's' : ''}</Text>
+              ) : null}
             </View>
             <View style={{ justifyContent: 'flex-end' }}>{timerControl}</View>
           </View>
 
           <View style={styles.bannerCap} pointerEvents="none" />
-        </Animated.View>
+        </View>
       )}
 
-      {/* ── Scrollable content (panel: sliding preview surface when usePanel) */}
-      <Animated.View
-        style={usePanel
-          ? [styles.previewPanel, { top: bannerH, transform: [{ translateY: previewY }], borderTopLeftRadius: previewPanelRadius, borderTopRightRadius: previewPanelRadius }]
-          : { flex: 1, backgroundColor: '#fff' }}
-      >
-        {showPreviewChrome && (
-          <Animated.View
-            style={[styles.previewHandleWrap, { height: previewSpacerH, opacity: previewHandleOpacity }]}
-            pointerEvents={previewPhase === 'live' ? 'none' : 'box-none'}
-          >
-            {/* Grip = the ONLY drag/tap-to-toggle target (keeps the Start button tappable). */}
-            <View style={styles.previewHandleGrip} {...previewPan.panHandlers}>
-              <View style={styles.previewHandlePill} />
-              <Text style={styles.previewHandleHint}>{previewPhase === 'landing' ? 'Pull up to review' : 'Drag down to collapse'}</Text>
-            </View>
-            {isPreviewLocked ? (
-              <View style={styles.previewPlannedPill}>
-                <SymbolView name="calendar" size={15} tintColor="#999" />
-                <Text style={styles.previewPlannedText}>
-                  {plannedDate ? `Planned for ${new Date(plannedDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}` : 'Planned'}
-                </Text>
-              </View>
-            ) : isViewParam && !canRepeatViewed ? (
-              // Completed TODAY (or a view opened without a date, e.g. from the session
-              // details sheet) — nothing to start here, it's a review.
-              <View style={styles.previewPlannedPill}>
-                <SymbolView name={isCompletedView ? 'checkmark.circle.fill' : 'eye'} size={15} tintColor="#999" />
-                <Text style={styles.previewPlannedText}>
-                  {isCompletedView ? `Completed · ${fmtPreviewDate(sessionDate as string)}` : 'View only'}
-                </Text>
-              </View>
-            ) : (
-              <TouchableOpacity style={styles.previewStartBtn} onPress={startFromPreview} activeOpacity={0.85}>
-                <SymbolView name="play.fill" size={15} tintColor="#fff" />
-                <Text style={styles.previewStartText}>{canRepeatViewed ? 'Start session today' : 'Start session'}</Text>
-              </TouchableOpacity>
-            )}
-          </Animated.View>
-        )}
+      {/* ── Scrollable content */}
+      <View style={{ flex: 1, backgroundColor: '#fff' }}>
         <KeyboardAvoidingView style={{ flex: 1 }} behavior={undefined}>
           {pastSession ? (
             <ScrollView
@@ -4054,17 +3799,13 @@ export default function TrainerWorkoutSessionScreen() {
                 showsVerticalScrollIndicator={false}
                 dragItemOverflow
                 bounces={false}
-                scrollEnabled={!(usePanel && previewPhase === 'landing')}
                 onScrollOffsetChange={(offset) => {
                   scrollAnim.setValue(offset);
                   scrollOffsetRef.current = offset;
                   setHeaderCollapsed(offset >= COLLAPSE_END);
                 }}
                 ListHeaderComponent={
-                  usePanel ? (
-                    // Panel already sits at bannerH; reserve room for the collapsing handle+Start.
-                    <Animated.View style={{ height: previewSpacerH }} />
-                  ) : showFixedHeader ? (
+                  showFixedHeader ? (
                     <View style={{ height: bannerH + 10 }} />
                   ) : (
                   <View style={{ height: HEADER_MAX, overflow: 'hidden' }}>
@@ -4186,8 +3927,8 @@ export default function TrainerWorkoutSessionScreen() {
                                   isLiveShown={false}
                                   isLiveActive={false}
                                   onLiveTap={undefined}
-                                  readOnly={isViewOnly || previewReadOnly}
-                                  previewMode={previewReadOnly}
+                                  readOnly={isViewOnly || isPreviewLocked}
+                                  previewMode={isPreviewLocked}
                                   lastCompletedSessionAt={lastCompletedSessionAt}
                                   isRevealed={revealedExId === member.workoutExerciseId}
                                   onReveal={setRevealedExId}
@@ -4259,8 +4000,8 @@ export default function TrainerWorkoutSessionScreen() {
                           isLiveShown={false}
                           isLiveActive={false}
                           onLiveTap={undefined}
-                          readOnly={isViewOnly || previewReadOnly}
-                          previewMode={previewReadOnly}
+                          readOnly={isViewOnly || isPreviewLocked}
+                          previewMode={isPreviewLocked}
                           lastCompletedSessionAt={lastCompletedSessionAt}
                           isRevealed={revealedExId === ex.workoutExerciseId}
                           onReveal={setRevealedExId}
@@ -4375,55 +4116,7 @@ export default function TrainerWorkoutSessionScreen() {
             <SymbolView name="plus" size={22} tintColor="#fff" />
           </TouchableOpacity>
         )}
-      </Animated.View>
-
-      {/* ── Merged preview chrome — top bar (back · ⋯) + TODAY'S SESSION title */}
-      {showPreviewChrome && (
-        <Animated.View style={[styles.previewChrome, { opacity: previewChromeOpacity }]} pointerEvents={previewPhase === 'live' ? 'none' : 'box-none'}>
-          <View style={[styles.previewTopBar, { paddingTop: insets.top + 4, height: insets.top + 52 }]}>
-            <GlassIconBtn onPress={handleBack}>
-              <SymbolView name="chevron.left" size={20} tintColor="#fff" />
-            </GlassIconBtn>
-            <View style={{ flex: 1 }} />
-            <View style={{ position: 'relative' }}>
-              <GlassIconBtn onPress={() => setDotsMenuOpen(true)}>
-                <SymbolView name="ellipsis" size={18} tintColor="#fff" />
-              </GlassIconBtn>
-              {hasTrainingNotes && !trainingNotesViewed && (
-                <View style={{ position: 'absolute', top: 2, right: 2, width: 8, height: 8, borderRadius: 4, backgroundColor: '#24ac88', borderWidth: 1.5, borderColor: 'rgba(0,0,0,0.2)' }} pointerEvents="none" />
-              )}
-            </View>
-          </View>
-
-          <View style={[styles.previewTitleBlock, { top: insets.top + 60 }]} pointerEvents="box-none">
-            <Text style={styles.previewTodayLabel}>{previewTopLabel}</Text>
-            <Text style={styles.previewWorkoutName} numberOfLines={2}>{workout?.name ?? ''}</Text>
-            <Text style={styles.previewMeta}>{previewMetaText}</Text>
-            {previewNoteLines.length > 0 && (
-              <View style={styles.previewNotesWrap}>
-                {previewNoteLines.slice(0, 3).map(l => (
-                  <TouchableOpacity key={l.key} onPress={() => setPreviewNotesOpen(true)} activeOpacity={0.85} style={styles.previewNoteRow}>
-                    <SymbolView name="note.text" size={13} tintColor="rgba(255,255,255,0.9)" />
-                    <Text style={styles.previewNoteText} numberOfLines={1}>
-                      {l.exName ? (
-                        <>
-                          <Text style={styles.previewNoteExName}>{l.exName}</Text>
-                          {` — ${l.text}`}
-                        </>
-                      ) : l.text}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-                {previewNoteLines.length > 3 && (
-                  <TouchableOpacity onPress={() => setPreviewNotesOpen(true)} activeOpacity={0.85} style={styles.previewNoteRow}>
-                    <Text style={[styles.previewNoteText, styles.previewNoteMore]}>{`+${previewNoteLines.length - 3} more note${previewNoteLines.length - 3 > 1 ? 's' : ''}`}</Text>
-                  </TouchableOpacity>
-                )}
-              </View>
-            )}
-          </View>
-        </Animated.View>
-      )}
+      </View>
 
       {/* ── Running-rest pill — the panel was dismissed but the clock kept going ── */}
       {restRunning && !restVisible && !isEditMode && kbHeight === 0 && (
@@ -4489,7 +4182,7 @@ export default function TrainerWorkoutSessionScreen() {
           onEditClientNote={(noteId, text) => editClientNote(infoModalExIdx, noteId, text)}
           onDeleteClientNote={noteId => deleteClientNote(infoModalExIdx, noteId)}
           onClose={() => setInfoModalExIdx(null)}
-          readOnly={isViewOnly || previewReadOnly}
+          readOnly={isViewOnly || isPreviewLocked}
         />
       )}
 
@@ -4618,7 +4311,7 @@ export default function TrainerWorkoutSessionScreen() {
           onAddNote={addTrainingNote}
           onDeleteNote={deleteTrainingNote}
           onMarkViewed={() => setTrainingNotesViewed(true)}
-          readOnly={isViewOnly || previewReadOnly}
+          readOnly={isViewOnly || isPreviewLocked}
           muscleGroups={muscleGroups}
           equipmentList={equipmentList}
           sessionHistory={sessionHistory}
@@ -7822,34 +7515,20 @@ const styles = StyleSheet.create({
   combinedPillGlass: { flexDirection: 'row', alignItems: 'center', borderRadius: 20, overflow: 'hidden', paddingHorizontal: 14, paddingVertical: 7, gap: 10 },
   fixedBanner: { position: 'absolute', top: 0, left: 0, right: 0, zIndex: 10, overflow: 'hidden' },
   bannerBottom: { position: 'absolute', left: 0, right: 0, bottom: 46, paddingHorizontal: 20, flexDirection: 'row', alignItems: 'flex-end', gap: 10 },
-  bannerOverline: { color: 'rgba(255,255,255,0.78)', fontSize: 11, fontWeight: '700', letterSpacing: 0.5, marginBottom: 5 },
+  // Pre-start top row: which KIND of entry this is (TODAY'S / PLANNED / PAST SESSION).
+  bannerTopOverline: { color: 'rgba(255,255,255,0.78)', fontSize: 11, fontWeight: '700', letterSpacing: 1 },
+  // Pre-start note lines, in flow right under the top row (over the silhouette).
+  bannerNotesWrap: { paddingHorizontal: 20, marginTop: 10, gap: 7 },
   bannerTopTitle: { color: '#fff', fontSize: 16, fontWeight: '700' },
   bannerTopMeta: { color: 'rgba(255,255,255,0.6)', fontSize: 11, marginTop: 1 },
   bannerTitle: { color: '#fff', fontSize: 24, fontWeight: '700', letterSpacing: 0.2 },
   bannerCount: { color: 'rgba(255,255,255,0.72)', fontSize: 13, fontWeight: '600', marginTop: 3 },
   bannerCap: { position: 'absolute', bottom: 0, left: 0, right: 0, height: 26, backgroundColor: '#fff', borderTopLeftRadius: 26, borderTopRightRadius: 26 },
 
-  // ── Merged preview panel (real list slides here before Start) ──
-  previewPanel: { position: 'absolute', left: 0, right: 0, bottom: 0, backgroundColor: '#fff', overflow: 'hidden', elevation: 12 },
-  previewHandleWrap: { position: 'absolute', top: 0, left: 0, right: 0, zIndex: 5, alignItems: 'center', overflow: 'hidden', backgroundColor: '#fff' },
-  previewHandleGrip: { alignSelf: 'stretch', alignItems: 'center', paddingTop: 10, paddingBottom: 4 },
-  previewHandlePill: { width: 40, height: 5, borderRadius: 3, backgroundColor: '#d0d0cc' },
-  previewHandleHint: { marginTop: 7, fontSize: 12, color: '#999', fontWeight: '500' },
   // Filled ACCENT, white label — over the light keyboard a white pill with green text
   // read as part of the keyboard chrome rather than a button (Vitek, July 27 2026).
   kbdDoneBtn: { backgroundColor: ACCENT, borderRadius: 14, paddingHorizontal: 16, paddingVertical: 7, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.18, shadowRadius: 4, elevation: 3 },
   kbdDoneText: { color: '#fff', fontSize: 16, fontWeight: '700' },
-  previewStartBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: '#24ac88', borderRadius: 100, paddingVertical: 15, marginTop: 14, marginHorizontal: 16, alignSelf: 'stretch' },
-  previewStartText: { color: '#fff', fontWeight: '700', fontSize: 16 },
-  previewPlannedPill: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: '#f0f0ee', borderRadius: 100, paddingVertical: 15, marginTop: 14, marginHorizontal: 16, alignSelf: 'stretch' },
-  previewPlannedText: { color: '#999', fontWeight: '700', fontSize: 15 },
-  previewChrome: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 11 },
-  previewTopBar: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12 },
-  previewTitleBlock: { position: 'absolute', left: 0, right: 0, paddingHorizontal: 20 },
-  previewTodayLabel: { fontSize: 11, color: 'rgba(255,255,255,0.5)', letterSpacing: 1, marginBottom: 6, fontWeight: '600' },
-  previewWorkoutName: { fontSize: 28, fontWeight: '700', color: '#fff', lineHeight: 32 },
-  previewMeta: { fontSize: 13, color: 'rgba(255,255,255,0.65)', marginTop: 6 },
-  previewNotesWrap: { marginTop: 12, gap: 7, maxWidth: '92%' },
   previewNoteRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 6 },
   previewNoteText: { flex: 1, fontSize: 13, color: 'rgba(255,255,255,0.85)', lineHeight: 18 },
   previewNoteExName: { fontWeight: '700', color: 'rgba(255,255,255,0.95)' },
