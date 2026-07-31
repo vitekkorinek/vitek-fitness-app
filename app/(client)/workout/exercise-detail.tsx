@@ -1506,7 +1506,7 @@ export default function ExerciseDetailScreen() {
               {/* Start timer button */}
               <TouchableOpacity style={styles.startTimerBtn} onPress={() => startRest()} activeOpacity={0.7}>
                 <SymbolView name="timer" size={14} tintColor={ACCENT} />
-                <Text style={styles.startTimerBtnText}>{en.doMode.startTimer}</Text>
+                <Text style={styles.startTimerBtnText}>{en.doMode.restTimer}</Text>
               </TouchableOpacity>
 
               {/* Photo thumbnails */}

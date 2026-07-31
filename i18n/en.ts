@@ -532,7 +532,9 @@ const en = {
     setAdded: (n: number) => `Set ${n} added`,
     setRemoved: (n: number) => `Set ${n} removed`,
     seeHistory: 'See history →',
-    startTimer: 'Start timer',
+    // Renamed from "Start timer" July 31 2026 (both sides + Exercise Detail) —
+    // clients confused it with the running session countdown.
+    restTimer: 'Rest timer',
     addPhoto: 'Add photo',
     addSet: 'Add Set',
     addWarmupSet: 'Add Warm-up Set',
@@ -592,6 +594,10 @@ const en = {
     customPlaceholder: 'Custom brand...',
     set: 'Set',
     allBrands: 'All',
+    // Equipment picker bottom sheet (client Do Mode, July 31 2026 redesign)
+    sheetTitleMachine: 'Machine brand',
+    sheetTitleBar: 'Bar weight',
+    customBarPlaceholder: 'Custom weight (kg)...',
   },
 
   // Trainer — Finance tab

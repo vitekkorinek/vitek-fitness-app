@@ -122,11 +122,9 @@ import { useAuth } from '@/context/AuthContext';
 import type { Workout } from '@/types/database';
 import en from '@/i18n/en';
 import { setKey, setLabel, buildSetLabels, nextSetNumber } from '@/lib/warmupSets';
-import MuscleThumb from '@/components/MuscleThumb';
+import MuscleThumb, { MusclePopup } from '@/components/MuscleThumb';
 import { BottomSheet } from '@/components/BottomSheet';
 import CategoryCover, { categoryHasCover } from '@/components/CategoryCover';
-import { exerciseBodyCfg } from '@/lib/muscleSilhouette';
-import { HeaderPhoto } from '@/components/HeaderPhoto';
 import { LightHeader, HeaderIcon, HEADER_ICON, useHeaderHeight } from '@/components/LightHeader';
 import { MUSCLE_FILTER_OPTIONS, matchesMuscleFilters, muscleFilterLabels } from '@/lib/exerciseFilters';
 import { fd } from '@/lib/appType';
@@ -321,7 +319,7 @@ function calcTotal(weightKg: number | null, equipment: string | null, barWeightK
 // chip's corner it collided with the kg value and read as "W140 kg" (Vitek:
 // "bit unclear the w1 etc in the chips"). The expanded card's set rows are
 // where W1/W2/W3 is legible.
-type SetChip = { key: string; top: string; bottom: string; hasNote: boolean };
+type SetChip = { key: string; top: string; bottom: string; topMuted: boolean; bottomMuted: boolean; hasNote: boolean };
 function buildSetChips(sets: SessionSet[]): SetChip[] {
   const rows = sets.filter(s => !s.isRemoved && !s.isDropset);
   return rows.map(s => {
@@ -329,11 +327,25 @@ function buildSetChips(sets: SessionSet[]): SetChip[] {
     const r = (s.repsCompleted && s.repsCompleted.trim()) || (s.targetReps != null ? String(s.targetReps) : '');
     return {
       key: s.localId,
-      top: `${w || '0'} kg`,
-      bottom: `${r || '0'}×`,
+      // Nothing logged AND no target → a muted "—", not "0 kg / 0×" (July 31 2026
+      // — the zeros read as broken data on never-done exercises).
+      top: w ? `${w} kg` : '—',
+      bottom: r ? `${r}×` : '—',
+      topMuted: !w,
+      bottomMuted: !r,
       hasNote: s.trainerNotes.some(n => !n.isDeleted) || s.clientNotes.some(n => !n.isDeleted),
     };
   });
+}
+
+// A CLIENT note is NEW for the trainer when it was written since this client's
+// last completed session of the workout — but never during the CURRENT visit
+// (a locally-added note has no createdAt until reload, so it can't flag itself).
+// Mirror of the client file's rule, role-flipped: each side gets the tag on the
+// OTHER side's notes. Clears once another session completes.
+function noteIsNew(note: { createdAt?: string | null } | null, lastCompletedSessionAt: string | null | undefined): boolean {
+  if (!note || note.createdAt == null) return false;
+  return lastCompletedSessionAt == null || note.createdAt > lastCompletedSessionAt;
 }
 
 // The most recent note to surface at the bottom of an expanded card.
@@ -668,7 +680,6 @@ export default function TrainerWorkoutSessionScreen() {
   const startedAtRef = useRef(startedAt);
   startedAtRef.current = startedAt;
   // Long-press on the banner photo → view it full-screen, uncropped (tap to close)
-  const [bannerPeek, setBannerPeek] = useState<string | null>(null);
   const [peekModal, setPeekModal] = useState<
     | { type: 'photo'; urls: string[]; idx: number; weId: string }
     | { type: 'video'; url: string }
@@ -687,7 +698,7 @@ export default function TrainerWorkoutSessionScreen() {
   type ConfirmModalState = {
     title: string;
     message?: string;
-    actions: Array<{ text: string; onPress: () => void | Promise<void>; primary?: boolean; danger?: boolean }>;
+    actions: Array<{ text: string; onPress: () => void | Promise<void>; primary?: boolean; danger?: boolean; outline?: boolean }>;
     cancelText?: string;
     onCancel?: () => void;
   };
@@ -757,6 +768,11 @@ export default function TrainerWorkoutSessionScreen() {
   const isStretchSessionRef = useRef(false);
 
   const [headerCollapsed, setHeaderCollapsed] = useState(false);
+  // Exercise-list dropdown anchored under the pinned bar (tap the bar's name/meta).
+  const [exListOpen, setExListOpen] = useState(false);
+  // Where the "X/N done" text starts inside the bar's meta row (onLayout) — the
+  // panel's left edge sits exactly under its "0", not under "Session 3".
+  const [exListAnchorX, setExListAnchorX] = useState<number | null>(null);
   const scrollAnim = useRef(new Animated.Value(0)).current;
   const navBgOpacity = scrollAnim.interpolate({ inputRange: [COLLAPSE_START, COLLAPSE_END], outputRange: [0, 1], extrapolate: 'clamp' });
   const sessionDateOpacity = scrollAnim.interpolate({ inputRange: [COLLAPSE_START - 20, COLLAPSE_START + 40], outputRange: [1, 0], extrapolate: 'clamp' });
@@ -1980,10 +1996,10 @@ export default function TrainerWorkoutSessionScreen() {
         : it.members.some(m => m.workoutExerciseId === weId)
     );
     if (di < 0) return;
-    // The fixed banner overlays the top bannerH of the list, so land the card top
-    // just BELOW the banner (viewOffset) rather than at y=0 behind it (+10 breathing,
-    // matching the client).
-    const viewOffset = FIXED_HEADER ? HEADER_MAX + 10 : 0;
+    // The list runs under the absolute PINNED BAR from y=0 (the banner scrolls
+    // away since July 31 2026), so a card scrolled "to top" must land just below
+    // the bar — not below the old full-height banner.
+    const viewOffset = FIXED_HEADER ? HEADER_MIN + 8 : 0;
     setTimeout(() => { try { flatListRef.current?.scrollToIndex({ index: di, animated: true, viewPosition: 0, viewOffset }); } catch {} }, delay);
   };
 
@@ -2028,7 +2044,11 @@ export default function TrainerWorkoutSessionScreen() {
         && !(groupId && exercisesRef.current.find(e => e.workoutExerciseId === id)?.supersetGroupId === groupId));
     })());
     if (isExpanding) {
-      setActiveHeaderId(weId); // fixed header follows the exercise you open
+      setActiveHeaderId(weId);
+      // Switching cards while typing used to leave the keyboard up with its input
+      // somewhere off-screen (the accordion collapse shifts the whole list) — the
+      // typing context is gone, so the keyboard goes too.
+      Keyboard.dismiss();
       // 140ms, not the default 80 — the other cards collapse first, so the list
       // has to settle at its new height before we scroll to the card.
       scrollCardToTop(weId, 140); // reveal the full card content
@@ -3393,8 +3413,13 @@ export default function TrainerWorkoutSessionScreen() {
     } else {
       setConfirmModal({
         title: 'Complete workout?',
-        message: `${doneCount}/${total} exercises done. Some exercises weren't marked as complete.`,
-        actions: [{ text: 'Complete anyway', primary: true, onPress: requestFinish }],
+        message: "Some exercises aren't marked as done.",
+        // Rounds 7–8 (ported from the client): the honest count FIRST as a
+        // white/green-outline pill, mark-all as the filled green below it.
+        actions: [
+          { text: `Complete — ${doneCount}/${total} done`, outline: true, onPress: requestFinish },
+          { text: 'Mark all as done & complete', primary: true, onPress: markAllDoneAndFinish },
+        ],
         cancelText: 'Go back',
       });
     }
@@ -3405,6 +3430,21 @@ export default function TrainerWorkoutSessionScreen() {
   // finish, and the minutes spent waiting for signal are not training. Only a fresh tap
   // moves it, because that is the one case where he may have gone back and done more work.
   const requestFinish = () => { finishRequestedAtRef.current = Date.now(); return saveSession(); };
+
+  // "Mark all as done & complete" — every exercise (and its sets) is marked done,
+  // THEN the save runs. ⚠️ saveSession reads the `exercises` closure, so calling it
+  // directly here would count the STALE array — instead this goes through the
+  // pendingFinishTrigger effect (the Exercise-Detail finish path), which calls
+  // saveSessionRef.current() only after the marked state has settled.
+  const markAllDoneAndFinish = () => {
+    finishRequestedAtRef.current = Date.now(); // a fresh finish request, same as requestFinish
+    setExercises(prev => prev.map(ex => ({
+      ...ex,
+      isDone: true,
+      sets: ex.sets.map(s => (s.isRemoved ? s : { ...s, isDone: true })),
+    })));
+    setPendingFinishTrigger(true);
+  };
 
   const saveSession = async () => {
     // Never two at once: the second run would finalise the row again and insert a
@@ -3804,43 +3844,78 @@ export default function TrainerWorkoutSessionScreen() {
   const equipmentList = workout?.equipment_list ?? [];
   const hasTrainingNotes = trainingTrainerNotes.length > 0 || trainingClientNotes.length > 0 || trainingNoteHistory.some(s => s.trainer.length > 0 || s.client.length > 0);
 
-  // ── Fixed-header banner data (option 2) ───────────────────────────────
+  // ── Header data: scroll-away banner + slim pinned bar (July 31 2026 redesign,
+  // ported from the client). The banner is the WORKOUT's identity and scrolls
+  // away with the list — no per-exercise tracking any more; what stays is the
+  // slim pinned bar: back · name + meta (tap = exercise-list dropdown) ·
+  // running-timer/edit-Done · ⋯. The START pill lives at the banner's
+  // bottom-right and scrolls with it.
   const showFixedHeader = FIXED_HEADER && !pastSession;
   const bannerH = HEADER_MAX; // same height as the old header
-  const activeHeaderEx = exercises.find(e => e.workoutExerciseId === activeHeaderId) ?? exercises[0] ?? null;
-  const activeHeaderIdx = activeHeaderEx ? exercises.findIndex(e => e.workoutExerciseId === activeHeaderEx.workoutExerciseId) : -1;
-  // Photo/video-thumbnail of the ACTIVE EXERCISE only. The workout's cover photo is
-  // deliberately NOT a fallback here (Vitek, July 2026): the banner describes the
-  // exercise you're in, and a random workout cover says nothing about it. With no media
-  // we draw that exercise's own muscles as a silhouette instead (bannerBody below).
-  const bannerPhoto = activeHeaderEx?.extraPhotoUrls?.[0] ?? activeHeaderEx?.thumbnailUrl ?? null;
-  const bannerBody = activeHeaderEx
-    ? exerciseBodyCfg(activeHeaderEx.muscleGroups, activeHeaderEx.secondaryMuscleGroups)
-    : null;
-  const bannerTitle = activeHeaderEx?.exerciseName ?? (isFreeSession ? freeSessionName : workout?.name) ?? '—';
   const bannerSessionLabel = isFreeSession
     ? new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
     : `Session ${sessionCount + 1} · ${new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}`;
-  const bannerWorkoutName = (isFreeSession ? freeSessionName : workout?.name) ?? '';
+  const bannerWorkoutName = (isFreeSession ? freeSessionName : workout?.name) ?? '—';
+  const exCountLabel = exercises.length > 0 ? `${exercises.length} exercise${exercises.length > 1 ? 's' : ''}` : null;
+  const exercisesDoneCount = exercises.filter(e => e.isDone).length;
+  // Pre-start bar meta (short date); while running the bar renders "Session N"
+  // and the brighter "X/N done" as separate segments.
+  const pinBarMeta = (() => {
+    const shortDate = new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+    const base = isFreeSession ? shortDate : `Session ${sessionCount + 1} · ${shortDate}`;
+    return exCountLabel ? `${base} · ${exCountLabel}` : base;
+  })();
+  const bannerMetaLine = exCountLabel ? `${bannerSessionLabel} · ${exCountLabel}` : bannerSessionLabel;
 
-  // Header timer/START control (the "Start-morph"): before start = expanded
-  // [00:00 · START] pill; on Start (isRunning) the pill drops the START half and
-  // stays as an always-visible timer. Edit mode shows a Done button.
-  const timerControl = isEditMode ? (
+  // The bar holds only what must stay visible: the running timer, or edit-mode
+  // Done. START sits in the banner (bannerStartControl) and scrolls away with it.
+  const barTimerControl = isEditMode ? (
     <TouchableOpacity style={styles.editDoneBtn} onPress={exitEditMode} activeOpacity={0.8}>
       <Text style={styles.editDoneBtnText}>Done</Text>
     </TouchableOpacity>
   ) : isRunning && !pastSession ? (
-    /* Running: timer ONLY, always visible (no collapse — finishing lives in the bottom "Finish session" footer) */
     <GlassPill>
       <Text style={styles.combinedPillTimerText}>{formatTimer(elapsed)}</Text>
     </GlassPill>
-  ) : (
+  ) : null;
+
+  const bannerStartControl = isEditMode || isRunning ? null : (
     <GlassPill onPress={handleStartPress}>
       <Text style={styles.combinedPillTimerText}>{formatTimer(elapsed)}</Text>
       <View style={styles.combinedPillSep} />
       <Text style={styles.combinedPillFinishText}>START</Text>
     </GlassPill>
+  );
+
+  // Scroll-away banner content — shared by BOTH lists (the non-edit FlatList and
+  // the edit-mode DraggableFlatList render their own ListHeaderComponent).
+  const bannerHeader = (
+    <View style={{ height: bannerH + 10, backgroundColor: '#fff' }}>
+      <View style={{ height: bannerH, overflow: 'hidden' }}>
+        {categoryHasCover(workout?.category) ? (
+          <CategoryCover category={workout?.category} variant="banner" watermarkSize={150} />
+        ) : (
+          <LinearGradient colors={['#2d6b5a', '#244e43', '#1a3832']} start={{ x: 1, y: 0 }} end={{ x: 0, y: 1 }} style={StyleSheet.absoluteFill} />
+        )}
+        <LinearGradient colors={['rgba(0,0,0,0.30)', 'transparent', 'rgba(0,0,0,0.38)']} locations={[0, 0.45, 1]} style={StyleSheet.absoluteFill} pointerEvents="none" />
+        {/* Bottom block: name (+ free-session rename pencil) + meta, START pill right */}
+        <View style={styles.bannerBottom}>
+          <View style={{ flex: 1 }}>
+            {isFreeSession ? (
+              <TouchableOpacity onPress={() => { setFreeSessionNameDraft(freeSessionName); setEditFreeSessionName(true); }} activeOpacity={0.75} style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <Text style={[styles.bannerTitle, { flexShrink: 1 }]} numberOfLines={1}>{bannerWorkoutName}</Text>
+                <SymbolView name="pencil" size={13} tintColor="rgba(255,255,255,0.5)" />
+              </TouchableOpacity>
+            ) : (
+              <Text style={styles.bannerTitle} numberOfLines={2}>{bannerWorkoutName}</Text>
+            )}
+            <Text style={styles.bannerCount}>{bannerMetaLine}</Text>
+          </View>
+          <View style={{ justifyContent: 'flex-end' }}>{bannerStartControl}</View>
+        </View>
+        <View style={styles.bannerCap} pointerEvents="none" />
+      </View>
+    </View>
   );
 
   return (
@@ -3902,51 +3977,60 @@ export default function TrainerWorkoutSessionScreen() {
       </View>
       )}
 
-      {/* ── Fixed banner header (option 2): shows the ACTIVE exercise's photo + name + count */}
+      {/* ── Slim pinned bar (July 31 2026 redesign, ported from the client) — the
+          banner scrolls away with the list; this is all that stays: back · name +
+          meta (fades in as the banner leaves; tap = exercise-list dropdown) ·
+          running-timer/edit-Done · ⋯. Transparent over the banner, brand-green
+          glass once scrolled; white ink in both states. */}
       {showFixedHeader && (
-        <View style={[styles.fixedBanner, { height: bannerH }]}>
-          <Pressable
-            style={StyleSheet.absoluteFill}
-            onLongPress={bannerPhoto ? () => setBannerPeek(bannerPhoto) : undefined}
-            delayLongPress={300}
-          >
-            {bannerPhoto ? (
-              <HeaderPhoto uri={bannerPhoto} focusY={activeHeaderEx?.headerFocusY ?? 0.5} boxW={SCREEN_W} boxH={bannerH} />
-            ) : bannerBody ? (
-              // No media for this exercise → its OWN muscles, lit on the BRAND green wash
-              // (July 27 2026 — the category hue used to paint this; see CategoryCover's
-              // 'banner' variant note).
-              <CategoryCover category={workout?.category} variant="banner" body={bannerBody} />
-            ) : categoryHasCover(workout?.category) ? (
-              <CategoryCover category={workout?.category} variant="banner" watermarkSize={150} />
-            ) : (
-              <LinearGradient colors={['#2d6b5a', '#244e43', '#1a3832']} start={{ x: 1, y: 0 }} end={{ x: 0, y: 1 }} style={StyleSheet.absoluteFill} />
-            )}
-            {/* Preview-backdrop-style darkening (flat wash + emphasis at the text zones),
-                matching the client — header chrome never fights a bright photo; the
-                long-press peek shows the photo at its original brightness. PHOTOS ONLY —
-                the green wash is already a controlled dark ground. */}
-            {!!bannerPhoto && <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.38)' }]} pointerEvents="none" />}
-            <LinearGradient colors={['rgba(0,0,0,0.30)', 'transparent', 'rgba(0,0,0,0.38)']} locations={[0, 0.45, 1]} style={StyleSheet.absoluteFill} pointerEvents="none" />
-          </Pressable>
-
-          {/* top row: back (left) · workout title + session·date (center) · ⋯ (right) */}
-          <View style={{ flexDirection: 'row', alignItems: 'center', paddingTop: insets.top, paddingHorizontal: 12, height: insets.top + 52 }}>
+        <View style={[styles.pinBar, { height: HEADER_MIN, paddingTop: insets.top }]}>
+          <Animated.View style={[StyleSheet.absoluteFill, { opacity: navBgOpacity }]} pointerEvents="none">
+            <BlurView intensity={50} tint="dark" style={StyleSheet.absoluteFill} />
+            <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(36,78,67,0.88)' }]} />
+          </Animated.View>
+          <View style={styles.pinBarRow}>
             <GlassIconBtn onPress={handleBack}>
               <SymbolView name="chevron.left" size={20} tintColor="#fff" />
             </GlassIconBtn>
-            <View style={{ flex: 1, alignItems: 'center', paddingHorizontal: 4 }}>
-              {isFreeSession ? (
-                <TouchableOpacity onPress={() => { setFreeSessionNameDraft(freeSessionName); setEditFreeSessionName(true); }} activeOpacity={0.75} style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
-                  <Text style={styles.bannerTopTitle} numberOfLines={1}>{bannerWorkoutName}</Text>
-                  <SymbolView name="pencil" size={11} tintColor="rgba(255,255,255,0.5)" />
-                </TouchableOpacity>
-              ) : (
-                <Text style={styles.bannerTopTitle} numberOfLines={1}>{bannerWorkoutName}</Text>
-              )}
-              <Text style={styles.bannerTopMeta} numberOfLines={1}>{bannerSessionLabel}</Text>
-            </View>
-            <View style={{ position: 'relative' }}>
+            {/* Name + meta fade in with the bar background — over the banner the big
+                title already says all this, so the bar stays quiet until it's needed. */}
+            <Animated.View style={[styles.pinBarCenter, { opacity: collapsedContentOpacity }]}>
+              <TouchableOpacity
+                onPress={() => setExListOpen(true)}
+                disabled={!headerCollapsed || exercises.length === 0}
+                activeOpacity={0.7}
+                hitSlop={{ top: 8, bottom: 8 }}
+              >
+                <Text style={styles.pinBarName} numberOfLines={1}>{bannerWorkoutName}</Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                  {isRunning ? (
+                    /* Running: the done-count is its own brighter segment, spaced
+                       off "Session N" so it carries the progress. */
+                    <>
+                      {!isFreeSession && (
+                        <Text style={styles.pinBarMeta} numberOfLines={1}>{`Session ${sessionCount + 1}`}</Text>
+                      )}
+                      <Text
+                        style={[styles.pinBarMetaDone, !isFreeSession && { marginLeft: 8 }]}
+                        numberOfLines={1}
+                        onLayout={e => setExListAnchorX(e.nativeEvent.layout.x)}
+                      >
+                        {`${exercisesDoneCount}/${exercises.length} done`}
+                      </Text>
+                    </>
+                  ) : (
+                    <Text style={styles.pinBarMeta} numberOfLines={1}>{pinBarMeta}</Text>
+                  )}
+                  {exercises.length > 0 && (
+                    // marginTop matches the meta texts' — without it the chevron
+                    // rides high against the text baseline.
+                    <SymbolView name="chevron.down" size={7} tintColor="rgba(255,255,255,0.55)" style={{ marginTop: 3 }} />
+                  )}
+                </View>
+              </TouchableOpacity>
+            </Animated.View>
+            {barTimerControl}
+            <View style={{ position: 'relative', marginLeft: 8 }}>
               <GlassIconBtn onPress={() => setDotsMenuOpen(true)}>
                 <SymbolView name="ellipsis" size={18} tintColor="#fff" />
               </GlassIconBtn>
@@ -3955,19 +4039,6 @@ export default function TrainerWorkoutSessionScreen() {
               )}
             </View>
           </View>
-
-          {/* bottom: exercise name + count (left) · timer control (right) */}
-          <View style={styles.bannerBottom}>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.bannerTitle} numberOfLines={1}>{bannerTitle}</Text>
-              {activeHeaderIdx >= 0 && exercises.length > 0 && (
-                <Text style={styles.bannerCount}>{activeHeaderIdx + 1} / {exercises.length}</Text>
-              )}
-            </View>
-            <View style={{ justifyContent: 'flex-end' }}>{timerControl}</View>
-          </View>
-
-          <View style={styles.bannerCap} pointerEvents="none" />
         </View>
       )}
 
@@ -4041,7 +4112,7 @@ export default function TrainerWorkoutSessionScreen() {
                 }}
                 ListHeaderComponent={
                   showFixedHeader ? (
-                    <View style={{ height: bannerH + 10 }} />
+                    bannerHeader
                   ) : (
                   <View style={{ height: HEADER_MAX }}>
                     {workout?.cover_image_url ? (
@@ -4246,11 +4317,11 @@ export default function TrainerWorkoutSessionScreen() {
                       </>
                     )}
                   </View>
-                  <Text style={styles.finishFooterSub}>
-                    {savingSession
-                      ? 'Everything you logged is safe on this phone'
-                      : `${exercises.filter(e => e.isDone).length} / ${exercises.length} exercises done`}
-                  </Text>
+                  {/* No done-count sub-line (round 7 — it duplicated the bar's
+                      X/N and fattened the button); the saving reassurance stays. */}
+                  {savingSession && (
+                    <Text style={styles.finishFooterSub}>Everything you logged is safe on this phone</Text>
+                  )}
                 </TouchableOpacity>
               ) : (!pastSession && !isFreeSession && !loading) ? (
                 /* Between sessions: record a forgotten weight or note without inventing a session. */
@@ -4290,7 +4361,7 @@ export default function TrainerWorkoutSessionScreen() {
               scrollEventThrottle={16}
               ListHeaderComponent={
                 showFixedHeader ? (
-                  <View style={{ height: bannerH + 10 }} />
+                  bannerHeader
                 ) : (
                 <View style={{ height: HEADER_MAX }}>
                   {workout?.cover_image_url ? (
@@ -4583,11 +4654,38 @@ export default function TrainerWorkoutSessionScreen() {
       )}
 
       {/* ── Banner photo full-screen peek (long-press on the header photo) ── */}
-      {bannerPeek && (
-        <Modal visible transparent animationType="fade" onRequestClose={() => setBannerPeek(null)} statusBarTranslucent>
-          <Pressable style={styles.bannerPeekRoot} onPress={() => setBannerPeek(null)}>
-            <Image source={{ uri: bannerPeek }} style={StyleSheet.absoluteFill} resizeMode="contain" />
-          </Pressable>
+      {/* ── Exercise-list dropdown (tap the pinned bar's name/meta) — a small
+          anchored panel: done exercises checked + muted, the rest dark; tapping
+          one jumps to (and opens) that card. Left edge sits under the done-count. */}
+      {exListOpen && (
+        <Modal visible transparent animationType="fade" onRequestClose={() => setExListOpen(false)} statusBarTranslucent>
+          <Pressable style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.18)' }]} onPress={() => setExListOpen(false)} />
+          <View style={[styles.exListPanel, { top: HEADER_MIN + 2, left: isRunning && exListAnchorX != null ? 56 + exListAnchorX : 56 }]}>
+            <ScrollView style={{ maxHeight: SCREEN_HEIGHT * 0.5 }} bounces={false} showsVerticalScrollIndicator={false}>
+              {exercises.map(ex => {
+                const done = ex.isDone;
+                return (
+                  <TouchableOpacity
+                    key={ex.workoutExerciseId}
+                    style={styles.exListRow}
+                    activeOpacity={0.7}
+                    onPress={() => {
+                      setExListOpen(false);
+                      if (!expandedIds.has(ex.workoutExerciseId)) toggleExpand(ex.workoutExerciseId);
+                      else scrollCardToTop(ex.workoutExerciseId, 120);
+                    }}
+                  >
+                    {done ? (
+                      <View style={styles.exListCheck}><Text style={styles.exListCheckMark}>✓</Text></View>
+                    ) : (
+                      <View style={styles.exListDot} />
+                    )}
+                    <Text style={[styles.exListName, done && styles.exListNameDone]} numberOfLines={1}>{ex.exerciseName}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+          </View>
         </Modal>
       )}
 
@@ -4902,7 +5000,7 @@ export default function TrainerWorkoutSessionScreen() {
             {confirmModal?.actions.map((btn, i) => (
               <TouchableOpacity
                 key={i}
-                style={btn.danger ? styles.confirmDangerBtn : btn.primary ? styles.confirmPrimaryBtn : styles.confirmSecondaryBtn}
+                style={btn.danger ? styles.confirmDangerBtn : btn.primary ? styles.confirmPrimaryBtn : btn.outline ? styles.confirmOutlineBtn : styles.confirmSecondaryBtn}
                 activeOpacity={0.85}
                 onPress={async () => {
                   const cb = btn.onPress;
@@ -4910,7 +5008,7 @@ export default function TrainerWorkoutSessionScreen() {
                   await cb();
                 }}
               >
-                <Text style={btn.danger ? styles.confirmDangerBtnText : btn.primary ? styles.confirmPrimaryBtnText : styles.confirmSecondaryBtnText}>{btn.text}</Text>
+                <Text style={btn.danger ? styles.confirmDangerBtnText : btn.primary ? styles.confirmPrimaryBtnText : btn.outline ? styles.confirmOutlineBtnText : styles.confirmSecondaryBtnText}>{btn.text}</Text>
               </TouchableOpacity>
             ))}
             {confirmModal?.cancelText ? (
@@ -5046,78 +5144,63 @@ export default function TrainerWorkoutSessionScreen() {
       )}
 
       {/* ── Long-press peek modal ─────────────────────────────────── */}
-      <Modal visible={!!peekModal} transparent animationType="fade" onRequestClose={() => setPeekModal(null)}>
-        <View style={styles.centeredRoot}>
-          <Pressable style={StyleSheet.absoluteFill} onPress={() => setPeekModal(null)} />
-
-          {peekModal?.type === 'photo' && peekModal.urls.length > 1 ? (
-            /* Multi-photo: arrow · image · arrow row */
-            <View style={styles.peekRow}>
-              <TouchableOpacity
-                style={styles.peekArrowBtn}
-                onPress={() => setPeekModal(p => p?.type === 'photo' ? { ...p, idx: Math.max(0, p.idx - 1) } : p)}
-                hitSlop={12}
-                activeOpacity={0.7}
-                disabled={peekModal.idx === 0}
-              >
-                <SymbolView name="chevron.left" size={22} tintColor={peekModal.idx === 0 ? 'rgba(255,255,255,0.25)' : '#fff'} />
-              </TouchableOpacity>
-
-              <View style={[styles.peekModalBox, { flex: 1, width: undefined, alignSelf: undefined }]}>
-                <Image source={{ uri: peekModal.urls[peekModal.idx] }} style={{ flex: 1 }} resizeMode="cover" />
-                <View style={styles.peekIndexBadge}>
+      <Modal visible={!!peekModal} transparent animationType="fade" onRequestClose={() => setPeekModal(null)} statusBarTranslucent>
+        {peekModal?.type === 'photo' ? (
+          /* Session photos show AS TAKEN (July 31 2026): full-screen on near-black,
+             `contain` — no more 4:3 crop box. Tap anywhere closes; arrows page when
+             there are several; the trash keeps its confirm. */
+          <View style={styles.peekPhotoRoot}>
+            <Pressable style={StyleSheet.absoluteFill} onPress={() => setPeekModal(null)}>
+              <Image source={{ uri: peekModal.urls[peekModal.idx] ?? peekModal.urls[0] }} style={StyleSheet.absoluteFill} resizeMode="contain" />
+            </Pressable>
+            {peekModal.urls.length > 1 && (
+              <>
+                <TouchableOpacity
+                  style={[styles.peekEdgeArrow, { left: 6 }]}
+                  onPress={() => setPeekModal(p => p?.type === 'photo' ? { ...p, idx: Math.max(0, p.idx - 1) } : p)}
+                  hitSlop={12}
+                  activeOpacity={0.7}
+                  disabled={peekModal.idx === 0}
+                >
+                  <SymbolView name="chevron.left" size={22} tintColor={peekModal.idx === 0 ? 'rgba(255,255,255,0.25)' : '#fff'} />
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.peekEdgeArrow, { right: 6 }]}
+                  onPress={() => setPeekModal(p => p?.type === 'photo' ? { ...p, idx: Math.min(p.urls.length - 1, p.idx + 1) } : p)}
+                  hitSlop={12}
+                  activeOpacity={0.7}
+                  disabled={peekModal.idx === peekModal.urls.length - 1}
+                >
+                  <SymbolView name="chevron.right" size={22} tintColor={peekModal.idx === peekModal.urls.length - 1 ? 'rgba(255,255,255,0.25)' : '#fff'} />
+                </TouchableOpacity>
+                <View style={[styles.peekIndexBadge, { bottom: insets.bottom + 18 }]} pointerEvents="none">
                   <Text style={styles.peekIndexText}>{peekModal.idx + 1} / {peekModal.urls.length}</Text>
                 </View>
-                <TouchableOpacity
-                  style={styles.peekDeleteBtn}
-                  onPress={() => {
-                    const url = peekModal.urls[peekModal.idx];
-                    const weId = peekModal.weId;
-                    setPeekModal(null);
-                    setConfirmModal({ title: 'Delete photo?', actions: [{ text: 'Delete', danger: true, onPress: () => deleteSessionPhoto(url, weId) }], cancelText: 'Cancel' });
-                  }}
-                  hitSlop={8}
-                >
-                  <SymbolView name="trash" size={14} tintColor="#fff" />
-                </TouchableOpacity>
-              </View>
-
-              <TouchableOpacity
-                style={styles.peekArrowBtn}
-                onPress={() => setPeekModal(p => p?.type === 'photo' ? { ...p, idx: Math.min(p.urls.length - 1, p.idx + 1) } : p)}
-                hitSlop={12}
-                activeOpacity={0.7}
-                disabled={peekModal.idx === peekModal.urls.length - 1}
-              >
-                <SymbolView name="chevron.right" size={22} tintColor={peekModal.idx === peekModal.urls.length - 1 ? 'rgba(255,255,255,0.25)' : '#fff'} />
-              </TouchableOpacity>
-            </View>
-          ) : (
-            /* Single photo or video: just the box */
+              </>
+            )}
+            <TouchableOpacity
+              style={[styles.peekDeleteBtn, { top: insets.top + 10 }]}
+              onPress={() => {
+                const url = peekModal.urls[peekModal.idx] ?? peekModal.urls[0];
+                const weId = peekModal.weId;
+                setPeekModal(null);
+                setConfirmModal({ title: 'Delete photo?', actions: [{ text: 'Delete', danger: true, onPress: () => deleteSessionPhoto(url, weId) }], cancelText: 'Cancel' });
+              }}
+              hitSlop={8}
+            >
+              <SymbolView name="trash" size={14} tintColor="#fff" />
+            </TouchableOpacity>
+          </View>
+        ) : (
+          <View style={styles.centeredRoot}>
+            <Pressable style={StyleSheet.absoluteFill} onPress={() => setPeekModal(null)} />
             <View style={styles.peekModalBox}>
-              {peekModal?.type === 'photo' && (
-                <>
-                  <Image source={{ uri: peekModal.urls[0] }} style={{ flex: 1 }} resizeMode="cover" />
-                  <TouchableOpacity
-                    style={styles.peekDeleteBtn}
-                    onPress={() => {
-                      const url = peekModal.urls[0];
-                      const weId = peekModal.weId;
-                      setPeekModal(null);
-                      setConfirmModal({ title: 'Delete photo?', actions: [{ text: 'Delete', danger: true, onPress: () => deleteSessionPhoto(url, weId) }], cancelText: 'Cancel' });
-                    }}
-                    hitSlop={8}
-                  >
-                    <SymbolView name="trash" size={14} tintColor="#fff" />
-                  </TouchableOpacity>
-                </>
-              )}
               {peekModal?.type === 'video' && peekModal.url && (
                 <PeekVideoPlayer url={peekModal.url} />
               )}
             </View>
-          )}
-        </View>
+          </View>
+        )}
       </Modal>
     </View>
   );
@@ -5263,7 +5346,15 @@ function SupersetGroupCard({
                     {member.originalExerciseName && <Text style={styles.ogLabel}>og. {member.originalExerciseName}</Text>}
                   </View>
                 </View>
-                <MuscleThumb muscleGroups={member.muscleGroups ?? []} secondaryMuscleGroups={member.secondaryMuscleGroups ?? []} size={40} />
+                {/* Same photo → video-thumb → silhouette chain as ExerciseCard;
+                    non-tappable here (edit mode is for reordering). */}
+                {(member.extraPhotoUrls?.[0] ?? member.thumbnailUrl) ? (
+                  <View style={styles.cardThumbWrap} pointerEvents="none">
+                    <Image source={{ uri: (member.extraPhotoUrls?.[0] ?? member.thumbnailUrl)! }} style={styles.cardThumbImg} />
+                  </View>
+                ) : (
+                  <MuscleThumb muscleGroups={member.muscleGroups ?? []} secondaryMuscleGroups={member.secondaryMuscleGroups ?? []} size={46} />
+                )}
               </View>
             </View>
             {idx < members.length - 1 && (
@@ -5413,20 +5504,13 @@ function ExerciseCard({
   const swipeableRef = useRef<Swipeable>(null);
   const closingExternallyRef = useRef(false);
   const [addSetMenuOpen, setAddSetMenuOpen] = useState(false);
-
-  const hasExerciseNotes = exercise.trainerNotes.length > 0 || exercise.clientNote.length > 0;
-  const hasChangeIndicator = hasExerciseNotes || exercise.movedFromLabel !== null || exercise.orderChangeDescription !== null || exercise.addedAt !== null;
-  const [infoSeen, setInfoSeen] = useState(false);
-  const showInfoDot = hasChangeIndicator && !infoSeen;
-  // Dot next to the name (collapsed-visible) — shows for a NOTE that's newer than the last
-  // completed session (i.e. written since the client last trained this workout). It clears on
-  // its own once they complete another session, and the note itself stays (with its date).
+  // July 31 2026 redesign (ported from the client): the muscle popup opens from
+  // the meta-row muscle text, the bar/brand picker is a bottom sheet behind the
+  // equipment chip, and there are NO note/change dots any more — the one unread
+  // indicator is the "NEW" tag in the note footer (client-role notes here).
+  const [musclePopupOpen, setMusclePopupOpen] = useState(false);
+  const [equipPickerOpen, setEquipPickerOpen] = useState(false);
   const latestNote = latestExerciseNote(exercise);
-  const showNameNoteDot = !!latestNote && (
-    lastCompletedSessionAt == null ||
-    latestNote.createdAt == null ||          // just added this session → treat as new
-    latestNote.createdAt > lastCompletedSessionAt
-  );
 
   const eqRaw = (exercise.equipment ?? '').toLowerCase();
   const isBarbell = eqRaw.includes('barbell');
@@ -5436,10 +5520,7 @@ function ExerciseCard({
   const defaultBarWeight = isZBar ? 5 : 20;
   const [barWeightKg, setBarWeightKg] = useState(isBarType ? (exercise.targetBarbellWeightKg ?? defaultBarWeight) : 0);
   const setBarAndNotify = (kg: number) => { setBarWeightKg(kg); onUpdateBarbellWeight(kg); };
-  const [customBarText, setCustomBarText] = useState('');
-  const [showCustomBar, setShowCustomBar] = useState(false);
   const [machineBrand, setMachineBrand] = useState<string | null>(isCableMachine ? 'Gym80' : null);
-  const [machineBrandModalOpen, setMachineBrandModalOpen] = useState(false);
   // Stores saved kg/reps per brand so switching back restores values
   const brandSetValuesRef = useRef<Map<string, Map<string, { kg: string; reps: string }>>>(new Map());
   const setMachineAndNotify = (brand: string | null) => {
@@ -5636,7 +5717,6 @@ function ExerciseCard({
                 <View style={{ flex: 1 }}>
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                     <Text style={[styles.exerciseName, { flexShrink: 1 }]} numberOfLines={1} ellipsizeMode="tail">{exercise.exerciseName}</Text>
-                    {showNameNoteDot && <View style={styles.nameNoteDot} />}
                   </View>
                   {exercise.originalExerciseName && (
                     <Text style={styles.ogLabel}>og. {exercise.originalExerciseName}</Text>
@@ -5649,8 +5729,8 @@ function ExerciseCard({
                           <View style={styles.setChipsRow}>
                             {chips.slice(0, 3).map(c => (
                               <View key={c.key} style={styles.setChip}>
-                                <Text style={styles.setChipTop} numberOfLines={1}>{c.top}</Text>
-                                <Text style={styles.setChipBottom} numberOfLines={1}>{c.bottom}</Text>
+                                <Text style={[styles.setChipTop, c.topMuted && styles.setChipValMuted]} numberOfLines={1}>{c.top}</Text>
+                                <Text style={[styles.setChipBottom, c.bottomMuted && styles.setChipValMuted]} numberOfLines={1}>{c.bottom}</Text>
                                 {c.hasNote && <View style={styles.setChipNoteDot} />}
                               </View>
                             ))}
@@ -5661,20 +5741,42 @@ function ExerciseCard({
                             )}
                           </View>
                         )}
-                        {/* Always rendered — "No note" placeholder keeps every card the same height.
-                            No note icon (Vitek: the text alone is enough). */}
-                        <View style={styles.collapsedNoteRow}>
-                          {latestNote
-                            ? <Text style={styles.collapsedNoteText} numberOfLines={1}>{latestNote.text}</Text>
-                            : <Text style={styles.collapsedNoteEmpty} numberOfLines={1}>No note</Text>}
-                        </View>
+                        {/* Only when a note exists (July 31 2026 — the "No note"
+                            placeholder went with the airy-card pass). */}
+                        {latestNote && (
+                          <View style={styles.collapsedNoteRow}>
+                            <Text style={styles.collapsedNoteText} numberOfLines={1}>{latestNote.text}</Text>
+                          </View>
+                        )}
                       </>
                     );
                   })()}
                 </View>
               </View>
             </TouchableOpacity>
-            <MuscleThumb muscleGroups={exercise.muscleGroups ?? []} secondaryMuscleGroups={exercise.secondaryMuscleGroups ?? []} size={40} />
+            {(() => {
+              // Exercise photo → video thumb → the muscles it trains — the same
+              // chain as the picker rows (July 31 2026 redesign, ported from the
+              // client). Tap = the media overlay; the silhouette fallback keeps
+              // MuscleThumb's own tap (muscle popup). Expanded: full size, but
+              // FLOATED down the right side so the open header stays slim.
+              const thumbUri = exercise.extraPhotoUrls?.[0] ?? exercise.thumbnailUrl ?? null;
+              const thumb = thumbUri ? (
+                <TouchableOpacity onPress={onVideoPress} activeOpacity={0.8} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                  <View style={styles.cardThumbWrap}>
+                    <Image source={{ uri: thumbUri }} style={styles.cardThumbImg} />
+                    {(!!exercise.videoUrl || exercise.extraVideoUrls.length > 0) && (
+                      <View style={styles.cardThumbPlay} pointerEvents="none">
+                        <SymbolView name="play.fill" size={10} tintColor="#fff" />
+                      </View>
+                    )}
+                  </View>
+                </TouchableOpacity>
+              ) : (
+                <MuscleThumb muscleGroups={exercise.muscleGroups ?? []} secondaryMuscleGroups={exercise.secondaryMuscleGroups ?? []} size={46} />
+              );
+              return isExpanded ? <View style={styles.cardThumbFloatExpanded}>{thumb}</View> : thumb;
+            })()}
           </View>
           <TouchableOpacity onPress={onToggleExpand} activeOpacity={0.85} style={styles.cardChevronRow}>
             <SymbolView name={isExpanded ? 'chevron.up' : 'chevron.down'} size={11} tintColor="#ccc" />
@@ -5685,128 +5787,52 @@ function ExerciseCard({
         {isExpanded && (
           <View style={{ paddingTop: 4 }}>
 
-            {/* Bar selector — barbell and z-bar exercises */}
-            {isBarType && (
-              <View style={styles.barSelectorRow}>
-                {(() => {
-                  const hasPeekSetData = peekingSetId !== null && exercise.sets.some(s => s.firstSessionWeightKg != null || s.firstSessionReps != null);
-                  const peekBarbellWeight = hasPeekSetData
-                    ? (exercise.firstSessionBarbellWeightKg ?? barWeightKg)
-                    : null;
-                  const isPeekingBar = peekBarbellWeight != null;
-                  const barOptions = isZBar ? [5, 7.5] : [15, 20];
-                  const isCustomActive = !barOptions.includes(barWeightKg);
-                  const isCustomPeek = peekBarbellWeight != null && !barOptions.includes(peekBarbellWeight);
-                  return (
-                    <>
-                      {barOptions.map(w => {
-                        const isActive = barWeightKg === w && !isPeekingBar;
-                        const isPeek = peekBarbellWeight === w;
-                        return (
-                          <TouchableOpacity
-                            key={w}
-                            onPress={() => { setBarAndNotify(w); setShowCustomBar(false); }}
-                            style={[styles.barOption, isActive && styles.barOptionActive, isPeek && styles.barOptionPeeking]}
-                            activeOpacity={0.7}
-                          >
-                            <Text style={[styles.barOptionText, isActive && styles.barOptionTextActive, isPeek && styles.barOptionTextPeeking]}>{w}kg</Text>
-                          </TouchableOpacity>
-                        );
-                      })}
-                      <TouchableOpacity
-                        onPress={() => {
-                          setCustomBarText(isCustomActive ? String(barWeightKg) : '');
-                          setShowCustomBar(true);
-                        }}
-                        style={[styles.barOption, isCustomActive && !isPeekingBar && styles.barOptionActive, isCustomPeek && styles.barOptionPeeking]}
-                        activeOpacity={0.7}
-                      >
-                        {showCustomBar ? (
-                          <TextInput
-                            style={styles.barCustomInput}
-                            value={customBarText}
-                            onChangeText={setCustomBarText}
-                            keyboardType="decimal-pad"
-                            autoFocus
-                            selectTextOnFocus
-                            onBlur={() => {
-                              const val = parseFloat(customBarText);
-                              if (!isNaN(val) && val > 0) setBarAndNotify(val);
-                              setShowCustomBar(false);
-                            }}
-                            onSubmitEditing={() => {
-                              const val = parseFloat(customBarText);
-                              if (!isNaN(val) && val > 0) setBarAndNotify(val);
-                              setShowCustomBar(false);
-                            }}
-                          />
-                        ) : (
-                          <Text style={[styles.barOptionText, isCustomActive && !isPeekingBar && styles.barOptionTextActive, isCustomPeek && styles.barOptionTextPeeking]}>
-                            {isCustomPeek ? `${peekBarbellWeight}kg` : isCustomActive ? `${barWeightKg}kg` : 'Custom'}
-                          </Text>
-                        )}
-                      </TouchableOpacity>
-                    </>
-                  );
-                })()}
-              </View>
-            )}
-
-            {/* Machine selector — cable and machine exercises */}
-            {isCableMachine && (
-              <View style={styles.barSelectorRow}>
-                {(() => {
+            {/* Equipment + muscles meta row (July 31 2026, ported from the client)
+                — replaces the old full-width bar/brand pill rows: a compact chip
+                (tap = bottom-sheet picker) + the primary muscle as text (tap =
+                body popup). While PEEKING the chip flips amber to the FIRST
+                session's bar/brand, like the old pills did. */}
+            {(isBarType || isCableMachine || (exercise.muscleGroups?.length ?? 0) > 0) && (
+              <View style={styles.exMetaRow}>
+                {(isBarType || isCableMachine) && (() => {
                   const peekedSet = peekingSetId != null ? exercise.sets.find(s => s.localId === peekingSetId) ?? null : null;
                   const hasPeekSetData = peekedSet != null && (peekedSet.firstSessionWeightKg != null || peekedSet.firstSessionReps != null);
-                  const peekBrand = hasPeekSetData ? (exercise.firstSessionMachineBrand ?? machineBrand) : null;
-                  const MAIN_BRANDS = ['HumanSport', 'Gym80'];
-                  const isExtended = machineBrand != null && !MAIN_BRANDS.includes(machineBrand);
+                  const peekLabel = hasPeekSetData
+                    ? (isBarType
+                      ? (exercise.firstSessionBarbellWeightKg != null ? `Bar ${exercise.firstSessionBarbellWeightKg} kg` : null)
+                      : (exercise.firstSessionMachineBrand ?? null))
+                    : null;
+                  const label = peekLabel ?? (isBarType ? `Bar ${barWeightKg} kg` : (machineBrand ?? 'Machine'));
                   return (
-                    <>
-                      {MAIN_BRANDS.map(brand => {
-                        const isActive = machineBrand === brand;
-                        const isPeek = peekBrand === brand;
-                        return (
-                          <TouchableOpacity
-                            key={brand}
-                            onPress={() => setMachineAndNotify(brand)}
-                            style={[styles.barOption, isActive && styles.barOptionActive, isPeek && styles.barOptionPeeking]}
-                            activeOpacity={0.7}
-                          >
-                            <Text style={[styles.barOptionText, isActive && styles.barOptionTextActive, isPeek && styles.barOptionTextPeeking]}>{brand}</Text>
-                          </TouchableOpacity>
-                        );
-                      })}
-                      <TouchableOpacity
-                        onPress={() => setMachineBrandModalOpen(true)}
-                        style={[styles.barOption, isExtended && styles.barOptionActive, peekBrand != null && !MAIN_BRANDS.includes(peekBrand) && styles.barOptionPeeking]}
-                        activeOpacity={0.7}
-                      >
-                        <Text
-                          style={[
-                            styles.barOptionText,
-                            isExtended && styles.barOptionTextActive,
-                            peekBrand != null && !MAIN_BRANDS.includes(peekBrand) && styles.barOptionTextPeeking,
-                          ]}
-                          numberOfLines={1}
-                        >
-                          {isExtended ? machineBrand! : (peekBrand != null && !MAIN_BRANDS.includes(peekBrand) ? peekBrand : en.machineSelector.more)}
-                        </Text>
-                      </TouchableOpacity>
-                    </>
+                    <TouchableOpacity
+                      style={[styles.equipChip, peekLabel != null && styles.equipChipPeek]}
+                      onPress={() => setEquipPickerOpen(true)}
+                      activeOpacity={0.7}
+                      hitSlop={{ top: 6, bottom: 6 }}
+                    >
+                      <SymbolView name="dumbbell" size={12} tintColor={peekLabel != null ? '#c8a800' : '#3a7d6b'} />
+                      <Text style={[styles.equipChipText, peekLabel != null && styles.equipChipTextPeek]} numberOfLines={1}>{label}</Text>
+                      <SymbolView name="chevron.down" size={7} tintColor={peekLabel != null ? '#c8a800' : '#9bbfb2'} />
+                    </TouchableOpacity>
                   );
                 })()}
+                {(exercise.muscleGroups?.length ?? 0) > 0 && (
+                  <TouchableOpacity onPress={() => setMusclePopupOpen(true)} activeOpacity={0.7} hitSlop={{ top: 6, bottom: 6 }} style={{ flexShrink: 1 }}>
+                    <Text style={styles.muscleMetaText} numberOfLines={1}>
+                      {exercise.muscleGroups[0]}
+                      {(exercise.muscleGroups.length - 1 + (exercise.secondaryMuscleGroups?.length ?? 0)) > 0
+                        ? `  +${exercise.muscleGroups.length - 1 + (exercise.secondaryMuscleGroups?.length ?? 0)}`
+                        : ''}
+                    </Text>
+                  </TouchableOpacity>
+                )}
               </View>
             )}
 
-            {/* Sets section label */}
-            <View style={styles.setSectionLabelRow}>
-              <Text style={styles.setSectionLabel}>Sets</Text>
-            </View>
-
-            {/* Column headers */}
+            {/* Column headers — SETS folded into the same line (July 31 2026; the
+                standalone "Sets" label row is gone, one line instead of two) */}
             <View style={styles.setColHeaderRow}>
-              <View style={{ width: 30 }} />
+              <Text style={[styles.setColLabel, { width: 30, textAlign: 'center' }]}>SETS</Text>
               <Text style={[styles.setColLabel, { flex: 1.2, textAlign: 'center' }]}>KG</Text>
               <Text style={[styles.setColLabel, { flex: 1, textAlign: 'center', paddingLeft: 6 }]}>REPS</Text>
               <Text style={[styles.setColLabel, { flex: 1.2, textAlign: 'center' }]}>TOTAL</Text>
@@ -5867,33 +5893,30 @@ function ExerciseCard({
                   <SymbolView name="arrow.down.circle" size={16} tintColor={ACCENT} />
                   <Text style={styles.addSetMenuText}>{en.doMode.addDropset}</Text>
                 </TouchableOpacity>
+                <View style={styles.addSetMenuDiv} />
+                <TouchableOpacity style={styles.addSetMenuBtn} onPress={() => { onCameraPress(); setAddSetMenuOpen(false); }} activeOpacity={0.7}>
+                  <SymbolView name="camera" size={16} tintColor={ACCENT} />
+                  <Text style={styles.addSetMenuText}>{en.doMode.addPhoto}</Text>
+                </TouchableOpacity>
               </View>
             ) : (
-              /* Same toolbar as the client side. Solid = look at something (video,
-                 info) · dashed = adds something (photo, set), the two on the
-                 right. All four the same size. */
+              /* One row (July 31 2026, same as the client): Info (solid = look at
+                 something) · Rest timer (the wide one — what you reach for
+                 mid-set) · + (dashed = adds something: set, warm-up, dropset,
+                 photo). Play left the toolbar — the card's thumb opens the media. */
               <View style={styles.iconToolbar}>
-                <TouchableOpacity style={styles.iconBtn} onPress={onVideoPress} activeOpacity={0.7}>
-                  <SymbolView name="play.fill" size={17} tintColor={ACCENT} style={{ width: 20, height: 20 }} />
-                </TouchableOpacity>
-                <TouchableOpacity style={styles.iconBtn} onPress={() => { setInfoSeen(true); onOpenInfo(); }} activeOpacity={0.7}>
+                <TouchableOpacity style={[styles.iconBtn, styles.iconBtnSquare]} onPress={onOpenInfo} activeOpacity={0.7}>
                   <SymbolView name="info.circle" size={17} tintColor={ACCENT} style={{ width: 20, height: 20 }} />
-                  {showInfoDot && <View style={styles.infoDotBadge} />}
                 </TouchableOpacity>
-                <DashedBtnWrapper style={styles.iconBtn} onPress={onCameraPress} activeOpacity={0.7}>
-                  <SymbolView name="camera" size={17} tintColor={ACCENT} style={{ width: 20, height: 20 }} />
-                </DashedBtnWrapper>
-                <DashedBtnWrapper style={styles.iconBtn} onPress={() => setAddSetMenuOpen(true)} activeOpacity={0.7}>
+                <TouchableOpacity style={[styles.iconBtn, styles.restTimerBtnInline]} onPress={() => onStartRest()} activeOpacity={0.7}>
+                  <SymbolView name="timer" size={15} tintColor={ACCENT} style={{ width: 18, height: 18 }} />
+                  <Text style={styles.restTimerBtnText}>{en.doMode.restTimer}</Text>
+                </TouchableOpacity>
+                <DashedBtnWrapper style={[styles.iconBtn, styles.iconBtnSquare]} onPress={() => setAddSetMenuOpen(true)} activeOpacity={0.7}>
                   <SymbolView name="plus" size={17} tintColor={ACCENT} style={{ width: 20, height: 20 }} />
                 </DashedBtnWrapper>
               </View>
             )}
-
-            {/* Start timer button */}
-            <TouchableOpacity style={styles.startTimerBtn} onPress={() => onStartRest()} activeOpacity={0.7}>
-              <SymbolView name="timer" size={14} tintColor={ACCENT} />
-              <Text style={styles.startTimerBtnText}>{en.doMode.startTimer}</Text>
-            </TouchableOpacity>
 
             {/* Session photo thumbnails */}
             {photoUrls.length > 0 && (
@@ -5914,18 +5937,32 @@ function ExerciseCard({
                 history in place, then "See all" opens the full info panel */}
             <CardNoteFooter
               exercise={exercise}
+              lastCompletedSessionAt={lastCompletedSessionAt}
               onAddNote={onAddExerciseNote}
               onEditNote={onEditExerciseNote}
-              onOpenInfo={() => { setInfoSeen(true); onOpenInfo(); }}
+              onOpenInfo={onOpenInfo}
             />
           </View>
         )}
       </Animated.View>
-      {machineBrandModalOpen && (
-        <MachineBrandModal
-          currentBrand={machineBrand}
-          onSelect={(brand) => { setMachineAndNotify(brand); setMachineBrandModalOpen(false); }}
-          onClose={() => setMachineBrandModalOpen(false)}
+      {/* Muscle popup — opened from the meta-row muscle text (the silhouette
+          fallback thumb still opens its own). */}
+      <MusclePopup
+        visible={musclePopupOpen}
+        onClose={() => setMusclePopupOpen(false)}
+        muscleGroups={exercise.muscleGroups ?? []}
+        secondaryMuscleGroups={exercise.secondaryMuscleGroups ?? []}
+      />
+      {/* Bar-weight / machine-brand picker — behind the equipment chip. */}
+      {equipPickerOpen && (
+        <EquipPickerSheet
+          isBarType={isBarType}
+          isZBar={isZBar}
+          barWeightKg={barWeightKg}
+          machineBrand={machineBrand}
+          onPickBar={setBarAndNotify}
+          onPickBrand={setMachineAndNotify}
+          onClose={() => setEquipPickerOpen(false)}
         />
       )}
     </Swipeable>
@@ -5933,68 +5970,96 @@ function ExerciseCard({
   );
 }
 
-// ─── MachineBrandModal ───────────────────────────────────────────────────────────
-
-function MachineBrandModal({
-  currentBrand,
-  onSelect,
+// ─── EquipPickerSheet ────────────────────────────────────────────────────────────
+// White bottom sheet behind the expanded card's equipment chip (July 31 2026,
+// ported from the client) — replaces both the old in-card bar/brand pill rows
+// and the "More brands" sheet. One list to pick the bar weight or the machine
+// brand, custom entry at the bottom; picking closes first (`close(then)`).
+function EquipPickerSheet({
+  isBarType,
+  isZBar,
+  barWeightKg,
+  machineBrand,
+  onPickBar,
+  onPickBrand,
   onClose,
 }: {
-  currentBrand: string | null;
-  onSelect: (brand: string) => void;
+  isBarType: boolean;
+  isZBar: boolean;
+  barWeightKg: number;
+  machineBrand: string | null;
+  onPickBar: (kg: number) => void;
+  onPickBrand: (brand: string) => void;
   onClose: () => void;
 }) {
-  const PRESET_BRANDS = [
+  const [customText, setCustomText] = useState('');
+  const barOptions = isZBar ? [5, 7.5] : [15, 20];
+  const brandOptions: string[] = [
+    en.machineSelector.humanSport,
+    en.machineSelector.gym80,
     en.machineSelector.technogym,
     en.machineSelector.lifeFitness,
     en.machineSelector.precor,
     en.machineSelector.hammerStrength,
   ];
-  const isCustom = currentBrand != null && !['HumanSport', 'Gym80', ...PRESET_BRANDS].includes(currentBrand);
-  const [customText, setCustomText] = useState(isCustom ? currentBrand! : '');
-
+  const isCustomBar = isBarType && !barOptions.includes(barWeightKg);
+  const isCustomBrand = !isBarType && machineBrand != null && !brandOptions.includes(machineBrand);
+  const submitCustom = (close: (then?: () => void) => void) => {
+    const t = customText.trim();
+    if (!t) return;
+    if (isBarType) {
+      const v = parseFloat(t.replace(',', '.'));
+      if (isNaN(v) || v <= 0) return;
+      close(() => onPickBar(v));
+    } else {
+      close(() => onPickBrand(t));
+    }
+  };
   return (
-    <BottomSheet onClose={onClose}>
+    <BottomSheet onClose={onClose} avoidKeyboard>
       {close => (
-        <View style={styles.sheetContent}>
-          <Text style={styles.centeredModalTitle}>{en.machineSelector.moreBrandsTitle}</Text>
-          <ScrollView bounces={false} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} style={{ marginBottom: 12 }} contentContainerStyle={{ gap: 8 }}>
-            {PRESET_BRANDS.map(brand => (
-              <TouchableOpacity
-                key={brand}
-                onPress={() => close(() => onSelect(brand))}
-                style={[styles.brandPickerRow, currentBrand === brand && styles.brandPickerRowActive]}
-                activeOpacity={0.7}
-              >
-                <Text style={[styles.brandPickerText, currentBrand === brand && styles.brandPickerTextActive]}>{brand}</Text>
-                {currentBrand === brand && <SymbolView name="checkmark" size={14} tintColor="#fff" />}
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
-          <View style={styles.brandCustomRow}>
+        <View style={styles.equipSheetContent}>
+          <Text style={styles.equipSheetTitle}>{isBarType ? en.machineSelector.sheetTitleBar : en.machineSelector.sheetTitleMachine}</Text>
+          {(isBarType ? barOptions.map(String) : brandOptions).map((opt, i) => {
+            const active = isBarType ? String(barWeightKg) === opt : machineBrand === opt;
+            return (
+              <View key={opt}>
+                {i > 0 && <View style={styles.equipSheetDiv} />}
+                <TouchableOpacity
+                  style={styles.equipSheetRow}
+                  activeOpacity={0.7}
+                  onPress={() => close(() => (isBarType ? onPickBar(parseFloat(opt)) : onPickBrand(opt)))}
+                >
+                  <Text style={[styles.equipSheetRowText, active && styles.equipSheetRowTextActive]}>
+                    {isBarType ? `${opt} kg` : opt}
+                  </Text>
+                  {active && <SymbolView name="checkmark" size={15} tintColor={ACCENT} />}
+                </TouchableOpacity>
+              </View>
+            );
+          })}
+          <View style={styles.equipSheetCustomRow}>
             <TextInput
-              style={styles.brandCustomInput}
+              style={styles.equipSheetCustomInput}
               value={customText}
               onChangeText={setCustomText}
-              placeholder={en.machineSelector.customPlaceholder}
-              placeholderTextColor="#bbb"
-              // No `returnKeyType` — iOS paints the prominent return types (Search/Go/Send/Done)
-              // as a filled system-blue key, which is off-palette everywhere in this app; see the
-              // picker's search field, where Vitek rejected it. `onSubmitEditing` below still fires
-              // on the plain return key, so nothing about the behaviour changes.
-              onSubmitEditing={() => { if (customText.trim()) { const v = customText.trim(); close(() => onSelect(v)); } }}
+              // A custom value that's currently ACTIVE shows as the greenish
+              // placeholder, so the sheet still says what's selected.
+              placeholder={isCustomBar ? `${barWeightKg} kg` : isCustomBrand ? machineBrand! : (isBarType ? en.machineSelector.customBarPlaceholder : en.machineSelector.customPlaceholder)}
+              placeholderTextColor={isCustomBar || isCustomBrand ? '#3a7d6b' : '#bbb'}
+              keyboardType={isBarType ? 'decimal-pad' : 'default'}
+              // No `returnKeyType` — iOS paints the prominent return types as a filled
+              // system-blue key, rejected app-wide (see the picker's search field).
+              onSubmitEditing={() => submitCustom(close)}
             />
             <TouchableOpacity
-              onPress={() => { if (customText.trim()) { const v = customText.trim(); close(() => onSelect(v)); } }}
-              style={[styles.brandCustomSetBtn, !customText.trim() && styles.brandCustomSetBtnDisabled]}
+              onPress={() => submitCustom(close)}
+              style={[styles.equipSheetSetBtn, !customText.trim() && styles.equipSheetSetBtnDisabled]}
               activeOpacity={0.7}
             >
-              <Text style={styles.brandCustomSetBtnText}>{en.machineSelector.set}</Text>
+              <Text style={styles.equipSheetSetBtnText}>{en.machineSelector.set}</Text>
             </TouchableOpacity>
           </View>
-          <TouchableOpacity style={[styles.centeredModalDoneBtn, { marginTop: 8 }]} onPress={() => close()} activeOpacity={0.85}>
-            <Text style={styles.centeredModalDoneBtnText}>{en.common.cancel}</Text>
-          </TouchableOpacity>
         </View>
       )}
     </BottomSheet>
@@ -6037,11 +6102,19 @@ function InlineSetRow({
 }) {
   const hasSetNotes = set.trainerNotes.some(n => !n.isDeleted) || set.clientNotes.some(n => !n.isDeleted);
   const peekTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const peekedThisTouchRef = useRef(false);
 
+  // ⚠️ The note opens on onPress ONLY — never on pressOut (July 31 2026 fix,
+  // both files). pressOut also fires when a touch is CANCELLED (the scroll steals
+  // the gesture), so the old "pressOut with the peek timer still pending → note"
+  // logic opened the note popup for anyone scrolling with a thumb over the set
+  // numbers. onPress never fires on a cancelled/moved touch.
   const handleSetNumPressIn = () => {
     if (set.isDropset) return;
+    peekedThisTouchRef.current = false;
     peekTimerRef.current = setTimeout(() => {
       peekTimerRef.current = null;
+      peekedThisTouchRef.current = true;
       onPeekStart();
     }, 250);
   };
@@ -6051,10 +6124,15 @@ function InlineSetRow({
     if (peekTimerRef.current !== null) {
       clearTimeout(peekTimerRef.current);
       peekTimerRef.current = null;
-      onNotePress();
-    } else if (isPeeking) {
-      onPeekEnd();
     }
+    if (isPeeking) onPeekEnd();
+  };
+
+  const handleSetNumPress = () => {
+    if (set.isDropset) return;
+    // A long-hold that showed the peek must not ALSO open the note on release.
+    if (peekedThisTouchRef.current) { peekedThisTouchRef.current = false; return; }
+    onNotePress();
   };
 
   const displayWeight = isPeeking
@@ -6079,6 +6157,7 @@ function InlineSetRow({
     <View style={[styles.inlineSetRow, set.isDropset && styles.inlineDropsetRow, set.isRemoved && styles.inlineSetRemoved]}>
       <TouchableOpacity
         style={styles.setNumCol}
+        onPress={handleSetNumPress}
         onPressIn={handleSetNumPressIn}
         onPressOut={handleSetNumPressOut}
         activeOpacity={1}
@@ -6533,8 +6612,9 @@ function ExerciseInfoModal({
 // "See more" unfolds up to 5 previous notes in place; once unfolded the link becomes
 // "See all" → the full ExerciseInfoModal.
 
-function CardNoteFooter({ exercise, onAddNote, onEditNote, onOpenInfo }: {
+function CardNoteFooter({ exercise, lastCompletedSessionAt, onAddNote, onEditNote, onOpenInfo }: {
   exercise: SessionExercise;
+  lastCompletedSessionAt?: string | null;
   onAddNote: (text: string) => void;
   onEditNote: (noteId: string, text: string) => void;
   onOpenInfo: () => void;
@@ -6567,9 +6647,16 @@ function CardNoteFooter({ exercise, onAddNote, onEditNote, onOpenInfo }: {
   const renderNote = (n: NoteEntry & { role: 'trainer' | 'client' }) => (
     <View key={n.id} style={[styles.fNoteRow, editingId === n.id && styles.fNoteRowEditing]}>
       <View style={{ flex: 1 }}>
-        <Text style={[styles.noteDateLabel, n.role === 'client' && styles.clientNoteDateLabel]}>
-          {n.role === 'client' ? `CLIENT${n.date ? `  ·  ${n.date}` : ''}` : n.date}
-        </Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+          <Text style={[styles.noteDateLabel, n.role === 'client' && styles.clientNoteDateLabel]}>
+            {n.role === 'client' ? `CLIENT${n.date ? `  ·  ${n.date}` : ''}` : n.date}
+          </Text>
+          {/* The one "unread note" indicator (July 31 2026, replaced the dots):
+              the trainer sees NEW on the CLIENT's notes, only from a later visit. */}
+          {n.role === 'client' && noteIsNew(n, lastCompletedSessionAt) && (
+            <View style={styles.noteNewPill}><Text style={styles.noteNewPillText}>NEW</Text></View>
+          )}
+        </View>
         <Text style={styles.noteFooterText}>{n.text}</Text>
       </View>
       {n.role === 'trainer' && (
@@ -7858,10 +7945,24 @@ const styles = StyleSheet.create({
   // Fixed-header (option 2) glass timer pill + collapsed stopwatch + banner
   combinedPillShadow: { borderRadius: 20, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.22, shadowRadius: 8, elevation: 4 },
   combinedPillGlass: { flexDirection: 'row', alignItems: 'center', borderRadius: 20, overflow: 'hidden', paddingHorizontal: 14, paddingVertical: 7, gap: 10 },
-  fixedBanner: { position: 'absolute', top: 0, left: 0, right: 0, zIndex: 10, overflow: 'hidden' },
+  // ── Slim pinned bar (July 31 2026 redesign, ported from the client).
+  // Transparent over the banner; brand-green glass fades in via navBgOpacity.
+  pinBar: { position: 'absolute', top: 0, left: 0, right: 0, zIndex: 10 },
+  pinBarRow: { flex: 1, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, gap: 8 },
+  pinBarCenter: { flex: 1, minWidth: 0, justifyContent: 'center' },
+  pinBarName: { color: '#fff', fontSize: 15, fontWeight: '700', letterSpacing: -0.2 },
+  pinBarMeta: { color: 'rgba(255,255,255,0.65)', fontSize: 11, marginTop: 1, flexShrink: 1 },
+  pinBarMetaDone: { color: 'rgba(255,255,255,0.95)', fontSize: 11, fontWeight: '700', marginTop: 1 },
+  // ── Exercise-list dropdown. `left` set inline: 56 pre-start, 56 + the measured
+  // x of the "X/N done" text while running (anchored under its "0").
+  exListPanel: { position: 'absolute', minWidth: 250, maxWidth: '78%', backgroundColor: '#fff', borderRadius: 18, paddingVertical: 8, shadowColor: '#000', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.18, shadowRadius: 22, elevation: 10 },
+  exListRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 16, paddingVertical: 10 },
+  exListCheck: { width: 18, height: 18, borderRadius: 9, backgroundColor: ACCENT, alignItems: 'center', justifyContent: 'center' },
+  exListCheckMark: { color: '#fff', fontSize: 10, fontWeight: '700' },
+  exListDot: { width: 18, height: 18, borderRadius: 9, borderWidth: 1.5, borderColor: '#d8d8d4' },
+  exListName: { flex: 1, fontSize: 15, fontWeight: '600', color: TEXT },
+  exListNameDone: { color: '#9a9a96', fontWeight: '500' },
   bannerBottom: { position: 'absolute', left: 0, right: 0, bottom: 46, paddingHorizontal: 20, flexDirection: 'row', alignItems: 'flex-end', gap: 10 },
-  bannerTopTitle: { color: '#fff', fontSize: 16, fontWeight: '700' },
-  bannerTopMeta: { color: 'rgba(255,255,255,0.6)', fontSize: 11, marginTop: 1 },
   bannerTitle: { color: '#fff', fontSize: 24, fontWeight: '700', letterSpacing: 0.2 },
   bannerCount: { color: 'rgba(255,255,255,0.72)', fontSize: 13, fontWeight: '600', marginTop: 3 },
   bannerCap: { position: 'absolute', bottom: 0, left: 0, right: 0, height: 26, backgroundColor: '#fff', borderTopLeftRadius: 26, borderTopRightRadius: 26 },
@@ -7901,8 +8002,13 @@ const styles = StyleSheet.create({
   ssPill: { backgroundColor: 'rgba(36,78,67,0.12)', paddingHorizontal: 5, paddingVertical: 1, borderRadius: 100 },
   ssPillText: { fontSize: 9, fontWeight: '700', color: '#244e43' },
   ssLabelTextPaused: { opacity: 0.35 },
-  setSectionLabelRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 12, paddingTop: 8, paddingBottom: 2 },
-  setSectionLabel: { fontSize: 11, fontWeight: '600', color: '#244e43', letterSpacing: 0.5 },
+  // ── Expanded-card meta row (equipment chip + muscle text, July 31 2026)
+  exMetaRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingBottom: 6 },
+  equipChip: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 100, backgroundColor: '#eef7f3' },
+  equipChipPeek: { backgroundColor: '#fff8e8' },
+  equipChipText: { fontSize: 12, fontWeight: '600', color: '#3a7d6b', maxWidth: 150 },
+  equipChipTextPeek: { color: '#c8a800' },
+  muscleMetaText: { fontSize: 12, fontWeight: '600', color: '#8fb3a6' },
 
   swipeRow: { marginBottom: 16, position: 'relative' },
   swipeActions: { flexDirection: 'row', alignItems: 'stretch', overflow: 'hidden' },
@@ -7949,13 +8055,14 @@ const styles = StyleSheet.create({
 
   // 17/700 (was 16/600) — the bold set chips below stole the hierarchy from the name.
   // Tight tracking (-0.4) so system SF reads as a designed headline, not default UI text.
-  exerciseName: { fontSize: 17, fontWeight: '700', color: TEXT, flexShrink: 1, letterSpacing: -0.4 },
+  // 16/600 since July 31 2026 (was 17/700 — the bump existed to fight the bold
+  // chips; the calmer card lets it come back down).
+  exerciseName: { fontSize: 16, fontWeight: '600', color: TEXT, flexShrink: 1, letterSpacing: -0.3 },
   cardChevronRow: { alignItems: 'center', paddingTop: 6 },
   infoBtn: { width: 15, height: 15, borderRadius: 7.5, borderWidth: 1.5, borderColor: '#ccc', backgroundColor: 'transparent', alignItems: 'center', justifyContent: 'center' },
   infoBtnText: { fontSize: 9, fontWeight: '700', color: '#ccc', lineHeight: 11 },
   infoBtnActive: { borderColor: ACCENT },
   infoBtnTextActive: { color: ACCENT },
-  infoDotBadge: { position: 'absolute', top: 5, right: 6, width: 6, height: 6, borderRadius: 3, backgroundColor: ACCENT },
 
   addedLabel: { fontSize: 11, color: '#aaa', marginBottom: 1 },
   ogLabel: { fontSize: 11, color: '#aaa', fontStyle: 'italic', marginBottom: 1 },
@@ -7969,9 +8076,14 @@ const styles = StyleSheet.create({
   setChipMoreText: { fontSize: 12, fontWeight: '700', color: '#a3a39e' },
   collapsedNoteRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 5, marginTop: 6, paddingRight: 8 },
   collapsedNoteText: { flex: 1, fontSize: 12, color: '#8a8a8a', lineHeight: 16 },
-  collapsedNoteEmpty: { flex: 1, fontSize: 12, color: '#c2c2bd', lineHeight: 16, fontStyle: 'italic' },
+  setChipValMuted: { color: '#c2c2bd' },
+  // ── Card thumb: photo/video 60, silhouette 46; floats down the right side on
+  // an open card (round 10 — full size without inflating the header).
+  cardThumbWrap: { width: 60, height: 60, borderRadius: 11, overflow: 'hidden', backgroundColor: '#f0f0ee' },
+  cardThumbImg: { width: '100%', height: '100%' },
+  cardThumbPlay: { position: 'absolute', bottom: 4, right: 4, width: 18, height: 18, borderRadius: 9, backgroundColor: 'rgba(0,0,0,0.5)', alignItems: 'center', justifyContent: 'center' },
+  cardThumbFloatExpanded: { position: 'absolute', top: 0, right: 0, zIndex: 1 },
   numCircleCollapsedShift: { transform: [{ translateY: 8 }] },
-  nameNoteDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: ACCENT, flexShrink: 0 },
   noteFooterV2: { marginHorizontal: 12, marginTop: 4, paddingTop: 10, paddingBottom: 10, borderTopWidth: 1, borderTopColor: '#e8e8e4' },
   noteFooterHeadRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 },
   noteFooterLabel: { fontSize: 10, fontWeight: '700', color: '#aaa', letterSpacing: 0.5, marginBottom: 3 },
@@ -8005,25 +8117,20 @@ const styles = StyleSheet.create({
 
   setsDivider: { height: 1, backgroundColor: '#f0f0ee', marginHorizontal: 12, marginBottom: 2 },
 
-  barSelectorRow: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, paddingVertical: 8 },
-  barOption: { flex: 1, alignItems: 'center', paddingVertical: 7, borderRadius: 100, borderWidth: 1, borderColor: '#e0e0dc', backgroundColor: '#f9f9f7' },
-  barOptionActive: { backgroundColor: ACCENT, borderColor: ACCENT },
-  barOptionPeeking: { backgroundColor: '#fff8e8', borderColor: '#c8a800' },
-  barOptionText: { fontSize: 13, fontWeight: '600', color: MUTED },
-  barOptionTextActive: { color: '#fff' },
-  barOptionTextPeeking: { color: '#c8a800' },
-  barCustomInput: { fontSize: 13, fontWeight: '600', color: TEXT, minWidth: 44, textAlign: 'center', padding: 0 },
+  // ── Equipment picker bottom sheet (bar weight / machine brand)
+  equipSheetContent: { paddingHorizontal: 20, paddingBottom: 6 },
+  equipSheetTitle: { fontSize: 17, fontWeight: '700', color: TEXT, marginBottom: 6, paddingTop: 2 },
+  equipSheetDiv: { height: StyleSheet.hairlineWidth, backgroundColor: '#ececea' },
+  equipSheetRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 13 },
+  equipSheetRowText: { fontSize: 15, fontWeight: '500', color: TEXT },
+  equipSheetRowTextActive: { color: ACCENT, fontWeight: '700' },
+  equipSheetCustomRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 8, marginBottom: 4 },
+  equipSheetCustomInput: { flex: 1, backgroundColor: '#f5f5f3', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 9, fontSize: 14, color: TEXT },
+  equipSheetSetBtn: { backgroundColor: ACCENT, borderRadius: 100, paddingHorizontal: 16, paddingVertical: 9 },
+  equipSheetSetBtnDisabled: { opacity: 0.4 },
+  equipSheetSetBtnText: { color: '#fff', fontSize: 13, fontWeight: '700' },
 
   brandModal: { position: 'absolute', top: SCREEN_H * 0.18, left: 24, right: 24, maxHeight: SCREEN_H * 0.65, backgroundColor: CARD, borderRadius: 20, padding: 20 },
-  brandPickerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 13, paddingHorizontal: 16, borderRadius: 10, borderWidth: 1, borderColor: '#e0e0dc', backgroundColor: '#f9f9f7' },
-  brandPickerRowActive: { backgroundColor: ACCENT, borderColor: ACCENT },
-  brandPickerText: { fontSize: 15, fontWeight: '500', color: TEXT },
-  brandPickerTextActive: { color: '#fff', fontWeight: '600' },
-  brandCustomRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 4 },
-  brandCustomInput: { flex: 1, fontSize: 15, color: TEXT, borderWidth: 1, borderColor: '#e0e0dc', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, backgroundColor: '#f9f9f7' },
-  brandCustomSetBtn: { paddingHorizontal: 16, paddingVertical: 10, borderRadius: 10, backgroundColor: ACCENT },
-  brandCustomSetBtnDisabled: { backgroundColor: '#ccc' },
-  brandCustomSetBtnText: { color: '#fff', fontSize: 14, fontWeight: '600' },
 
   setColHeaderRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingTop: 5, paddingBottom: 4, gap: 8 },
   colHeaderDivider: { height: 1, backgroundColor: '#e8e8e4', marginHorizontal: 12, marginBottom: 2 },
@@ -8072,8 +8179,11 @@ const styles = StyleSheet.create({
   addSetMenuText: { fontSize: 14, fontWeight: '600', color: TEXT },
   addSetMenuDiv: { height: 1, backgroundColor: BORDER },
 
-  startTimerBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 10, marginHorizontal: 12, marginBottom: 8, borderRadius: 10, borderWidth: 1.5, borderColor: ACCENT, backgroundColor: '#edf8f5' },
-  startTimerBtnText: { fontSize: 13, fontWeight: '700', color: ACCENT },
+  // Toolbar variants (July 31 2026): Info and + are compact squares beside the
+  // wide Rest-timer button.
+  iconBtnSquare: { flex: 0, width: 46 },
+  restTimerBtnInline: { flexDirection: 'row', gap: 6, backgroundColor: '#edf8f5' },
+  restTimerBtnText: { fontSize: 13, fontWeight: '700', color: ACCENT },
 
   changesLogEntry: { fontSize: 13, color: MUTED, lineHeight: 20, marginBottom: 3 },
   changesLogEntryNew: { backgroundColor: '#edf9f4', borderLeftWidth: 3, borderLeftColor: ACCENT, borderRadius: 8, paddingVertical: 8, paddingHorizontal: 10, marginBottom: 6 },
@@ -8114,6 +8224,9 @@ const styles = StyleSheet.create({
   clientNoteEntry: { backgroundColor: '#f0f8f5', borderWidth: 1, borderColor: '#d0eee6' },
   noteEntryBody: { flex: 1, gap: 2 },
   noteDateLabel: { fontSize: 11, fontWeight: '700', color: '#aaa' },
+  // Tiny "NEW" tag beside a client note's date — the one unread-note marker.
+  noteNewPill: { backgroundColor: ACCENT, borderRadius: 4, paddingHorizontal: 4, paddingVertical: 1 },
+  noteNewPillText: { color: '#fff', fontSize: 8, fontWeight: '800', letterSpacing: 0.5 },
   noteBodyText: { fontSize: 14, color: TEXT, lineHeight: 20 },
   clientNoteDateLabel: { color: '#80bfaa' },
   clientNoteBodyText: { color: '#3a7d6b' },
@@ -8135,7 +8248,6 @@ const styles = StyleSheet.create({
   restHideRow: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingVertical: 2 },
   restHideText: { fontSize: 14, fontWeight: '600', color: ACCENT },
   restPillWrap: { position: 'absolute', right: 16, alignItems: 'flex-end' },
-  bannerPeekRoot: { flex: 1, backgroundColor: 'rgba(0,0,0,0.94)', justifyContent: 'center' },
   // Green filled + bigger (was white w/ green text) — needs to stand out; drag it anywhere. Overtime flips the pill red.
   restPill: { flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: ACCENT, borderRadius: 100, paddingLeft: 16, paddingRight: 14, paddingVertical: 12, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.22, shadowRadius: 8, elevation: 5 },
   restPillOver: { backgroundColor: '#e53935' },
@@ -8182,8 +8294,10 @@ const styles = StyleSheet.create({
   cameraBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 8, paddingHorizontal: 10, borderRadius: 8, borderWidth: 1.5, borderColor: ACCENT, borderStyle: 'dashed' },
   cameraBtnText: { fontSize: 13, color: ACCENT },
   peekModalBox: { backgroundColor: '#fff', borderRadius: 16, width: '90%', aspectRatio: 4 / 3, overflow: 'hidden', alignSelf: 'center' },
-  peekRow: { flexDirection: 'row', alignItems: 'center', width: '96%', alignSelf: 'center' },
-  peekArrowBtn: { width: 36, alignItems: 'center', justifyContent: 'center', paddingVertical: 16 },
+  // Full-screen session-photo peek (July 31 2026 — photos show AS TAKEN, contain
+  // on near-black; the 4:3 white box is video-only now).
+  peekPhotoRoot: { flex: 1, backgroundColor: 'rgba(0,0,0,0.94)' },
+  peekEdgeArrow: { position: 'absolute', top: '50%', marginTop: -18, width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
   peekIndexBadge: { position: 'absolute', bottom: 8, left: 0, right: 0, alignItems: 'center' },
   peekIndexText: { color: '#fff', fontSize: 11, fontWeight: '600', backgroundColor: 'rgba(0,0,0,0.4)', paddingHorizontal: 10, paddingVertical: 3, borderRadius: 100, overflow: 'hidden' },
   peekDeleteBtn: { position: 'absolute', top: 8, right: 8, width: 30, height: 30, borderRadius: 15, backgroundColor: 'rgba(0,0,0,0.55)', alignItems: 'center', justifyContent: 'center' },
@@ -8209,6 +8323,10 @@ const styles = StyleSheet.create({
   confirmPrimaryBtn: { backgroundColor: ACCENT, borderRadius: 100, paddingVertical: 14, alignSelf: 'stretch', alignItems: 'center' },
   confirmPrimaryBtnText: { color: '#fff', fontSize: 15, fontWeight: '700' },
   confirmSecondaryBtn: { backgroundColor: '#c8c8c2', borderRadius: 100, paddingVertical: 14, alignSelf: 'stretch', alignItems: 'center', borderWidth: 1, borderColor: 'rgba(0,0,0,0.08)' },
+  // White pill with an ACCENT outline — a peer action beside the filled primary
+  // (the finish confirm's "Complete — X/N done").
+  confirmOutlineBtn: { backgroundColor: '#fff', borderRadius: 100, paddingVertical: 14, alignSelf: 'stretch', alignItems: 'center', borderWidth: 1.5, borderColor: ACCENT },
+  confirmOutlineBtnText: { color: ACCENT, fontSize: 15, fontWeight: '700' },
   confirmSecondaryBtnText: { color: TEXT, fontSize: 15, fontWeight: '600' },
   confirmDangerBtn: { backgroundColor: '#e85d4a', borderRadius: 100, paddingVertical: 14, alignSelf: 'stretch', alignItems: 'center' },
   confirmDangerBtnText: { color: '#fff', fontSize: 15, fontWeight: '700' },
