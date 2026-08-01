@@ -76,8 +76,17 @@ type BuilderExercise = {
  * exercise list including each set's typed reps/weight, which is the work that cannot be
  * reconstructed. The three `loaded*` fields are context, not input: they decide whether Save
  * updates the original workout or writes a copy.
+ *
+ * ⚠️ `v` invalidates every draft written before the preload-failure fix (Aug 2026). A draft used
+ * to be written whenever the preload *finished* — including when it finished by THROWING (a
+ * request that hit lib/supabase's 20s deadline on a bad connection). That wrote `{name, items: []}`
+ * over a workout that has exercises, and because the draft is applied AFTER the preload on every
+ * later open, the workout then loaded and was immediately emptied again — permanently, since the
+ * empty draft kept re-saving itself. Drafts are now only written from a preload that SUCCEEDED;
+ * this bump throws away the poisoned ones already on disk.
  */
 type BuilderDraft = {
+  v: 2;
   workoutName: string;
   workoutCategory: WorkoutCategory | null;
   stretchType: 'upper_body' | 'lower_body' | 'full_body' | null;
@@ -411,6 +420,9 @@ export default function WorkoutBuilderScreen() {
   const [workoutName, setWorkoutName] = useState('');
   const [workoutCategory, setWorkoutCategory] = useState<WorkoutCategory | null>(null);
   const [categoryPickerOpen, setCategoryPickerOpen] = useState(false);
+  // Set only once a Save has actually been blocked by it — a fresh builder shouldn't open
+  // already scolding the trainer for a field they haven't reached yet.
+  const [categoryMissing, setCategoryMissing] = useState(false);
   const [stretchType, setStretchType] = useState<'upper_body' | 'lower_body' | 'full_body' | null>(null);
   const isStretchingCategory = workoutCategory != null && workoutCategory in STRETCHING_CATEGORY_TO_STRETCH_TYPE;
   const [coverImageUri, setCoverImageUri] = useState<string | null>(null);
@@ -429,7 +441,23 @@ export default function WorkoutBuilderScreen() {
   // The two preload effects below fill the form from the DB asynchronously. The draft is NEWER
   // than what they load (it contains those edits plus whatever came after), so it must be
   // applied AFTER them — never racing them.
-  const [preloadSettled, setPreloadSettled] = useState(!templateId && !editWorkoutId);
+  //
+  // ⚠️ "Finished" is NOT "succeeded". Any of the preload's queries can throw (lib/supabase gives
+  // every request a 20s deadline, so a dead gym connection surfaces as a rejection), and a form
+  // left half-filled by a failed load must never become the basis for anything: not a draft
+  // written over the real workout, and not a Save that would soft-delete every exercise the
+  // preload didn't manage to read. So the outcome is tracked, not just the fact that it is over.
+  const needsPreload = !!(templateId || editWorkoutId);
+  const [preloadState, setPreloadState] = useState<'none' | 'loading' | 'ok' | 'error'>(
+    needsPreload ? 'loading' : 'none'
+  );
+  // Params can arrive a render late; without this a workout opened for editing would be treated
+  // as a blank new build for one render — long enough for the draft machinery to start.
+  useEffect(() => {
+    if (needsPreload) setPreloadState(s => (s === 'none' ? 'loading' : s));
+  }, [needsPreload]);
+  const [reloadKey, setReloadKey] = useState(0);
+  const preloadOk = preloadState === 'none' || preloadState === 'ok';
   const [draftApplied, setDraftApplied] = useState(false);
   const [saveSheetOpen, setSaveSheetOpen] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -495,19 +523,25 @@ export default function WorkoutBuilderScreen() {
     if (!templateId) return;
     let cancelled = false;
     (async () => {
-      const { data: tmpl } = await supabase.from('workout_templates').select('*').eq('id', templateId).maybeSingle();
-      if (cancelled || !tmpl) return;
+      const { data: tmpl, error: tmplErr } = await supabase.from('workout_templates').select('*').eq('id', templateId).maybeSingle();
+      if (cancelled) return;
+      // A template we cannot read is a failed load, not an empty one — never fall through to a
+      // blank form the trainer might then save as a new template.
+      if (tmplErr) throw tmplErr;
+      if (!tmpl) throw new Error(`Template ${templateId} not found`);
       const t = tmpl as any;
       setWorkoutName(t.name ?? '');
       setWorkoutCategory((t.category ?? null) as WorkoutCategory | null);
       setStretchType((t.stretch_type ?? null) as 'upper_body' | 'lower_body' | 'full_body' | null);
       if (t.cover_image_url) { setCoverImageUri(t.cover_image_url); setLoadedCoverUrl(t.cover_image_url); }
 
-      const { data: tes } = await supabase.from('template_exercises').select('*').eq('template_id', templateId).order('order_index', { ascending: true });
+      const { data: tes, error: tesErr } = await supabase.from('template_exercises').select('*').eq('template_id', templateId).order('order_index', { ascending: true });
+      if (tesErr) throw tesErr;
       const teList = (tes ?? []) as any[];
       if (teList.length === 0) return;
       const exIds = [...new Set(teList.map(te => te.exercise_id))] as string[];
-      const { data: exs } = await supabase.from('exercises').select('*').in('id', exIds);
+      const { data: exs, error: exsErr } = await supabase.from('exercises').select('*').in('id', exIds);
+      if (exsErr) throw exsErr;
       const exMap = new Map((exs ?? []).map((e: any) => [e.id, e as Exercise]));
       const { data: tss } = await supabase.from('template_sets').select('*').in('template_exercise_id', teList.map(te => te.id)).order('set_number', { ascending: true });
       const tsByTe = new Map<string, any[]>();
@@ -540,9 +574,15 @@ export default function WorkoutBuilderScreen() {
         loaded.push({ key: uid(), exercise: ex, sets, is_superset: !!te.is_superset, expanded: false });
       }
       if (!cancelled) setItems(loaded);
-    })().finally(() => { if (!cancelled) setPreloadSettled(true); });
+    })().then(
+      () => { if (!cancelled) setPreloadState('ok'); },
+      err => {
+        console.error('[WorkoutBuilder] template preload failed:', err);
+        if (!cancelled) setPreloadState('error');
+      },
+    );
     return () => { cancelled = true; };
-  }, [templateId]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [templateId, reloadKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Launched from the Workouts Library day picker: preload an existing workout to
   // review/tweak before scheduling. Set rows are pre-filled with the client's
@@ -551,8 +591,12 @@ export default function WorkoutBuilderScreen() {
     if (!editWorkoutId) return;
     let cancelled = false;
     (async () => {
-      const { data: w } = await supabase.from('workouts').select('*').eq('id', editWorkoutId).maybeSingle();
-      if (cancelled || !w) return;
+      const { data: w, error: wErr } = await supabase.from('workouts').select('*').eq('id', editWorkoutId).maybeSingle();
+      if (cancelled) return;
+      // ⚠️ Both of these used to `return` quietly, which rendered as an empty builder that looked
+      // like a brand-new workout — and Save from there writes a fresh copy instead of editing.
+      if (wErr) throw wErr;
+      if (!w) throw new Error(`Workout ${editWorkoutId} not found`);
       const wr = w as any;
       setWorkoutName(wr.name ?? '');
       setWorkoutCategory((wr.category ?? null) as WorkoutCategory | null);
@@ -562,11 +606,13 @@ export default function WorkoutBuilderScreen() {
       setLoadedOrderIndex(typeof wr.order_index === 'number' ? wr.order_index : 0);
       if (wr.cover_image_url) { setCoverImageUri(wr.cover_image_url); setLoadedCoverUrl(wr.cover_image_url); }
 
-      const { data: wes } = await supabase.from('workout_exercises').select('*').eq('workout_id', editWorkoutId).eq('is_active', true).order('order_index', { ascending: true });
+      const { data: wes, error: wesErr } = await supabase.from('workout_exercises').select('*').eq('workout_id', editWorkoutId).eq('is_active', true).order('order_index', { ascending: true });
+      if (wesErr) throw wesErr;
       const weList = (wes ?? []) as any[];
       if (weList.length === 0) { if (!cancelled) setItems([]); return; }
       const exIds = [...new Set(weList.map(we => we.exercise_id))] as string[];
-      const { data: exs } = await supabase.from('exercises').select('*').in('id', exIds);
+      const { data: exs, error: exsErr } = await supabase.from('exercises').select('*').in('id', exIds);
+      if (exsErr) throw exsErr;
       const exMap = new Map((exs ?? []).map((e: any) => [e.id, e as Exercise]));
       const { data: wss } = await supabase.from('workout_sets').select('*').in('workout_exercise_id', weList.map(we => we.id)).order('set_number', { ascending: true });
       const wsByWe = new Map<string, any[]>();
@@ -600,18 +646,27 @@ export default function WorkoutBuilderScreen() {
         loaded.push({ key: uid(), exercise: ex, sets, is_superset: !!we.is_superset, expanded: false, originalWeId: we.id });
       }
       if (!cancelled) setItems(loaded);
-    })().finally(() => { if (!cancelled) setPreloadSettled(true); });
+    })().then(
+      () => { if (!cancelled) setPreloadState('ok'); },
+      err => {
+        console.error('[WorkoutBuilder] workout preload failed:', err);
+        if (!cancelled) setPreloadState('error');
+      },
+    );
     return () => { cancelled = true; };
-  }, [editWorkoutId, clientId, scheduleDate]);
+  }, [editWorkoutId, clientId, scheduleDate, reloadKey]);
 
-  // Put back what was on screen when the app died. Runs once, after any preload has settled,
-  // so it overwrites the DB copy rather than being overwritten by it.
+  // Put back what was on screen when the app died. Runs once, after any preload has SUCCEEDED,
+  // so it overwrites the DB copy rather than being overwritten by it. A preload that failed is
+  // not a starting point: restoring on top of a half-filled form (and then re-saving that as the
+  // draft) is how the workout got emptied in the first place — leave it alone and offer Retry.
   useEffect(() => {
-    if (!draftKey || !preloadSettled || draftApplied) return;
+    if (!draftKey || !preloadOk || draftApplied) return;
     let cancelled = false;
     void loadFormDraft<BuilderDraft>(draftKey).then(draft => {
       if (cancelled) { return; }
-      if (draft) {
+      // Drafts from before the fix can be poisoned (see BuilderDraft) — ignore them.
+      if (draft && draft.v === 2) {
         setWorkoutName(draft.workoutName ?? '');
         setWorkoutCategory((draft.workoutCategory ?? null) as WorkoutCategory | null);
         setStretchType(draft.stretchType ?? null);
@@ -626,23 +681,25 @@ export default function WorkoutBuilderScreen() {
       setDraftApplied(true);
     });
     return () => { cancelled = true; };
-  }, [draftKey, preloadSettled, draftApplied]);
+  }, [draftKey, preloadOk, draftApplied]);
 
   // Mirror the work to disk as it changes. Never before the restore has run — that would
-  // overwrite the draft with the empty form we are about to replace.
+  // overwrite the draft with the empty form we are about to replace — and never off the back of
+  // a failed preload, which is a form that only LOOKS like the trainer emptied it.
   useEffect(() => {
-    if (!draftKey || !draftApplied) return;
+    if (!draftKey || !draftApplied || !preloadOk) return;
     // Emptied out — clear rather than leave the last non-empty draft behind, or exercises the
     // trainer deliberately removed would come back after a crash.
     if (!workoutName.trim() && items.length === 0) { void clearFormDraft(draftKey); return; }
     const t = setTimeout(() => {
       void saveFormDraft<BuilderDraft>(draftKey, {
+        v: 2,
         workoutName, workoutCategory, stretchType, coverImageUri, items,
         loadedWorkoutClientId, loadedRoutineId, loadedCoverUrl,
       });
     }, 500);
     return () => clearTimeout(t);
-  }, [draftKey, draftApplied, workoutName, workoutCategory, stretchType, coverImageUri, items,
+  }, [draftKey, draftApplied, preloadOk, workoutName, workoutCategory, stretchType, coverImageUri, items,
       loadedWorkoutClientId, loadedRoutineId, loadedCoverUrl]);
 
   const updateItem = useCallback((key: string, patch: Partial<BuilderExercise>) => {
@@ -780,6 +837,9 @@ export default function WorkoutBuilderScreen() {
   ).current;
 
   const handleBack = () => {
+    // Nothing to discard when the form was never handed to the trainer — a half-loaded name is
+    // the preload's, not their work.
+    if (preloadState === 'loading' || preloadState === 'error') { router.back(); return; }
     if (workoutName.trim() || items.length > 0) {
       Alert.alert('Discard workout?', 'Your changes will not be saved.', [
         { text: 'Keep editing', style: 'cancel' },
@@ -837,7 +897,21 @@ export default function WorkoutBuilderScreen() {
 
 
   const handleSavePress = () => {
+    // Saving off a form the preload never filled would write a copy (edit) or a blank template.
+    if (preloadState === 'loading') { Alert.alert('Still loading', 'Give it a moment to finish loading this workout.'); return; }
+    if (preloadState === 'error') { Alert.alert("Couldn't load this workout", 'Tap Retry before saving, so your changes go onto the real workout.'); return; }
     if (!workoutName.trim()) { Alert.alert('Name required', 'Please enter a workout name.'); return; }
+    // Every workout gets a category, the same way every workout gets a name — it drives the
+    // cover silhouette, the category pill, the filters and the 48h muscle-rest overlap. Rows
+    // saved before this rule keep their empty category; they are simply never re-saved from
+    // here without picking one.
+    if (!workoutCategory) {
+      setCategoryMissing(true);
+      Alert.alert('Category required', 'Choose a category for this workout — Push, Pull, Legs and so on.', [
+        { text: 'Choose', onPress: () => setCategoryPickerOpen(true) },
+      ]);
+      return;
+    }
     if (items.length === 0) { Alert.alert('No exercises', 'Add at least one exercise before saving.'); return; }
     // Pure edit (opened via ⋯ → Edit workout, no scheduling): save straight in place,
     // preserving the workout's own client + routine placement — don't send the trainer
@@ -1131,6 +1205,31 @@ export default function WorkoutBuilderScreen() {
         </View>
       </SafeAreaView>
 
+      {/* An unloaded builder must never look like an empty one — the form below is the same
+          screen used to build from scratch, so rendering it while the workout is still coming
+          down (or failed to) invites edits that would be saved as a new workout. */}
+      {preloadState === 'loading' && (
+        <View style={styles.preloadState}>
+          <ActivityIndicator color={ACCENT} />
+        </View>
+      )}
+
+      {preloadState === 'error' && (
+        <View style={styles.preloadState}>
+          <SymbolView name="wifi.slash" size={28} tintColor={MUTED} />
+          <Text style={styles.preloadErrorTitle}>Couldn't load this workout</Text>
+          <Text style={styles.preloadErrorSub}>Check your connection and try again — nothing has been changed.</Text>
+          <TouchableOpacity
+            style={styles.preloadRetryBtn}
+            onPress={() => { setPreloadState('loading'); setReloadKey(k => k + 1); }}
+            activeOpacity={0.85}
+          >
+            <Text style={styles.preloadRetryText}>Retry</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
+      {preloadState !== 'loading' && preloadState !== 'error' && (
       <View ref={listContainerRef} style={[styles.flex, { backgroundColor: BG }]} {...panResponder.panHandlers}>
         <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
           <ScrollView
@@ -1194,7 +1293,9 @@ export default function WorkoutBuilderScreen() {
                     </Text>
                   </View>
                 ) : (
-                  <Text style={styles.categoryRowMuted}>None</Text>
+                  <Text style={[styles.categoryRowMuted, categoryMissing && styles.categoryRowRequired]}>
+                    {categoryMissing ? 'Required' : 'Choose one'}
+                  </Text>
                 )}
                 <SymbolView name="chevron.right" size={12} tintColor="#ccc" />
               </TouchableOpacity>
@@ -1232,13 +1333,8 @@ export default function WorkoutBuilderScreen() {
                 {close => (
                   <View style={catPickerStyles.sheetContent}>
                     <Text style={catPickerStyles.title}>Category</Text>
-                    <TouchableOpacity
-                      style={[catPickerStyles.option, !workoutCategory && catPickerStyles.optionActive]}
-                      onPress={() => close(() => { setWorkoutCategory(null); setStretchType(null); })}
-                      activeOpacity={0.7}
-                    >
-                      <Text style={[catPickerStyles.optionText, !workoutCategory && catPickerStyles.optionTextActive]}>None</Text>
-                    </TouchableOpacity>
+                    {/* No "None" row — a workout cannot be saved without a category, so offering
+                        one would only lead to a Save that gets blocked. */}
                     {CATEGORY_OPTIONS.map(cat => {
                       const colors = CATEGORY_COLORS[cat];
                       const isSelected = workoutCategory === cat;
@@ -1246,7 +1342,7 @@ export default function WorkoutBuilderScreen() {
                         <TouchableOpacity
                           key={cat}
                           style={[catPickerStyles.option, isSelected && { backgroundColor: colors.pillBg }]}
-                          onPress={() => close(() => { setWorkoutCategory(cat); setStretchType(null); })}
+                          onPress={() => close(() => { setWorkoutCategory(cat); setStretchType(null); setCategoryMissing(false); })}
                           activeOpacity={0.7}
                         >
                           <View style={[catPickerStyles.optionDot, { backgroundColor: colors.border }]} />
@@ -1269,6 +1365,7 @@ export default function WorkoutBuilderScreen() {
                           onPress={() => close(() => {
                             setWorkoutCategory(cat);
                             setStretchType(STRETCHING_CATEGORY_TO_STRETCH_TYPE[cat]);
+                            setCategoryMissing(false);
                           })}
                           activeOpacity={0.7}
                         >
@@ -1337,6 +1434,7 @@ export default function WorkoutBuilderScreen() {
           </Animated.View>
         )}
       </View>
+      )}
 
       {/* Multi-select action bar */}
       {selectedKeys.size >= 1 && (
@@ -2010,6 +2108,14 @@ const styles = StyleSheet.create({
   categoryRowPill: { borderRadius: 5, paddingHorizontal: 9, paddingVertical: 3 },
   categoryRowPillText: { fontSize: 12, fontWeight: '700' },
   categoryRowMuted: { fontSize: 14, color: '#bbb' },
+  categoryRowRequired: { color: '#c0392b', fontWeight: '700' },
+
+  // Preload gate — shown INSTEAD of the form while an existing workout/template loads.
+  preloadState: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 10, paddingHorizontal: 40, paddingBottom: 80 },
+  preloadErrorTitle: { fontSize: 16, fontWeight: '700', color: TEXT, marginTop: 4 },
+  preloadErrorSub: { fontSize: 13, color: MUTED, textAlign: 'center', lineHeight: 19 },
+  preloadRetryBtn: { marginTop: 8, backgroundColor: ACCENT, borderRadius: 100, paddingHorizontal: 24, paddingVertical: 10 },
+  preloadRetryText: { color: '#fff', fontSize: 14, fontWeight: '700' },
 
   stretchTypeSection: { paddingHorizontal: 16, paddingTop: 12, paddingBottom: 14 },
   stretchTypeLabel: { fontSize: 13, fontWeight: '600', color: MUTED, marginBottom: 10 },
