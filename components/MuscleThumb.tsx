@@ -1,11 +1,12 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { View, StyleSheet, Modal, TouchableWithoutFeedback, TouchableOpacity, useWindowDimensions, Text, Animated } from 'react-native';
 import { TouchableOpacity as GHTouchableOpacity } from 'react-native-gesture-handler';
-import BodyHighlighter from 'react-native-body-highlighter';
 import { SymbolView } from 'expo-symbols';
-// Muscle → slug mapping, focus points and the front/back rule live in the shared
-// module so the Do Mode banner silhouette can't drift from this thumbnail.
-import { toSlugs, getThumbFocus } from '../lib/muscleSilhouette';
+// Muscle → region mapping, focus points and the front/back rule live in the shared
+// module so every silhouette surface reads the same anatomy. Rendered by our own
+// BodyMap (band-clipped sub-regions — "Upper Chest" lights only the upper pec).
+import { toRegions, getThumbFocus } from '../lib/muscleSilhouette';
+import BodyMap from './BodyMap';
 import GlassPanel from './GlassPanel';
 
 interface MuscleThumbProps {
@@ -35,7 +36,7 @@ export function MusclePopup({
   const flipAnim = useRef(new Animated.Value(1)).current;
   const { width: screenWidth, height: screenHeight } = useWindowDimensions();
 
-  const allSlugs = toSlugs(muscleGroups, secondaryMuscleGroups);
+  const regions = toRegions(muscleGroups, secondaryMuscleGroups);
   const { side: primarySide } = getThumbFocus(muscleGroups);
 
   useEffect(() => {
@@ -85,12 +86,11 @@ export function MusclePopup({
               {/* Body silhouette — single side, rotates on flip */}
               <View style={styles.bodyWrap}>
                 <Animated.View style={{ transform: [{ scaleX: flipAnim }] }}>
-                  <BodyHighlighter
-                    data={allSlugs}
+                  <BodyMap
+                    regions={regions}
                     side={activeSide}
                     scale={bodyScale}
                     colors={COLORS}
-                    background="#ffffff"
                   />
                 </Animated.View>
               </View>
@@ -115,7 +115,7 @@ export function MusclePopup({
 export default function MuscleThumb({ muscleGroups, secondaryMuscleGroups = [], size = 54 }: MuscleThumbProps) {
   const [expanded, setExpanded] = useState(false);
 
-  const allSlugs = toSlugs(muscleGroups, secondaryMuscleGroups);
+  const regions = toRegions(muscleGroups, secondaryMuscleGroups);
   const { side: primarySide, yFocus } = getThumbFocus(muscleGroups);
 
   // ── thumbnail: zoomed single view on the first primary muscle area ──────────
@@ -130,12 +130,11 @@ export default function MuscleThumb({ muscleGroups, secondaryMuscleGroups = [], 
       <GHTouchableOpacity onPress={() => setExpanded(true)} activeOpacity={0.85} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
         <View style={[styles.wrap, { width: size, height: size, borderRadius: size * 0.185 }]}>
           <View style={{ position: 'absolute', top: thumbTop, left: thumbLeft }}>
-            <BodyHighlighter
-              data={allSlugs}
+            <BodyMap
+              regions={regions}
               side={primarySide}
               scale={thumbScale}
               colors={COLORS}
-              background="#ffffff"
             />
           </View>
         </View>

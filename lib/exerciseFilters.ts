@@ -15,8 +15,8 @@ const MUSCLE_MAP: Record<string, string[]> = {
   Chest:       ['Upper Chest', 'Mid Chest', 'Lower Chest', 'Chest'],
   Back:        ['Upper Traps', 'Mid Traps / Middle Back', 'Lats', 'Lower Back', 'Back'],
   Shoulders:   ['Front Delts', 'Lateral Delts', 'Rear Delts', 'Shoulders'],
-  Biceps:      ['Biceps'],
-  Triceps:     ['Triceps'],
+  Biceps:      ['Biceps', 'Biceps (Long Head)', 'Biceps (Short Head)'],
+  Triceps:     ['Triceps', 'Triceps (Long Head)', 'Triceps (Lateral Head)', 'Triceps (Medial Head)'],
   Legs:        ['Quads', 'Hamstrings', 'Calves', 'Adductors', 'Abductors', 'Legs'],
   Glutes:      ['Glutes'],
   Core:        ['Upper Abs', 'Lower Abs', 'Obliques', 'Core', 'Abs'],
@@ -58,6 +58,17 @@ export function muscleFilterLabels(muscleGroups: string[]): Set<string> {
   return out;
 }
 
+/**
+ * Display label for an exercise's equipment: main implement first, then the
+ * extras (alternative implements / cable attachments), " · "-joined. An exercise
+ * can carry more than one equipment since Aug 2026 (`extra_equipment`) — every
+ * row that used to print `exercise.equipment` should print this instead.
+ */
+export function equipmentLabel(e: Pick<Exercise, 'equipment' | 'extra_equipment'>): string | null {
+  const all = [e.equipment, ...(e.extra_equipment ?? [])].filter(Boolean) as string[];
+  return all.length ? all.join(' · ') : null;
+}
+
 export function filterExercises(
   exercises: Exercise[],
   query: string,
@@ -74,7 +85,10 @@ export function filterExercises(
   }
 
   if (equipmentFilters.size > 0) {
-    list = list.filter(e => e.equipment != null && equipmentFilters.has(e.equipment));
+    list = list.filter(e =>
+      (e.equipment != null && equipmentFilters.has(e.equipment)) ||
+      (e.extra_equipment ?? []).some(x => equipmentFilters.has(x))
+    );
   }
 
   return list;

@@ -48,7 +48,9 @@ export interface Exercise {
   name: string;
   description: string | null;
   muscle_groups: string[];
+  secondary_muscle_groups?: string[];
   equipment: string | null;
+  extra_equipment?: string[];
   video_url: string | null;
   thumbnail_url: string | null;
   extra_video_urls: string[];

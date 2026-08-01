@@ -20,9 +20,11 @@ import {
   MUSCLE_FILTER_OPTIONS,
   EQUIPMENT_FILTER_OPTIONS,
   filterExercises,
+  equipmentLabel,
   toAlphaSections,
 } from '@/lib/exerciseFilters';
 import { dispatchPick } from '@/lib/exercisePicker';
+import { ExerciseListThumb } from '@/components/ExerciseListThumb';
 import t from '@/i18n/en';
 import type { Exercise } from '@/types/database';
 
@@ -280,12 +282,14 @@ function ExerciseRow({
 }) {
   const firstMuscle = exercise.muscle_groups[0] ?? null;
   const extraMuscles = exercise.muscle_groups.length - 1;
+  const equipLabel = equipmentLabel(exercise);
 
   return (
     <View style={styles.exerciseRow}>
+      <ExerciseListThumb exercise={exercise} />
       <View style={styles.exerciseInfo}>
         <Text style={styles.exerciseName}>{exercise.name}</Text>
-        {(firstMuscle || exercise.equipment) && (
+        {(firstMuscle || equipLabel) && (
           <View style={styles.tagsRow}>
             {firstMuscle && (
               <View style={styles.muscleTag}>
@@ -295,8 +299,8 @@ function ExerciseRow({
                 )}
               </View>
             )}
-            {exercise.equipment && (
-              <Text style={styles.equipText}>{exercise.equipment}</Text>
+            {equipLabel && (
+              <Text style={styles.equipText}>{equipLabel}</Text>
             )}
           </View>
         )}

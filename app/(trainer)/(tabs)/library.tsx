@@ -39,9 +39,11 @@ import {
   MUSCLE_FILTER_OPTIONS,
   EQUIPMENT_FILTER_OPTIONS,
   filterExercises,
+  equipmentLabel,
   toAlphaSections,
 } from '@/lib/exerciseFilters';
 import { relativeTime } from '@/lib/utils';
+import { ExerciseListThumb } from '@/components/ExerciseListThumb';
 import { CATEGORY_COLORS, CATEGORY_OPTIONS, STRETCHING_CATEGORIES } from '@/lib/workoutCategories';
 import type { WorkoutCategory } from '@/lib/workoutCategories';
 import WorkoutPaperCover, { DARK_CARD_FOOTER } from '@/components/WorkoutPaperCover';
@@ -2604,12 +2606,14 @@ export function ExerciseRow({
 }) {
   const firstMuscle = exercise.muscle_groups[0] ?? null;
   const extraMuscles = exercise.muscle_groups.length - 1;
+  const equipLabel = equipmentLabel(exercise);
 
   return (
     <TouchableOpacity style={styles.exerciseRow} onPress={onPress} activeOpacity={0.75}>
+      <ExerciseListThumb exercise={exercise} />
       <View style={styles.exerciseInfo}>
         <Text style={styles.exerciseName}>{exercise.name}</Text>
-        {(firstMuscle || exercise.equipment) && (
+        {(firstMuscle || equipLabel) && (
           <View style={styles.tagsRow}>
             {firstMuscle && (
               <View style={styles.muscleTag}>
@@ -2619,8 +2623,8 @@ export function ExerciseRow({
                 )}
               </View>
             )}
-            {exercise.equipment && (
-              <Text style={styles.equipText}>{exercise.equipment}</Text>
+            {equipLabel && (
+              <Text style={styles.equipText}>{equipLabel}</Text>
             )}
           </View>
         )}

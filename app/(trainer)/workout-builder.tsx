@@ -25,6 +25,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/context/AuthContext';
 import { registerPickHandler } from '@/lib/exercisePicker';
+import { equipmentLabel } from '@/lib/exerciseFilters';
 import { clearFormDraft, loadFormDraft, saveFormDraft } from '@/lib/formDraft';
 import { BottomSheet } from '@/components/BottomSheet';
 import { SessionResumeChip } from '@/components/SessionResumeChip';
@@ -859,7 +860,7 @@ export default function WorkoutBuilderScreen() {
     let createdWorkoutId: string | null = null;
     let createdTemplateId: string | null = null;
     try {
-      const equipment_list = [...new Set(items.map(i => i.exercise.equipment).filter(Boolean) as string[])];
+      const equipment_list = [...new Set(items.flatMap(i => [i.exercise.equipment, ...(i.exercise.extra_equipment ?? [])]).filter(Boolean) as string[])];
       const muscle_groups = [...new Set(items.flatMap(i => i.exercise.muscle_groups))];
 
       // Resolve the cover: reuse an unchanged remote URL as-is (loaded from an
@@ -1508,8 +1509,8 @@ function ExerciseRow({
                     <Text style={styles.muscleTagText}>{firstMuscle}</Text>
                   </View>
                 )}
-                {item.exercise.equipment && (
-                  <Text style={styles.equipText}>{item.exercise.equipment}</Text>
+                {equipmentLabel(item.exercise) && (
+                  <Text style={styles.equipText}>{equipmentLabel(item.exercise)}</Text>
                 )}
                 <Text style={styles.repSummary}>{summary}</Text>
               </View>

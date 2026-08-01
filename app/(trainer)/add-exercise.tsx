@@ -13,7 +13,10 @@ import {
   Platform,
   Image,
   Dimensions,
+  Modal,
+  TouchableWithoutFeedback,
 } from 'react-native';
+import GlassPanel from '@/components/GlassPanel';
 import { LightHeader, HeaderIcon, HEADER_ICON, useHeaderHeight } from '@/components/LightHeader';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SymbolView } from 'expo-symbols';
@@ -47,7 +50,11 @@ const MUSCLE_HIERARCHY: Record<BodySection, MuscleGroupDef[]> = {
     { group: 'Chest',     muscles: ['Upper Chest', 'Mid Chest', 'Lower Chest'] },
     { group: 'Back',      muscles: ['Upper Traps', 'Mid Traps / Middle Back', 'Lats', 'Rear Delts', 'Lower Back'] },
     { group: 'Shoulders', muscles: ['Front Delts', 'Lateral Delts', 'Rear Delts'] },
-    { group: 'Arms',      muscles: ['Biceps', 'Triceps', 'Forearms'] },
+    { group: 'Arms',      muscles: [
+      'Biceps', 'Biceps (Long Head)', 'Biceps (Short Head)',
+      'Triceps', 'Triceps (Long Head)', 'Triceps (Lateral Head)', 'Triceps (Medial Head)',
+      'Forearms',
+    ] },
     { group: 'Core',      muscles: ['Upper Abs', 'Lower Abs', 'Obliques', 'Lower Back'] },
   ],
   lower: [
@@ -60,8 +67,18 @@ const EQUIPMENT_OPTIONS = [
   'Machine', 'Bodyweight', 'Cable', 'Resistance Band', 'TRX',
 ];
 
+// Cable/machine attachments — selectable ALONGSIDE a main implement (multi-equipment,
+// Aug 2026). They can never become the exercise's main `equipment`: at save, mains
+// always order before attachments, so bar-weight / machine-brand detection keeps
+// keying off a real implement.
+const ATTACHMENT_OPTIONS = [
+  'Wide Bar', 'Straight Bar', 'Short Bar', 'Triangle Grip',
+  'Rope', 'Single Handle', 'Ankle Strap',
+];
+
 type VideoItem = { videoUrl: string; thumbnailUri: string | null };
 type PhotoItem = { displayUri: string; localUri: string | null };
+type CustomEquip = { name: string; kind: 'main' | 'attachment' };
 
 export default function AddExerciseScreen() {
   const headerH = useHeaderHeight();
@@ -75,7 +92,23 @@ export default function AddExerciseScreen() {
   const [secondaryMuscleGroups, setSecondaryMuscleGroups] = useState<string[]>([]);
   const [primarySection, setPrimarySection] = useState<BodySection>('upper');
   const [secondarySection, setSecondarySection] = useState<BodySection>('upper');
-  const [equipment, setEquipment] = useState('None');
+  // Multi-equipment: selection order preserved; first MAIN option = the exercise's
+  // `equipment` column, everything else goes to `extra_equipment`. Empty = None.
+  const [equipmentSel, setEquipmentSel] = useState<string[]>([]);
+  // Custom equipment (Aug 2026, reworked same day per Vitek): PERSISTENT
+  // per-trainer options stored in trainer_settings.custom_equipment, shown as
+  // permanent pills in their section ('main' row or attachments row). Tap
+  // selects like any pill; LONG-PRESS opens the popup in edit mode (rename /
+  // delete). A rename does not rewrite other exercises' already-saved text.
+  const [customOptions, setCustomOptions] = useState<CustomEquip[]>([]);
+  const [customEquipOpen, setCustomEquipOpen] = useState(false);
+  const [customEquipKind, setCustomEquipKind] = useState<'main' | 'attachment'>('attachment');
+  const [customEquipEditing, setCustomEquipEditing] = useState<string | null>(null);
+  const [customEquipText, setCustomEquipText] = useState('');
+  // A thumbnail that came with the exercise but was NOT derived from its own
+  // photos/videos (library-seeded exercises carry one). Preserved on save so an
+  // edit doesn't silently wipe it — the old chain photo ?? videoThumb yields null.
+  const [libraryThumbUrl, setLibraryThumbUrl] = useState<string | null>(null);
   const [notes, setNotes] = useState('');
   const [loadingExercise, setLoadingExercise] = useState(isEdit);
   const [saving, setSaving] = useState(false);
@@ -86,6 +119,18 @@ export default function AddExerciseScreen() {
   const [photoItems, setPhotoItems] = useState<PhotoItem[]>([]);
   const [headerFocusY, setHeaderFocusY] = useState(0.5);
   const [scrollLocked, setScrollLocked] = useState(false); // freeze scroll while framing the header photo
+
+  useEffect(() => {
+    if (!profile?.id) return;
+    supabase.from('trainer_settings').select('custom_equipment').eq('trainer_id', profile.id).maybeSingle()
+      .then(({ data }) => {
+        const raw = (data as any)?.custom_equipment;
+        if (Array.isArray(raw)) {
+          setCustomOptions(raw.filter((x: any) =>
+            x && typeof x.name === 'string' && (x.kind === 'main' || x.kind === 'attachment')));
+        }
+      });
+  }, [profile?.id]);
 
   useEffect(() => {
     if (!isEdit) return;
@@ -100,8 +145,11 @@ export default function AddExerciseScreen() {
           setName(e.name);
           setMuscleGroups(e.muscle_groups ?? []);
           setSecondaryMuscleGroups(e.secondary_muscle_groups ?? []);
-          setEquipment(e.equipment ?? 'None');
+          setEquipmentSel([e.equipment, ...((e.extra_equipment ?? []) as string[])].filter(Boolean));
           setNotes(e.description ?? '');
+          if (e.thumbnail_url && !e.video_url && (e.extra_photo_urls ?? []).length === 0) {
+            setLibraryThumbUrl(e.thumbnail_url);
+          }
 
           const videos: VideoItem[] = [];
           if (e.video_url) videos.push({ videoUrl: e.video_url, thumbnailUri: e.thumbnail_url ?? null });
@@ -115,6 +163,52 @@ export default function AddExerciseScreen() {
         setLoadingExercise(false);
       });
   }, [exerciseId, isEdit]);
+
+  const toggleEquipment = (eq: string) => {
+    if (eq === 'None') { setEquipmentSel([]); return; }
+    setEquipmentSel(prev =>
+      prev.includes(eq) ? prev.filter(e => e !== eq) : [...prev, eq]
+    );
+  };
+
+  const persistCustomOptions = (next: CustomEquip[]) => {
+    setCustomOptions(next);
+    if (profile?.id) {
+      supabase.from('trainer_settings')
+        .upsert({ trainer_id: profile.id, custom_equipment: next }, { onConflict: 'trainer_id' })
+        .then(({ error }) => { if (error) console.warn('custom equipment save failed:', error.message); });
+    }
+  };
+
+  const openAddCustom = (kind: 'main' | 'attachment') => {
+    setCustomEquipKind(kind); setCustomEquipEditing(null); setCustomEquipText(''); setCustomEquipOpen(true);
+  };
+  const openEditCustom = (opt: CustomEquip) => {
+    setCustomEquipKind(opt.kind); setCustomEquipEditing(opt.name); setCustomEquipText(opt.name); setCustomEquipOpen(true);
+  };
+
+  const confirmCustomEquip = () => {
+    const v = customEquipText.trim();
+    setCustomEquipOpen(false);
+    if (!v) return;
+    if (customEquipEditing) {
+      if (v === customEquipEditing) return;
+      persistCustomOptions(customOptions.map(o => o.name === customEquipEditing ? { ...o, name: v } : o));
+      setEquipmentSel(prev => prev.map(e => e === customEquipEditing ? v : e));
+      return;
+    }
+    const taken = customOptions.some(o => o.name.toLowerCase() === v.toLowerCase())
+      || EQUIPMENT_OPTIONS.some(o => o.toLowerCase() === v.toLowerCase())
+      || ATTACHMENT_OPTIONS.some(o => o.toLowerCase() === v.toLowerCase());
+    if (!taken) persistCustomOptions([...customOptions, { name: v, kind: customEquipKind }]);
+  };
+
+  const deleteCustomEquip = () => {
+    if (!customEquipEditing) return;
+    setCustomEquipOpen(false);
+    persistCustomOptions(customOptions.filter(o => o.name !== customEquipEditing));
+    setEquipmentSel(prev => prev.filter(e => e !== customEquipEditing));
+  };
 
   const toggleMuscle = (mg: string) => {
     setMuscleGroups(prev =>
@@ -231,15 +325,27 @@ export default function AddExerciseScreen() {
       return;
     }
 
-    // thumbnail_url: first uploaded photo if any, else first video's auto-thumbnail
+    // thumbnail_url: first uploaded photo if any, else first video's auto-thumbnail,
+    // else a pre-existing library thumbnail (seeded exercises — see libraryThumbUrl).
     const autoThumbnail = videoItems[0]?.thumbnailUri ?? null;
-    const finalThumbnail = finalPhotoUrls[0] ?? autoThumbnail;
+    const finalThumbnail = finalPhotoUrls[0] ?? autoThumbnail ?? libraryThumbUrl;
+
+    // Mains before attachments, tap order preserved within each — the first main
+    // is the `equipment` column every existing read keys off. Custom options
+    // count as their own kind.
+    const isAttachmentPick = (e: string) =>
+      ATTACHMENT_OPTIONS.includes(e) || customOptions.some(o => o.name === e && o.kind === 'attachment');
+    const orderedEquipment = [
+      ...equipmentSel.filter(e => !isAttachmentPick(e)),
+      ...equipmentSel.filter(e => isAttachmentPick(e)),
+    ];
 
     const payload = {
       name:                     name.trim(),
       muscle_groups:            muscleGroups,
       secondary_muscle_groups:  secondaryMuscleGroups,
-      equipment:                equipment === 'None' ? null : equipment,
+      equipment:                orderedEquipment[0] ?? null,
+      extra_equipment:          orderedEquipment.slice(1),
       description:              notes.trim() || null,
       video_url:                videoItems[0]?.videoUrl ?? null,
       extra_video_urls:         videoItems.slice(1).map(v => v.videoUrl),
@@ -385,23 +491,105 @@ export default function AddExerciseScreen() {
             ))}
           </View>
 
-          {/* Equipment */}
+          {/* Equipment — multi-select; first main pick = main equipment.
+              Custom options are permanent pills: tap selects, long-press edits. */}
           <FormLabel title={t.library.addExercise.labelEquipment} />
-          <View style={[styles.card, styles.pillCard]}>
-            {EQUIPMENT_OPTIONS.map(eq => {
-              const active = equipment === eq;
-              return (
+          <View style={styles.card}>
+            <View style={[styles.pillCard, { paddingBottom: 4 }]}>
+              {EQUIPMENT_OPTIONS.map(eq => {
+                const active = eq === 'None' ? equipmentSel.length === 0 : equipmentSel.includes(eq);
+                return (
+                  <TouchableOpacity
+                    key={eq}
+                    style={[styles.selectPill, active && styles.selectPillActive]}
+                    onPress={() => toggleEquipment(eq)}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={[styles.selectPillText, active && styles.selectPillTextActive]}>{eq}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+              {customOptions.filter(o => o.kind === 'main').map(opt => {
+                const active = equipmentSel.includes(opt.name);
+                return (
+                  <TouchableOpacity
+                    key={opt.name}
+                    style={[styles.selectPill, active && styles.selectPillActive]}
+                    onPress={() => toggleEquipment(opt.name)}
+                    onLongPress={() => openEditCustom(opt)}
+                    delayLongPress={350}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={[styles.selectPillText, active && styles.selectPillTextActive]}>{opt.name}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+              <TouchableOpacity
+                style={[styles.selectPill, styles.customEquipPill]}
+                onPress={() => openAddCustom('main')}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.customEquipPillText}>{t.library.addExercise.customEquipPill}</Text>
+              </TouchableOpacity>
+            </View>
+            <View style={styles.muscleGroupSection}>
+              <Text style={styles.muscleGroupHeader}>{t.library.addExercise.attachmentsHeader.toUpperCase()}</Text>
+              <View style={styles.muscleGroupPills}>
+                {ATTACHMENT_OPTIONS.map(eq => {
+                  const active = equipmentSel.includes(eq);
+                  return (
+                    <TouchableOpacity
+                      key={eq}
+                      style={[styles.selectPill, active && styles.selectPillActive]}
+                      onPress={() => toggleEquipment(eq)}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={[styles.selectPillText, active && styles.selectPillTextActive]}>{eq}</Text>
+                    </TouchableOpacity>
+                  );
+                })}
+                {customOptions.filter(o => o.kind === 'attachment').map(opt => {
+                  const active = equipmentSel.includes(opt.name);
+                  return (
+                    <TouchableOpacity
+                      key={opt.name}
+                      style={[styles.selectPill, active && styles.selectPillActive]}
+                      onPress={() => toggleEquipment(opt.name)}
+                      onLongPress={() => openEditCustom(opt)}
+                      delayLongPress={350}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={[styles.selectPillText, active && styles.selectPillTextActive]}>{opt.name}</Text>
+                    </TouchableOpacity>
+                  );
+                })}
+                {/* Selected values that exist in no list (option deleted later, or
+                    saved before the persistent list existed) — stay visible while
+                    selected so they can at least be deselected. */}
+                {equipmentSel
+                  .filter(eq => !EQUIPMENT_OPTIONS.includes(eq) && !ATTACHMENT_OPTIONS.includes(eq)
+                    && !customOptions.some(o => o.name === eq))
+                  .map(eq => (
+                    <TouchableOpacity
+                      key={eq}
+                      style={[styles.selectPill, styles.selectPillActive]}
+                      onPress={() => toggleEquipment(eq)}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={[styles.selectPillText, styles.selectPillTextActive]}>{eq}</Text>
+                    </TouchableOpacity>
+                  ))}
                 <TouchableOpacity
-                  key={eq}
-                  style={[styles.selectPill, active && styles.selectPillActive]}
-                  onPress={() => setEquipment(eq)}
+                  style={[styles.selectPill, styles.customEquipPill]}
+                  onPress={() => openAddCustom('attachment')}
                   activeOpacity={0.7}
                 >
-                  <Text style={[styles.selectPillText, active && styles.selectPillTextActive]}>{eq}</Text>
+                  <Text style={styles.customEquipPillText}>{t.library.addExercise.customEquipPill}</Text>
                 </TouchableOpacity>
-              );
-            })}
+              </View>
+            </View>
           </View>
+          <Text style={styles.equipmentHint}>{t.library.addExercise.equipmentHint}</Text>
 
           {/* Notes */}
           <FormLabel title={t.library.addExercise.labelNotes} />
@@ -552,6 +740,49 @@ export default function AddExerciseScreen() {
         </ScrollView>
       </KeyboardAvoidingView>
 
+      {/* Custom equipment — centered glass text-entry (the app-wide popup family).
+          KeyboardAvoidingView keeps the input above the keyboard per the
+          centered-text-entry rule in CLAUDE.md §2. */}
+      <Modal visible={customEquipOpen} transparent animationType="fade" onRequestClose={() => setCustomEquipOpen(false)}>
+        <KeyboardAvoidingView style={styles.customEquipOverlay} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+          <TouchableWithoutFeedback onPress={() => setCustomEquipOpen(false)}>
+            <View style={StyleSheet.absoluteFill} />
+          </TouchableWithoutFeedback>
+          <View style={styles.customEquipShadow}>
+            <GlassPanel style={styles.customEquipBox}>
+              <Text style={styles.customEquipTitle}>
+                {customEquipEditing ? t.library.addExercise.customEquipEditTitle : t.library.addExercise.customEquipTitle}
+              </Text>
+              <TextInput
+                style={styles.customEquipInput}
+                value={customEquipText}
+                onChangeText={setCustomEquipText}
+                placeholder={t.library.addExercise.customEquipPlaceholder}
+                placeholderTextColor="#9aa39e"
+                autoFocus
+                autoCapitalize="words"
+                autoCorrect={false}
+                returnKeyType="done"
+                onSubmitEditing={confirmCustomEquip}
+              />
+              <TouchableOpacity style={styles.customEquipConfirm} onPress={confirmCustomEquip} activeOpacity={0.85}>
+                <Text style={styles.customEquipConfirmText}>
+                  {customEquipEditing ? t.library.addExercise.customEquipSave : t.library.addExercise.customEquipAdd}
+                </Text>
+              </TouchableOpacity>
+              {customEquipEditing != null && (
+                <TouchableOpacity style={styles.customEquipCancel} onPress={deleteCustomEquip} activeOpacity={0.7}>
+                  <Text style={styles.customEquipDeleteText}>{t.library.addExercise.customEquipDelete}</Text>
+                </TouchableOpacity>
+              )}
+              <TouchableOpacity style={styles.customEquipCancel} onPress={() => setCustomEquipOpen(false)} activeOpacity={0.7}>
+                <Text style={styles.customEquipCancelText}>{t.common.cancel}</Text>
+              </TouchableOpacity>
+            </GlassPanel>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
+
       {/* Glass header — rendered last so it overlays the form. Carried the old
           dark-green SafeAreaView bar until July 26. */}
       <LightHeader
@@ -632,6 +863,37 @@ const styles = StyleSheet.create({
     fontSize: 10, fontWeight: '800', color: '#bbb', letterSpacing: 0.8, marginBottom: 8,
   },
   muscleGroupPills: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, paddingBottom: 8 },
+
+  equipmentHint: { fontSize: 12, color: '#999', marginTop: 8 },
+
+  customEquipPill: { backgroundColor: 'transparent', borderWidth: 1.5, borderColor: '#d0d0cc', borderStyle: 'dashed' },
+  customEquipPillText: { fontSize: 13, fontWeight: '600', color: '#999' },
+  // Centered glass text-entry (app-wide popup family: radius-38 shadow wrapper
+  // + GlassPanel, muted grays darkened on glass).
+  customEquipOverlay: {
+    flex: 1, backgroundColor: 'rgba(0,0,0,0.45)',
+    alignItems: 'center', justifyContent: 'center', paddingHorizontal: 24,
+  },
+  customEquipShadow: {
+    alignSelf: 'stretch', borderRadius: 38,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.22, shadowRadius: 28, elevation: 12,
+  },
+  customEquipBox: { borderRadius: 38, overflow: 'hidden', padding: 24 },
+  customEquipTitle: { fontSize: 16, fontWeight: '700', color: TEXT, textAlign: 'center', marginBottom: 14 },
+  customEquipInput: {
+    backgroundColor: '#f5f5f3', borderRadius: 12,
+    paddingHorizontal: 14, paddingVertical: 12,
+    fontSize: 15, color: TEXT, marginBottom: 16,
+  },
+  customEquipConfirm: {
+    backgroundColor: ACCENT, borderRadius: 100,
+    paddingVertical: 13, alignItems: 'center',
+  },
+  customEquipConfirmText: { color: '#fff', fontSize: 15, fontWeight: '700' },
+  customEquipCancel: { paddingVertical: 12, alignItems: 'center' },
+  customEquipCancelText: { fontSize: 14, fontWeight: '600', color: '#414b45' },
+  customEquipDeleteText: { fontSize: 14, fontWeight: '600', color: '#e53935' },
 
   notesInput: {
     fontSize: 15, color: TEXT,
