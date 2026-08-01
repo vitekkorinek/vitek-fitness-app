@@ -125,7 +125,7 @@ import type { Workout } from '@/types/database';
 import en from '@/i18n/en';
 import { setKey, setLabel, buildSetLabels, nextSetNumber } from '@/lib/warmupSets';
 import MuscleThumb, { MusclePopup } from '@/components/MuscleThumb';
-import EquipmentPopup from '@/components/EquipmentPopup';
+import EquipmentPopup, { EquipmentIcon } from '@/components/EquipmentPopup';
 import CategoryCover, { categoryHasCover } from '@/components/CategoryCover';
 import { LightHeader, HeaderIcon, HEADER_ICON, useHeaderHeight } from '@/components/LightHeader';
 import { MUSCLE_FILTER_OPTIONS, matchesMuscleFilters, muscleFilterLabels } from '@/lib/exerciseFilters';
@@ -5280,6 +5280,12 @@ function ExerciseCard({
                 <View style={{ flex: 1 }}>
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                     <Text style={[styles.exerciseName, { flexShrink: 1 }]} numberOfLines={1} ellipsizeMode="tail">{exercise.exerciseName}</Text>
+                    {/* Collapsed equipment mark — the implement as a small drawn
+                        icon so names don't need a "Machine"/"(Cable)" suffix
+                        (Vitek, Aug 1). Gone when expanded: the pill takes over. */}
+                    {!isExpanded && mainEquip != null && (
+                      <EquipmentIcon name={mainEquip} size={17} color="#244e43" strokeWidth={2.1} />
+                    )}
                   </View>
                   {exercise.originalExerciseName && (
                     <Text style={styles.ogLabel}>og. {exercise.originalExerciseName}</Text>
