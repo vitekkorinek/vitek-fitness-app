@@ -603,10 +603,13 @@ const en = {
     customPlaceholder: 'Custom brand...',
     set: 'Set',
     allBrands: 'All',
-    // Equipment picker bottom sheet (client Do Mode, July 31 2026 redesign)
+    // Bar/brand picker behind the Do Mode equipment chip (July 31 2026 redesign;
+    // centered glass popup since Aug 1 2026)
     sheetTitleMachine: 'Machine brand',
     sheetTitleBar: 'Bar weight',
     customBarPlaceholder: 'Custom weight (kg)...',
+    // Equipment-info glass popup (EquipmentPopup, Aug 1 2026)
+    equipmentTitle: 'Equipment',
   },
 
   // Trainer — Finance tab

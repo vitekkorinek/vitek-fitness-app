@@ -1,0 +1,327 @@
+// ─── EquipmentPopup — drawn equipment icons + the "what's used" glass popup ───
+// Aug 1 2026 (Vitek: "as the third pill it could be what is used for it and
+// clicking on it it would show it visually"). Do Mode's expanded card gets an
+// equipment-info pill beside the bar/brand selector chip; tapping it opens this
+// centered Liquid Glass popup listing everything the exercise uses — main
+// implement first, then extras/attachments — each with a drawn line icon.
+// Icons are our own SVG line drawings (react-native-svg), NOT photos: real
+// photos of gym equipment are impossible to source consistently and clash with
+// the illustrated-anatomy direction for exercise media (CLAUDE.md §4). One icon
+// per known EQUIPMENT_OPTIONS / ATTACHMENT_OPTIONS entry; custom equipment
+// falls back to a generic tag icon.
+// Mirrors MusclePopup (components/MuscleThumb.tsx) — the sibling popup in the
+// same meta row: fade Modal, 0.45 overlay, radius-38 shadow wrapper + GlassPanel.
+import React from 'react';
+import { View, StyleSheet, Modal, TouchableWithoutFeedback, Text } from 'react-native';
+import Svg, { Path, Circle, Line, Rect, Ellipse, G } from 'react-native-svg';
+import GlassPanel from './GlassPanel';
+import en from '../i18n/en';
+
+// ─── EquipmentIcon ────────────────────────────────────────────────────────────
+// Minimal geometric line icons on a 24×24 viewBox, stroke-only, round caps.
+// `strokeWidth` is in viewBox units — bump it (~2.3) when rendering small
+// (the 13px pill icon), keep ~1.6 at popup size so the drawings stay light.
+
+export function EquipmentIcon({
+  name,
+  size = 24,
+  color = '#244e43',
+  strokeWidth = 1.7,
+}: {
+  name: string;
+  size?: number;
+  color?: string;
+  strokeWidth?: number;
+}) {
+  const p = {
+    stroke: color,
+    strokeWidth,
+    strokeLinecap: 'round' as const,
+    strokeLinejoin: 'round' as const,
+    fill: 'none' as const,
+  };
+  const key = name.trim().toLowerCase();
+  let icon: React.ReactNode;
+  switch (key) {
+    case 'barbell':
+      icon = (
+        <>
+          <Line x1={2.2} y1={12} x2={3.4} y2={12} {...p} />
+          <Line x1={20.6} y1={12} x2={21.8} y2={12} {...p} />
+          <Rect x={3.4} y={9.2} width={1.9} height={5.6} rx={0.95} {...p} />
+          <Rect x={18.7} y={9.2} width={1.9} height={5.6} rx={0.95} {...p} />
+          <Rect x={6} y={7} width={2.4} height={10} rx={1.2} {...p} />
+          <Rect x={15.6} y={7} width={2.4} height={10} rx={1.2} {...p} />
+          <Line x1={8.6} y1={12} x2={15.4} y2={12} {...p} />
+        </>
+      );
+      break;
+    case 'z bar':
+      icon = (
+        <>
+          <Line x1={2.2} y1={12} x2={3.4} y2={12} {...p} />
+          <Line x1={20.6} y1={12} x2={21.8} y2={12} {...p} />
+          <Rect x={3.4} y={9.2} width={1.9} height={5.6} rx={0.95} {...p} />
+          <Rect x={18.7} y={9.2} width={1.9} height={5.6} rx={0.95} {...p} />
+          <Rect x={6} y={7} width={2.4} height={10} rx={1.2} {...p} />
+          <Rect x={15.6} y={7} width={2.4} height={10} rx={1.2} {...p} />
+          <Path d="M8.6 12 C9.8 9.8 10.6 14.2 12 12 C13.4 9.8 14.2 14.2 15.4 12" {...p} />
+        </>
+      );
+      break;
+    case 'dumbbell':
+      icon = (
+        <>
+          <Rect x={4.4} y={9.6} width={1.7} height={4.8} rx={0.85} {...p} />
+          <Rect x={17.9} y={9.6} width={1.7} height={4.8} rx={0.85} {...p} />
+          <Rect x={6.6} y={8} width={2.6} height={8} rx={1.2} {...p} />
+          <Rect x={14.8} y={8} width={2.6} height={8} rx={1.2} {...p} />
+          <Line x1={9.4} y1={12} x2={14.6} y2={12} {...p} />
+        </>
+      );
+      break;
+    case 'kettlebell':
+      icon = (
+        <>
+          <Circle cx={12} cy={14.2} r={5.3} {...p} />
+          <Path d="M8.9 10.4 C7.4 6.6 9.5 4.6 12 4.6 C14.5 4.6 16.6 6.6 15.1 10.4" {...p} />
+        </>
+      );
+      break;
+    case 'machine':
+      icon = (
+        <>
+          <Line x1={12} y1={2.8} x2={12} y2={6} {...p} />
+          <Rect x={7} y={6} width={10} height={13} rx={1.6} {...p} />
+          <Line x1={7} y1={9.3} x2={17} y2={9.3} {...p} />
+          <Line x1={7} y1={12.6} x2={17} y2={12.6} {...p} />
+          <Line x1={7} y1={15.9} x2={17} y2={15.9} {...p} />
+        </>
+      );
+      break;
+    case 'bodyweight':
+      icon = (
+        <>
+          <Circle cx={12} cy={4.6} r={2.1} {...p} />
+          <Line x1={12} y1={7} x2={12} y2={13.2} {...p} />
+          <Path d="M7 11.4 L12 8.6 L17 11.4" {...p} />
+          <Path d="M8.6 19.4 L12 13.2 L15.4 19.4" {...p} />
+        </>
+      );
+      break;
+    case 'cable':
+      icon = (
+        <>
+          <Line x1={12} y1={2.4} x2={12} y2={3.6} {...p} />
+          <Circle cx={12} cy={6.4} r={2.8} {...p} />
+          <Line x1={14.8} y1={6.4} x2={14.8} y2={17} {...p} />
+          <Line x1={12.5} y1={17} x2={17.1} y2={17} {...p} />
+        </>
+      );
+      break;
+    case 'resistance band':
+      icon = (
+        <G rotation={-28} origin="12, 12">
+          <Ellipse cx={12} cy={12} rx={8.2} ry={4.6} {...p} />
+        </G>
+      );
+      break;
+    case 'trx':
+      icon = (
+        <>
+          <Line x1={12} y1={2.6} x2={12} y2={5.4} {...p} />
+          <Line x1={12} y1={5.4} x2={8.2} y2={15} {...p} />
+          <Line x1={12} y1={5.4} x2={15.8} y2={15} {...p} />
+          <Line x1={8.2} y1={15} x2={8.2} y2={16.8} {...p} />
+          <Line x1={15.8} y1={15} x2={15.8} y2={16.8} {...p} />
+          <Line x1={6.4} y1={16.8} x2={10} y2={16.8} {...p} />
+          <Line x1={14} y1={16.8} x2={17.6} y2={16.8} {...p} />
+        </>
+      );
+      break;
+    case 'wide bar':
+      icon = (
+        <>
+          <Path d="M3 15 C4.2 12.2 7.4 11.2 12 11.2 C16.6 11.2 19.8 12.2 21 15" {...p} />
+          <Line x1={12} y1={11.2} x2={12} y2={8.6} {...p} />
+          <Circle cx={12} cy={7.2} r={1.5} {...p} />
+        </>
+      );
+      break;
+    case 'straight bar':
+      icon = (
+        <>
+          <Line x1={4.4} y1={13.6} x2={19.6} y2={13.6} {...p} />
+          <Line x1={4.4} y1={11.9} x2={4.4} y2={15.3} {...p} />
+          <Line x1={19.6} y1={11.9} x2={19.6} y2={15.3} {...p} />
+          <Line x1={12} y1={13.6} x2={12} y2={10.6} {...p} />
+          <Circle cx={12} cy={9.2} r={1.5} {...p} />
+        </>
+      );
+      break;
+    case 'short bar':
+      icon = (
+        <>
+          <Line x1={7} y1={13.6} x2={17} y2={13.6} {...p} />
+          <Line x1={7} y1={11.9} x2={7} y2={15.3} {...p} />
+          <Line x1={17} y1={11.9} x2={17} y2={15.3} {...p} />
+          <Line x1={12} y1={13.6} x2={12} y2={10.6} {...p} />
+          <Circle cx={12} cy={9.2} r={1.5} {...p} />
+        </>
+      );
+      break;
+    case 'triangle grip':
+      icon = (
+        <>
+          <Circle cx={12} cy={5.6} r={1.5} {...p} />
+          <Line x1={12} y1={7.1} x2={12} y2={8.6} {...p} />
+          <Path d="M12 8.6 L7.6 16 H16.4 Z" {...p} />
+        </>
+      );
+      break;
+    case 'rope':
+      icon = (
+        <>
+          <Circle cx={12} cy={4.4} r={1.5} {...p} />
+          <Path d="M11.3 5.8 C9.6 8.8 8.6 12 8.1 15.4" {...p} />
+          <Path d="M12.7 5.8 C14.4 8.8 15.4 12 15.9 15.4" {...p} />
+          <Circle cx={7.8} cy={17.3} r={1.6} {...p} />
+          <Circle cx={16.2} cy={17.3} r={1.6} {...p} />
+        </>
+      );
+      break;
+    case 'single handle':
+      icon = (
+        <>
+          <Line x1={8.8} y1={8.6} x2={8.8} y2={15.4} {...p} />
+          <Path d="M8.8 8.6 C13.6 7 16.8 9.2 16.8 12 C16.8 14.8 13.6 17 8.8 15.4" {...p} />
+        </>
+      );
+      break;
+    case 'ankle strap':
+      icon = (
+        <>
+          <Rect x={4.6} y={9.2} width={12.6} height={5.8} rx={2.9} {...p} />
+          <Line x1={7.6} y1={10.8} x2={7.6} y2={13.4} {...p} />
+          <Circle cx={19} cy={12.1} r={1.9} {...p} />
+        </>
+      );
+      break;
+    default:
+      // Custom / unknown equipment — generic tag.
+      icon = (
+        <>
+          <Path d="M4.2 4.2 H10.6 L19.8 13.4 L13.4 19.8 L4.2 10.6 Z" {...p} />
+          <Circle cx={7.8} cy={7.8} r={1.3} {...p} />
+        </>
+      );
+  }
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24">
+      {icon}
+    </Svg>
+  );
+}
+
+// ─── EquipmentPopup ───────────────────────────────────────────────────────────
+// `items` come pre-ordered by the caller: main implement first, then extras/
+// attachments (the save ordering already guarantees mains before attachments).
+// Read-only info popup — deliberately no actions, overlay tap dismisses.
+
+export default function EquipmentPopup({
+  visible,
+  onClose,
+  items,
+}: {
+  visible: boolean;
+  onClose: () => void;
+  items: string[];
+}) {
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+      <TouchableWithoutFeedback onPress={onClose}>
+        <View style={styles.overlay}>
+          <TouchableWithoutFeedback>
+            <View style={styles.glassShadow}>
+              <GlassPanel style={styles.glassBox}>
+                <Text style={styles.title}>{en.machineSelector.equipmentTitle}</Text>
+                <View style={styles.rows}>
+                  {items.map((item, i) => (
+                    <View key={`${item}-${i}`} style={styles.row}>
+                      <View style={styles.iconTile}>
+                        <EquipmentIcon name={item} size={26} color="#244e43" strokeWidth={1.6} />
+                      </View>
+                      <Text style={styles.rowText} numberOfLines={1}>{item}</Text>
+                    </View>
+                  ))}
+                </View>
+              </GlassPanel>
+            </View>
+          </TouchableWithoutFeedback>
+        </View>
+      </TouchableWithoutFeedback>
+    </Modal>
+  );
+}
+
+const styles = StyleSheet.create({
+  overlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  // Liquid Glass popup — radius-38 shadow wrapper + GlassPanel (the app-wide
+  // glass pop-up recipe, same as MusclePopup).
+  glassShadow: {
+    borderRadius: 38,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.22,
+    shadowRadius: 28,
+    elevation: 12,
+  },
+  glassBox: {
+    borderRadius: 38,
+    overflow: 'hidden',
+    paddingHorizontal: 24,
+    paddingTop: 22,
+    paddingBottom: 22,
+    minWidth: 250,
+    maxWidth: 320,
+  },
+  // Overline title, darkened for glass legibility (the app-wide OnGlass values).
+  title: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#414b45',
+    letterSpacing: 0.8,
+    textAlign: 'center',
+    textTransform: 'uppercase',
+    marginBottom: 14,
+  },
+  rows: {
+    gap: 10,
+  },
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  // Translucent white tile keeps the line icon readable on the glass —
+  // same family as previewNoteEntryOnGlass.
+  iconTile: {
+    width: 42,
+    height: 42,
+    borderRadius: 13,
+    backgroundColor: 'rgba(255,255,255,0.55)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  rowText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#1f2823',
+    flexShrink: 1,
+  },
+});

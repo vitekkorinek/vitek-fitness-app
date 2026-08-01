@@ -125,7 +125,7 @@ import type { Workout } from '@/types/database';
 import en from '@/i18n/en';
 import { setKey, setLabel, buildSetLabels, nextSetNumber } from '@/lib/warmupSets';
 import MuscleThumb, { MusclePopup } from '@/components/MuscleThumb';
-import { BottomSheet } from '@/components/BottomSheet';
+import EquipmentPopup from '@/components/EquipmentPopup';
 import CategoryCover, { categoryHasCover } from '@/components/CategoryCover';
 import { LightHeader, HeaderIcon, HEADER_ICON, useHeaderHeight } from '@/components/LightHeader';
 import { MUSCLE_FILTER_OPTIONS, matchesMuscleFilters, muscleFilterLabels } from '@/lib/exerciseFilters';
@@ -222,6 +222,7 @@ type SessionExercise = {
   extraPhotoUrls: string[];
   headerFocusY?: number;
   equipment: string | null;
+  extraEquipment: string[];
   exerciseDescription: string | null;
   isDone: boolean;
   addedAt: string | null;
@@ -276,6 +277,7 @@ type LibraryExercise = {
   muscleGroups: string[];
   secondaryMuscleGroups: string[];
   equipment: string | null;
+  extraEquipment: string[];
   thumbnailUrl: string | null;
   videoUrl: string | null;
   extraVideoUrls: string[];
@@ -1040,7 +1042,7 @@ export default function TrainerWorkoutSessionScreen() {
 
     const [{ data: wData }, { data: weData }, { data: clientData }, { data: liveSess }, draft] = await Promise.all([
       supabase.from('workouts').select('id, name, description, goal, client_id, routine_id, created_by, equipment_list, muscle_groups, order_index, notes, cover_image_url, category, stretch_type, created_at').eq('id', workoutId).single(),
-      supabase.from('workout_exercises').select('*, exercises(id, name, muscle_groups, secondary_muscle_groups, video_url, extra_video_urls, extra_photo_urls, thumbnail_url, header_focus_y, equipment, description)').eq('workout_id', workoutId).eq('is_active', true).order('order_index'),
+      supabase.from('workout_exercises').select('*, exercises(id, name, muscle_groups, secondary_muscle_groups, video_url, extra_video_urls, extra_photo_urls, thumbnail_url, header_focus_y, equipment, extra_equipment, description)').eq('workout_id', workoutId).eq('is_active', true).order('order_index'),
       supabase.from('users').select('name').eq('id', clientId).single(),
       // An in_progress row means this session was left running (back-swipe, "Leave —
       // keep it running", or the app being reclaimed by iOS). Adopt it instead of
@@ -1457,6 +1459,7 @@ export default function TrainerWorkoutSessionScreen() {
         extraPhotoUrls: (we.exercises as any)?.extra_photo_urls ?? [],
         headerFocusY: (we.exercises as any)?.header_focus_y ?? 0.5,
         equipment: we.exercises?.equipment ?? null,
+        extraEquipment: (we.exercises as any)?.extra_equipment ?? [],
         exerciseDescription: we.exercises?.description ?? null,
         isDone: false,
         addedAt: wasAddedMidSession && we.created_at ? `Added · ${formatDate((we.created_at as string).split('T')[0])}` : null,
@@ -2541,6 +2544,7 @@ export default function TrainerWorkoutSessionScreen() {
       extraVideoUrls: picked.extraVideoUrls,
       extraPhotoUrls: picked.extraPhotoUrls,
       equipment: picked.equipment,
+      extraEquipment: picked.extraEquipment,
       exerciseDescription: picked.description,
       isDone: false,
       addedAt: sessionCount > 0 ? `Session ${sessionCount + 1} · ${todayLabel()}` : null,
@@ -2576,6 +2580,7 @@ export default function TrainerWorkoutSessionScreen() {
       extraVideoUrls: picked.extraVideoUrls,
       extraPhotoUrls: picked.extraPhotoUrls,
       equipment: picked.equipment,
+      extraEquipment: picked.extraEquipment,
       exerciseDescription: picked.description,
     }));
     setPickMode(null);
@@ -2862,6 +2867,7 @@ export default function TrainerWorkoutSessionScreen() {
       extraVideoUrls: picked.extraVideoUrls,
       extraPhotoUrls: picked.extraPhotoUrls,
       equipment: picked.equipment,
+      extraEquipment: picked.extraEquipment,
       exerciseDescription: picked.description,
       isDone: false,
       addedAt: sessionCount > 0 ? `Session ${sessionCount + 1} · ${todayLabel()}` : null,
@@ -5049,10 +5055,14 @@ function ExerciseCard({
   const closingExternallyRef = useRef(false);
   const [addSetMenuOpen, setAddSetMenuOpen] = useState(false);
   // July 31 2026 redesign: the muscle popup opens from the meta-row muscle text
-  // (the collapsed silhouette thumb is gone when the exercise has a photo), and
-  // the bar/brand picker is a bottom sheet behind the equipment chip.
+  // (the collapsed silhouette thumb is gone when the exercise has a photo).
+  // Aug 1 2026: the bar/brand picker behind the equipment chip is a centered
+  // glass popup (was a BottomSheet for one day — it opened differently from the
+  // muscle text right beside it), and a third equipment-info pill opens the
+  // EquipmentPopup with drawn icons of everything the exercise uses.
   const [musclePopupOpen, setMusclePopupOpen] = useState(false);
   const [equipPickerOpen, setEquipPickerOpen] = useState(false);
+  const [equipInfoOpen, setEquipInfoOpen] = useState(false);
 
   // Round 5 (Vitek): NO dots any more — neither on the Info button nor beside the
   // name. The one indicator is a green "NEW" tag on the note's date in the footer
@@ -5065,6 +5075,15 @@ function ExerciseCard({
   const isZBar = eqRaw === 'z bar';
   const isCableMachine = eqRaw === 'cable' || eqRaw === 'machine';
   const isBarType = isBarbell || isZBar;
+  // What the exercise USES (main + extras/attachments, Aug 2026): the info pill
+  // ALWAYS leads with the main implement (`Cable +2`) whenever any equipment
+  // exists — Vitek's device call, Aug 1: "i know its redundant but it just
+  // makes sense … the brand shouldnt cancel the equipment pill" — so it shows
+  // even beside the bar/brand selector chip (a skip-when-redundant rule was
+  // built first and reversed the same day). Popup lists the full set, main first.
+  const extraEquip = (exercise.extraEquipment ?? []).filter(v => !!v && v.toLowerCase() !== 'none');
+  const mainEquip = exercise.equipment && eqRaw !== 'none' ? exercise.equipment : null;
+  const equipPopupItems = mainEquip ? [mainEquip, ...extraEquip] : extraEquip;
   const defaultBarWeight = isZBar ? 5 : 20;
   const [barWeightKg, setBarWeightKg] = useState(isBarType ? (exercise.targetBarbellWeightKg ?? defaultBarWeight) : 0);
   const setBarAndNotify = (kg: number) => { setBarWeightKg(kg); onUpdateBarbellWeight(kg); };
@@ -5346,7 +5365,7 @@ function ExerciseCard({
                 picker) + the primary muscle as text (tap = body popup). While
                 PEEKING the chip flips amber to the FIRST session's bar/brand,
                 like the old pills did. */}
-            {(isBarType || isCableMachine || (exercise.muscleGroups?.length ?? 0) > 0) && (
+            {(isBarType || isCableMachine || equipPopupItems.length > 0 || (exercise.muscleGroups?.length ?? 0) > 0) && (
               <View style={styles.exMetaRow}>
                 {(isBarType || isCableMachine) && (() => {
                   const peekedSet = peekingSetId != null ? exercise.sets.find(s => s.localId === peekingSetId) ?? null : null;
@@ -5365,15 +5384,38 @@ function ExerciseCard({
                       activeOpacity={0.7}
                       hitSlop={{ top: 6, bottom: 6 }}
                     >
-                      <SymbolView name="dumbbell" size={12} tintColor={peekLabel != null ? '#c8a800' : '#3a7d6b'} />
                       <Text style={[styles.equipChipText, peekLabel != null && styles.equipChipTextPeek]} numberOfLines={1}>{label}</Text>
-                      {!readOnly && <SymbolView name="chevron.down" size={7} tintColor={peekLabel != null ? '#c8a800' : '#9bbfb2'} />}
+                      {!readOnly && <SymbolView name="chevron.down" size={7} tintColor={peekLabel != null ? '#c8a800' : '#3a7d6b'} />}
                     </TouchableOpacity>
                   );
                 })()}
+                {/* Equipment-info pill — always the main implement (+N extras);
+                    tap = glass popup with drawn icons. No chevron: it shows, it
+                    doesn't pick. Stays tappable in read-only (info, like the
+                    muscle text). */}
+                {equipPopupItems.length > 0 && (
+                  <TouchableOpacity
+                    style={styles.equipChip}
+                    onPress={() => setEquipInfoOpen(true)}
+                    activeOpacity={0.7}
+                    hitSlop={{ top: 6, bottom: 6 }}
+                  >
+                    <Text style={styles.equipChipText} numberOfLines={1}>
+                      {equipPopupItems[0]}{equipPopupItems.length > 1 ? `  +${equipPopupItems.length - 1}` : ''}
+                    </Text>
+                  </TouchableOpacity>
+                )}
+                {/* Muscle pill — same pill family as the equipment ones (Vitek,
+                    Aug 1: "it would be good to see the same types of pills";
+                    it was a bare text label and didn't read as tappable). */}
                 {(exercise.muscleGroups?.length ?? 0) > 0 && (
-                  <TouchableOpacity onPress={() => setMusclePopupOpen(true)} activeOpacity={0.7} hitSlop={{ top: 6, bottom: 6 }} style={{ flexShrink: 1 }}>
-                    <Text style={styles.muscleMetaText} numberOfLines={1}>
+                  <TouchableOpacity
+                    style={[styles.equipChip, { flexShrink: 1 }]}
+                    onPress={() => setMusclePopupOpen(true)}
+                    activeOpacity={0.7}
+                    hitSlop={{ top: 6, bottom: 6 }}
+                  >
+                    <Text style={styles.equipChipText} numberOfLines={1}>
                       {exercise.muscleGroups[0]}
                       {(exercise.muscleGroups.length - 1 + (exercise.secondaryMuscleGroups?.length ?? 0)) > 0
                         ? `  +${exercise.muscleGroups.length - 1 + (exercise.secondaryMuscleGroups?.length ?? 0)}`
@@ -5517,31 +5559,43 @@ function ExerciseCard({
         muscleGroups={exercise.muscleGroups ?? []}
         secondaryMuscleGroups={exercise.secondaryMuscleGroups ?? []}
       />
-      {/* Bar-weight / machine-brand picker — behind the equipment chip. */}
-      {equipPickerOpen && (
-        <EquipPickerSheet
-          isBarType={isBarType}
-          isZBar={isZBar}
-          barWeightKg={barWeightKg}
-          machineBrand={machineBrand}
-          onPickBar={setBarAndNotify}
-          onPickBrand={setMachineAndNotify}
-          onClose={() => setEquipPickerOpen(false)}
-        />
-      )}
+      {/* Equipment-info popup — everything the exercise uses, drawn icons. */}
+      <EquipmentPopup
+        visible={equipInfoOpen}
+        onClose={() => setEquipInfoOpen(false)}
+        items={equipPopupItems}
+      />
+      {/* Bar-weight / machine-brand picker — behind the equipment chip.
+          Centered glass popup (Aug 1 2026) so every tap in the meta row opens
+          the same kind of overlay — deliberate exception to the picker-sheet
+          convention, see CLAUDE-domode.md. */}
+      <EquipPickerPopup
+        visible={equipPickerOpen}
+        isBarType={isBarType}
+        isZBar={isZBar}
+        barWeightKg={barWeightKg}
+        machineBrand={machineBrand}
+        onPickBar={setBarAndNotify}
+        onPickBrand={setMachineAndNotify}
+        onClose={() => setEquipPickerOpen(false)}
+      />
     </Swipeable>
     </View>
   );
 }
 
-// ─── EquipPickerSheet ────────────────────────────────────────────────────────────
-// White bottom sheet behind the expanded card's equipment chip (July 31 2026) —
-// replaces BOTH the old in-card bar/brand pill rows and the glass "More brands"
-// popup. One list to pick the bar weight or the machine brand, custom entry at
-// the bottom. Rows use the app's sheet-row convention; picking closes the sheet
-// first (`close(then)`), then applies — so the slide-down never fights the
-// keyboard or the card re-render.
-function EquipPickerSheet({
+// ─── EquipPickerPopup ────────────────────────────────────────────────────────────
+// Centered Liquid Glass popup behind the expanded card's equipment chip (Aug 1
+// 2026 — was a BottomSheet for one day; it opened differently from the muscle
+// text right beside it, and Vitek flagged the slide-up as feeling wrong for this
+// small in-card choice, so every meta-row tap now opens the same kind of
+// centered overlay). One list to pick the bar weight or the machine brand,
+// custom entry at the bottom. Deliberate EXCEPTION to the "pickers are bottom
+// sheets" convention — single entry point, Do Mode's own-treatment family (see
+// CLAUDE-domode.md). KeyboardAvoidingView keeps the custom input above the
+// keyboard, per the centered text-entry rule.
+function EquipPickerPopup({
+  visible,
   isBarType,
   isZBar,
   barWeightKg,
@@ -5550,6 +5604,7 @@ function EquipPickerSheet({
   onPickBrand,
   onClose,
 }: {
+  visible: boolean;
   isBarType: boolean;
   isZBar: boolean;
   barWeightKg: number;
@@ -5559,6 +5614,16 @@ function EquipPickerSheet({
   onClose: () => void;
 }) {
   const [customText, setCustomText] = useState('');
+  useEffect(() => { if (visible) setCustomText(''); }, [visible]);
+  // While the custom input is focused the popup drops to sit ON the keyboard
+  // (Vitek, Aug 1: "the keyboard and the window should meet") — centering in
+  // the space the KAV leaves put a dead gap between box and keyboard.
+  const [kbVisible, setKbVisible] = useState(false);
+  useEffect(() => {
+    const show = Keyboard.addListener(Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow', () => setKbVisible(true));
+    const hide = Keyboard.addListener(Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide', () => setKbVisible(false));
+    return () => { show.remove(); hide.remove(); };
+  }, []);
   const barOptions = isZBar ? [5, 7.5] : [15, 20];
   const brandOptions: string[] = [
     en.machineSelector.humanSport,
@@ -5570,65 +5635,72 @@ function EquipPickerSheet({
   ];
   const isCustomBar = isBarType && !barOptions.includes(barWeightKg);
   const isCustomBrand = !isBarType && machineBrand != null && !brandOptions.includes(machineBrand);
-  const submitCustom = (close: (then?: () => void) => void) => {
+  // Drop the keyboard first so the fade-out never races an open keyboard.
+  const apply = (fn: () => void) => { Keyboard.dismiss(); onClose(); fn(); };
+  const submitCustom = () => {
     const t = customText.trim();
     if (!t) return;
     if (isBarType) {
       const v = parseFloat(t.replace(',', '.'));
       if (isNaN(v) || v <= 0) return;
-      close(() => onPickBar(v));
+      apply(() => onPickBar(v));
     } else {
-      close(() => onPickBrand(t));
+      apply(() => onPickBrand(t));
     }
   };
   return (
-    <BottomSheet onClose={onClose} avoidKeyboard>
-      {close => (
-        <View style={styles.equipSheetContent}>
-          <Text style={styles.equipSheetTitle}>{isBarType ? en.machineSelector.sheetTitleBar : en.machineSelector.sheetTitleMachine}</Text>
-          {(isBarType ? barOptions.map(String) : brandOptions).map((opt, i) => {
-            const active = isBarType ? String(barWeightKg) === opt : machineBrand === opt;
-            return (
-              <View key={opt}>
-                {i > 0 && <View style={styles.equipSheetDiv} />}
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        <View style={[styles.centeredRoot, kbVisible && styles.equipPopRootKb]}>
+          <Pressable style={StyleSheet.absoluteFill} onPress={() => { Keyboard.dismiss(); onClose(); }} />
+          <View style={styles.confirmBoxShadow}>
+            <GlassPanel style={styles.equipPopBox}>
+              <Text style={styles.equipPopTitle}>{isBarType ? en.machineSelector.sheetTitleBar : en.machineSelector.sheetTitleMachine}</Text>
+              {(isBarType ? barOptions.map(String) : brandOptions).map((opt, i) => {
+                const active = isBarType ? String(barWeightKg) === opt : machineBrand === opt;
+                return (
+                  <View key={opt}>
+                    {i > 0 && <View style={styles.equipPopDiv} />}
+                    <TouchableOpacity
+                      style={styles.equipPopRow}
+                      activeOpacity={0.7}
+                      onPress={() => apply(() => (isBarType ? onPickBar(parseFloat(opt)) : onPickBrand(opt)))}
+                    >
+                      <Text style={[styles.equipPopRowText, active && styles.equipPopRowTextActive]}>
+                        {isBarType ? `${opt} kg` : opt}
+                      </Text>
+                      {active && <SymbolView name="checkmark" size={15} tintColor={ACCENT} />}
+                    </TouchableOpacity>
+                  </View>
+                );
+              })}
+              <View style={styles.equipPopCustomRow}>
+                <TextInput
+                  style={styles.equipPopCustomInput}
+                  value={customText}
+                  onChangeText={setCustomText}
+                  // A custom value that's currently ACTIVE shows as the greenish
+                  // placeholder, so the popup still says what's selected.
+                  placeholder={isCustomBar ? `${barWeightKg} kg` : isCustomBrand ? machineBrand! : (isBarType ? en.machineSelector.customBarPlaceholder : en.machineSelector.customPlaceholder)}
+                  placeholderTextColor={isCustomBar || isCustomBrand ? '#3a7d6b' : '#8a938e'}
+                  keyboardType={isBarType ? 'decimal-pad' : 'default'}
+                  // No `returnKeyType` — iOS paints the prominent return types as a filled
+                  // system-blue key, rejected app-wide (see the picker's search field).
+                  onSubmitEditing={submitCustom}
+                />
                 <TouchableOpacity
-                  style={styles.equipSheetRow}
+                  onPress={submitCustom}
+                  style={[styles.equipPopSetBtn, !customText.trim() && styles.equipPopSetBtnDisabled]}
                   activeOpacity={0.7}
-                  onPress={() => close(() => (isBarType ? onPickBar(parseFloat(opt)) : onPickBrand(opt)))}
                 >
-                  <Text style={[styles.equipSheetRowText, active && styles.equipSheetRowTextActive]}>
-                    {isBarType ? `${opt} kg` : opt}
-                  </Text>
-                  {active && <SymbolView name="checkmark" size={15} tintColor={ACCENT} />}
+                  <Text style={styles.equipPopSetBtnText}>{en.machineSelector.set}</Text>
                 </TouchableOpacity>
               </View>
-            );
-          })}
-          <View style={styles.equipSheetCustomRow}>
-            <TextInput
-              style={styles.equipSheetCustomInput}
-              value={customText}
-              onChangeText={setCustomText}
-              // A custom value that's currently ACTIVE shows as the greenish
-              // placeholder, so the sheet still says what's selected.
-              placeholder={isCustomBar ? `${barWeightKg} kg` : isCustomBrand ? machineBrand! : (isBarType ? en.machineSelector.customBarPlaceholder : en.machineSelector.customPlaceholder)}
-              placeholderTextColor={isCustomBar || isCustomBrand ? '#3a7d6b' : '#bbb'}
-              keyboardType={isBarType ? 'decimal-pad' : 'default'}
-              // No `returnKeyType` — iOS paints the prominent return types as a filled
-              // system-blue key, rejected app-wide (see the picker's search field).
-              onSubmitEditing={() => submitCustom(close)}
-            />
-            <TouchableOpacity
-              onPress={() => submitCustom(close)}
-              style={[styles.equipSheetSetBtn, !customText.trim() && styles.equipSheetSetBtnDisabled]}
-              activeOpacity={0.7}
-            >
-              <Text style={styles.equipSheetSetBtnText}>{en.machineSelector.set}</Text>
-            </TouchableOpacity>
+            </GlassPanel>
           </View>
         </View>
-      )}
-    </BottomSheet>
+      </KeyboardAvoidingView>
+    </Modal>
   );
 }
 
@@ -7208,7 +7280,7 @@ function ExerciseLibraryPicker({ onPick, onClose, suggestFor }: {
   useEffect(() => {
     supabase
       .from('exercises')
-      .select('id, name, muscle_groups, secondary_muscle_groups, equipment, thumbnail_url, video_url, extra_video_urls, extra_photo_urls, description')
+      .select('id, name, muscle_groups, secondary_muscle_groups, equipment, extra_equipment, thumbnail_url, video_url, extra_video_urls, extra_photo_urls, description')
       .order('name')
       .then(({ data }) => {
         setItems((data ?? []).map((e: any) => ({
@@ -7217,6 +7289,7 @@ function ExerciseLibraryPicker({ onPick, onClose, suggestFor }: {
           muscleGroups: e.muscle_groups ?? [],
           secondaryMuscleGroups: e.secondary_muscle_groups ?? [],
           equipment: e.equipment ?? null,
+          extraEquipment: e.extra_equipment ?? [],
           thumbnailUrl: e.thumbnail_url ?? null,
           videoUrl: e.video_url ?? null,
           extraVideoUrls: e.extra_video_urls ?? [],
@@ -7763,7 +7836,6 @@ const styles = StyleSheet.create({
   equipChipPeek: { backgroundColor: '#fff8e8' },
   equipChipText: { fontSize: 12, fontWeight: '600', color: '#3a7d6b', maxWidth: 150 },
   equipChipTextPeek: { color: '#c8a800' },
-  muscleMetaText: { fontSize: 12, fontWeight: '600', color: '#8fb3a6' },
 
   swipeRow: { marginBottom: 16, position: 'relative' },
   swipeActions: { flexDirection: 'row', alignItems: 'stretch', overflow: 'hidden' },
@@ -7865,17 +7937,24 @@ const styles = StyleSheet.create({
   setsDivider: { height: 1, backgroundColor: '#f0f0ee', marginHorizontal: 12, marginBottom: 2 },
 
   // ── Equipment picker bottom sheet (bar weight / machine brand)
-  equipSheetContent: { paddingHorizontal: 20, paddingBottom: 6 },
-  equipSheetTitle: { fontSize: 17, fontWeight: '700', color: TEXT, marginBottom: 6, paddingTop: 2 },
-  equipSheetDiv: { height: StyleSheet.hairlineWidth, backgroundColor: '#ececea' },
-  equipSheetRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 13 },
-  equipSheetRowText: { fontSize: 15, fontWeight: '500', color: TEXT },
-  equipSheetRowTextActive: { color: ACCENT, fontWeight: '700' },
-  equipSheetCustomRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 8, marginBottom: 4 },
-  equipSheetCustomInput: { flex: 1, backgroundColor: '#f5f5f3', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 9, fontSize: 14, color: TEXT },
-  equipSheetSetBtn: { backgroundColor: ACCENT, borderRadius: 100, paddingHorizontal: 16, paddingVertical: 9 },
-  equipSheetSetBtnDisabled: { opacity: 0.4 },
-  equipSheetSetBtnText: { color: '#fff', fontSize: 13, fontWeight: '700' },
+  // Bar/brand picker — centered glass popup (Aug 1 2026; the equipSheet* bottom-
+  // sheet styles are gone). Muted values darkened for glass legibility, custom
+  // input on a translucent white fill, hairline in rgba-black per the OnGlass
+  // convention.
+  equipPopBox: { borderRadius: 38, overflow: 'hidden', paddingHorizontal: 24, paddingTop: 20, paddingBottom: 18 },
+  // Keyboard open → the box sits ON the keyboard instead of floating centered
+  // in the leftover space (the KAV bottom = the keyboard top).
+  equipPopRootKb: { justifyContent: 'flex-end', paddingBottom: 10 },
+  equipPopTitle: { fontSize: 17, fontWeight: '700', color: TEXT, textAlign: 'center', marginBottom: 6 },
+  equipPopDiv: { height: StyleSheet.hairlineWidth, backgroundColor: 'rgba(0,0,0,0.08)' },
+  equipPopRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 13 },
+  equipPopRowText: { fontSize: 15, fontWeight: '500', color: '#1f2823' },
+  equipPopRowTextActive: { color: ACCENT, fontWeight: '700' },
+  equipPopCustomRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 10 },
+  equipPopCustomInput: { flex: 1, backgroundColor: 'rgba(255,255,255,0.55)', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 9, fontSize: 14, color: TEXT },
+  equipPopSetBtn: { backgroundColor: ACCENT, borderRadius: 100, paddingHorizontal: 16, paddingVertical: 9 },
+  equipPopSetBtnDisabled: { opacity: 0.4 },
+  equipPopSetBtnText: { color: '#fff', fontSize: 13, fontWeight: '700' },
 
   setColHeaderRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingTop: 3, paddingBottom: 3, gap: 8 },
   colHeaderDivider: { height: 1, backgroundColor: '#e8e8e4', marginHorizontal: 12, marginBottom: 2 },
