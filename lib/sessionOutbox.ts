@@ -82,7 +82,12 @@ export type FinishJob = {
   /** Who wrote the notes in this job (`profile.id`). */
   authorId: string | null;
 
-  addedExercises: { localWeId: string; exerciseId: string; sets: NewSetRow[]; realWeId?: string | null; setsDone?: boolean }[];
+  /**
+   * `isSuperset`/`supersetGroupId` carry the grouping the exercise was added INTO, so an
+   * exercise added to a superset mid-session is still in that superset next time. They are
+   * optional because jobs queued before Aug 1 2026 don't have them (default: standalone).
+   */
+  addedExercises: { localWeId: string; exerciseId: string; sets: NewSetRow[]; isSuperset?: boolean; supersetGroupId?: string | null; realWeId?: string | null; setsDone?: boolean }[];
   extraSets: { workoutExerciseId: string; sets: NewSetRow[] }[];
   replacedExercises: { workoutExerciseId: string; exerciseId: string; originalExerciseId: string; slotNumber: number }[];
   interactionOrder: { workoutExerciseId: string; exerciseId: string; slotNumber: number; position: number }[];
@@ -91,6 +96,14 @@ export type FinishJob = {
   trainingNotes: { id: string; content: string; role: 'trainer' | 'client' }[];
   deleteNoteIds: string[];
   photos: { weId: string; weIsLocal: boolean; photoUrl: string }[];
+  /**
+   * Every exercise in the workout, in the order it stood at FINISH — added ones carry
+   * their LOCAL id (`isLocal`) until the insert above hands back a real one. Without it
+   * an added exercise keeps the `max + 1` order_index it was inserted with and reappears
+   * at the bottom of the workout instead of where it was put. Optional: jobs queued
+   * before Aug 1 2026 don't have it and simply skip the stage.
+   */
+  exerciseOrder?: { weId: string; isLocal: boolean }[];
 
   /**
    * Which stages already landed. A flush resumes from where it stopped instead of
@@ -102,6 +115,9 @@ export type FinishJob = {
     session?: boolean;
     extraSets?: boolean;
     replaced?: boolean;
+    /** The workout's exercise ORDER (`order_index`). Not to be confused with `order`. */
+    exerciseOrder?: boolean;
+    /** The order the exercises were WORKED in (`slot_order_history`). */
     order?: boolean;
     logs?: boolean;
     notes?: boolean;
@@ -301,7 +317,16 @@ async function uploadJob(job: FinishJob): Promise<boolean> {
       if (added.realWeId) continue;
       const { data: inserted, error } = await supabase
         .from('workout_exercises')
-        .insert({ workout_id: targetWorkoutId, exercise_id: added.exerciseId, order_index: nextIdx })
+        .insert({
+          workout_id: targetWorkoutId,
+          exercise_id: added.exerciseId,
+          order_index: nextIdx,
+          // Keep the superset it was added into. A free session's own supersets land here
+          // too: their group id was only ever local (the mid-session `workout_exercises`
+          // update had no row to hit), and every member carries the same one.
+          is_superset: added.isSuperset ?? false,
+          superset_group_id: added.supersetGroupId ?? null,
+        })
         .select('id')
         .single();
       if (error || !inserted) { console.log('[outbox] workout_exercises insert failed:', error?.message); return false; }
@@ -465,6 +490,23 @@ async function uploadJob(job: FinishJob): Promise<boolean> {
       if (error) { console.log('[outbox] session photos insert failed:', error.message); return false; }
     }
     job.done.photos = true;
+    await patchJob(job);
+  }
+
+  // 6. The workout's exercise ORDER. Stage 2 appends added exercises at `max + 1`, so
+  //    without this one added in the MIDDLE of the workout comes back at the bottom of it.
+  //    Deliberately LAST: it is the only stage nothing else depends on, and it must never
+  //    be what stands between a finished session and its numbers. Unlike stage 2 it IS
+  //    idempotent — the same order written twice is the same order — so a replay is safe.
+  if (!job.done.exerciseOrder && targetWorkoutId && (job.exerciseOrder?.length ?? 0) > 0) {
+    const order = job.exerciseOrder!;
+    for (let i = 0; i < order.length; i++) {
+      const id = realWeId(order[i].weId, order[i].isLocal);
+      if (!id) continue; // its exercise never landed — leave the rest of the order alone
+      const { error } = await supabase.from('workout_exercises').update({ order_index: i }).eq('id', id);
+      if (error) { console.log('[outbox] order_index update failed:', error.message); return false; }
+    }
+    job.done.exerciseOrder = true;
     await patchJob(job);
   }
 

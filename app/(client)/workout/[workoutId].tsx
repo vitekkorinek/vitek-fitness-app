@@ -2627,10 +2627,17 @@ export default function TrainerWorkoutSessionScreen() {
     else setTrainingClientNotes(prev => prev.map(n => n.id === noteId ? { ...n, isDeleted: !n.isDeleted } : n));
   };
 
-  const addExerciseAfter = (picked: LibraryExercise, afterExIdx: number) => {
+  const addExerciseAfter = (
+    picked: LibraryExercise,
+    afterExIdx: number,
+    // Swiping "Add below" on a superset member means "into the superset" — except on its
+    // LAST member, where the same gap is also "after the whole superset". `addPickedAfter`
+    // asks there; 'afterSuperset' is the answer that leaves the group alone.
+    placement: 'inherit' | 'afterSuperset' = 'inherit',
+  ) => {
     handleEditBeforeStart();
     const afterEx = exercises[afterExIdx];
-    const inheritSuperset = afterEx?.isSuperset && afterEx.supersetGroupId != null;
+    const inheritSuperset = placement === 'inherit' && afterEx?.isSuperset && afterEx.supersetGroupId != null;
     const newEx: SessionExercise = {
       workoutExerciseId: uid(),
       exerciseId: picked.id,
@@ -2663,10 +2670,40 @@ export default function TrainerWorkoutSessionScreen() {
     };
     setExercises(prev => {
       const next = [...prev];
-      next.splice(afterExIdx + 1, 0, newEx);
+      // "After the superset" has to clear the WHOLE group, not just the member that was
+      // swiped — even though that member is the group's last one, landing at afterExIdx+1
+      // would still read as inside the card if the group ever gains a member below it.
+      let insertAt = afterExIdx + 1;
+      if (placement === 'afterSuperset' && afterEx?.supersetGroupId) {
+        const gid = afterEx.supersetGroupId;
+        const lastIdx = prev.reduce((acc, e, i) => (e.supersetGroupId === gid ? i : acc), -1);
+        if (lastIdx >= 0) insertAt = lastIdx + 1;
+      }
+      next.splice(insertAt, 0, newEx);
       return next.map((ex, idx) => ({ ...ex, slotNumber: idx + 1 }));
     });
     setPickMode(null);
+  };
+
+  // The picked exercise lands right after a superset's LAST member: that gap belongs to both
+  // the superset and the list below it, so ask instead of guessing (guessing "inside" is what
+  // this used to do). A middle member is unambiguous — it never asks.
+  const addPickedAfter = (picked: LibraryExercise, afterExIdx: number) => {
+    const afterEx = exercises[afterExIdx];
+    const gid = afterEx?.isSuperset ? afterEx.supersetGroupId : null;
+    const isLastOfGroup = gid != null && exercises[afterExIdx + 1]?.supersetGroupId !== gid;
+    if (!isLastOfGroup) { addExerciseAfter(picked, afterExIdx); return; }
+    // Close the picker BEFORE the prompt — two stacked native Modals block touches on iOS.
+    setPickMode(null);
+    setConfirmModal({
+      title: 'Add to the superset?',
+      message: `"${picked.name}" can go inside the superset, or after it as its own exercise.`,
+      actions: [
+        { text: 'Add to the superset', primary: true, onPress: () => addExerciseAfter(picked, afterExIdx, 'inherit') },
+        { text: 'Add after the superset', outline: true, onPress: () => addExerciseAfter(picked, afterExIdx, 'afterSuperset') },
+      ],
+      cancelText: 'Cancel',
+    });
   };
 
   const replaceExercise = (picked: LibraryExercise, exIdx: number) => {
@@ -3269,6 +3306,10 @@ export default function TrainerWorkoutSessionScreen() {
         .map(ex => ({
           localWeId: ex.workoutExerciseId,
           exerciseId: ex.exerciseId,
+          // The superset it was added into is part of the program change, not just a
+          // this-session look — without these two the exercise came back standalone.
+          isSuperset: ex.isSuperset,
+          supersetGroupId: ex.supersetGroupId,
           sets: ex.sets.filter(sx => !sx.isRemoved).map(sx => ({
             set_number: sx.setNumber,
             target_reps: sx.targetReps ?? null,
@@ -3277,6 +3318,12 @@ export default function TrainerWorkoutSessionScreen() {
           })),
         }));
       const addedLocalIds = new Set(addedExercises.map(a => a.localWeId));
+      // The order the workout stands in NOW — an added exercise is inserted at the end of
+      // the table, so this is what puts it back where it was actually added.
+      const exerciseOrder = exercises.map(ex => ({
+        weId: ex.workoutExerciseId,
+        isLocal: addedLocalIds.has(ex.workoutExerciseId),
+      }));
 
       const extraSets = exercises
         .filter(ex => !ex.isAddedDuringSession)
@@ -3382,6 +3429,7 @@ export default function TrainerWorkoutSessionScreen() {
         durationSeconds: duration,
         authorId: profile?.id ?? null,
         addedExercises,
+        exerciseOrder,
         extraSets,
         replacedExercises,
         interactionOrder,
@@ -4481,7 +4529,7 @@ export default function TrainerWorkoutSessionScreen() {
           // Only a REPLACE has an exercise to be like — Add below / add-to-superset don't.
           suggestFor={pickMode.type === 'replace' ? exercises[pickMode.exIdx] ?? null : null}
           onPick={picked => {
-            if (pickMode.type === 'add') addExerciseAfter(picked, pickMode.afterExIdx);
+            if (pickMode.type === 'add') addPickedAfter(picked, pickMode.afterExIdx);
             else if (pickMode.type === 'replace') replaceExercise(picked, pickMode.exIdx);
             else if (pickMode.type === 'addToSuperset') addExerciseToSuperset(picked, pickMode.groupId);
           }}
