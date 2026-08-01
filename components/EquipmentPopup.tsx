@@ -40,7 +40,9 @@ export function EquipmentIcon({
     strokeLinejoin: 'round' as const,
     fill: 'none' as const,
   };
-  const key = name.trim().toLowerCase();
+  // Collapse inner whitespace too, so 'Dumbbell/Kettlebell' and
+  // 'Dumbbell  /  Kettlebell' land on the same glyph as the canonical option.
+  const key = name.trim().toLowerCase().replace(/\s*\/\s*/g, ' / ').replace(/\s+/g, ' ');
   let icon: React.ReactNode;
   switch (key) {
     case 'barbell':
@@ -88,6 +90,21 @@ export function EquipmentIcon({
         </>
       );
       break;
+    // Either implement works for this exercise — a compact dumbbell beside a
+    // kettlebell, both optically centred on y≈12.5 so neither looks dropped.
+    case 'dumbbell / kettlebell':
+      icon = (
+        <>
+          <Rect x={1.5} y={9.7} width={2.1} height={5.6} rx={1.05} {...p} />
+          <Rect x={8.2} y={9.7} width={2.1} height={5.6} rx={1.05} {...p} />
+          <Line x1={3.6} y1={12.5} x2={8.2} y2={12.5} {...p} />
+          <Circle cx={17.8} cy={14.4} r={3.8} {...p} />
+          <Path d="M15.6 11.7 C14.5 9 16 7.5 17.8 7.5 C19.6 7.5 21.1 9 20 11.7" {...p} />
+        </>
+      );
+      break;
+    // Selectorized machine — the weight STACK (cable head on top, plates below).
+    // The other two machine kinds deliberately look nothing like it.
     case 'machine':
       icon = (
         <>
@@ -96,6 +113,32 @@ export function EquipmentIcon({
           <Line x1={7} y1={9.3} x2={17} y2={9.3} {...p} />
           <Line x1={7} y1={12.6} x2={17} y2={12.6} {...p} />
           <Line x1={7} y1={15.9} x2={17} y2={15.9} {...p} />
+        </>
+      );
+      break;
+    // Smith — a loaded bar running on two vertical rails, standing on a base.
+    case 'smith machine':
+      icon = (
+        <>
+          <Line x1={4.6} y1={3.4} x2={4.6} y2={20.6} {...p} />
+          <Line x1={19.4} y1={3.4} x2={19.4} y2={20.6} {...p} />
+          <Line x1={3} y1={20.6} x2={21} y2={20.6} {...p} />
+          <Line x1={4.6} y1={10.5} x2={19.4} y2={10.5} {...p} />
+          <Rect x={7.6} y={7.7} width={2.1} height={5.6} rx={1.05} {...p} />
+          <Rect x={14.3} y={7.7} width={2.1} height={5.6} rx={1.05} {...p} />
+        </>
+      );
+      break;
+    // Plate-loaded — a frame with a horn you slide a round plate onto. The big
+    // disc is the whole read, so it survives the 17px collapsed-card size.
+    case 'plate loaded machine':
+      icon = (
+        <>
+          <Line x1={4.6} y1={4} x2={4.6} y2={20.2} {...p} />
+          <Line x1={2.8} y1={20.2} x2={10.4} y2={20.2} {...p} />
+          <Line x1={4.6} y1={11.8} x2={11.4} y2={11.8} {...p} />
+          <Circle cx={15.8} cy={11.8} r={4.4} {...p} />
+          <Circle cx={15.8} cy={11.8} r={1.5} {...p} />
         </>
       );
       break;
@@ -128,16 +171,19 @@ export function EquipmentIcon({
         </G>
       );
       break;
+    // Redrawn Aug 2026 — the first version was four bare sticks with two dashes
+    // for handles and read as nothing in particular. Now it has the two parts
+    // that actually say TRX: an anchor loop at the top and two foam grips at
+    // the bottom, joined by the Y of the strap.
     case 'trx':
       icon = (
         <>
-          <Line x1={12} y1={5.1} x2={12} y2={7.9} {...p} />
-          <Line x1={12} y1={7.9} x2={8.2} y2={17.5} {...p} />
-          <Line x1={12} y1={7.9} x2={15.8} y2={17.5} {...p} />
-          <Line x1={8.2} y1={17.5} x2={8.2} y2={19.3} {...p} />
-          <Line x1={15.8} y1={17.5} x2={15.8} y2={19.3} {...p} />
-          <Line x1={6.4} y1={19.3} x2={10} y2={19.3} {...p} />
-          <Line x1={14} y1={19.3} x2={17.6} y2={19.3} {...p} />
+          <Circle cx={12} cy={3.7} r={1.5} {...p} />
+          <Line x1={12} y1={5.2} x2={12} y2={8.6} {...p} />
+          <Line x1={12} y1={8.6} x2={7.8} y2={16.6} {...p} />
+          <Line x1={12} y1={8.6} x2={16.2} y2={16.6} {...p} />
+          <Rect x={5} y={16.6} width={5.6} height={2.8} rx={1.4} {...p} />
+          <Rect x={13.4} y={16.6} width={5.6} height={2.8} rx={1.4} {...p} />
         </>
       );
       break;

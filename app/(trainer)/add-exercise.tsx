@@ -62,9 +62,16 @@ const MUSCLE_HIERARCHY: Record<BodySection, MuscleGroupDef[]> = {
   ],
 };
 
+// `Dumbbell / Kettlebell` is one option, not two picks: it says "either implement
+// works for this exercise" (walking lunges, rows), which is different from an
+// exercise that needs both. The three machine kinds are separate implements the
+// client has to find on the gym floor — Smith and plate-loaded look nothing like
+// a selectorized stack. All three take the machine-brand selector in Do Mode
+// (see usesMachineBrand in lib/exerciseFilters.ts).
 const EQUIPMENT_OPTIONS = [
-  'None', 'Barbell', 'Z Bar', 'Dumbbell', 'Kettlebell',
-  'Machine', 'Bodyweight', 'Cable', 'Resistance Band', 'TRX',
+  'None', 'Barbell', 'Z Bar', 'Dumbbell', 'Kettlebell', 'Dumbbell / Kettlebell',
+  'Machine', 'Smith Machine', 'Plate Loaded Machine',
+  'Bodyweight', 'Cable', 'Resistance Band', 'TRX',
 ];
 
 // Cable/machine attachments — selectable ALONGSIDE a main implement (multi-equipment,

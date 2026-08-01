@@ -64,6 +64,7 @@ import {
 } from '@/lib/doModeBridge';
 import en from '@/i18n/en';
 import { setKey, setLabel, buildSetLabels, nextSetNumber } from '@/lib/warmupSets';
+import { usesMachineBrand } from '@/lib/exerciseFilters';
 import { BottomSheet } from '@/components/BottomSheet';
 import GlassPanel from '@/components/GlassPanel';
 
@@ -386,7 +387,7 @@ export default function ExerciseDetailScreen() {
   const isBarbell = eqRaw.includes('barbell');
   const isZBar = eqRaw === 'z bar';
   const isBarType = isBarbell || isZBar;
-  const isCableMachine = eqRaw === 'cable' || eqRaw === 'machine';
+  const isCableMachine = usesMachineBrand(eqRaw);
 
   const defaultBarWeight = isZBar ? 5 : 20;
   const barOptions = isZBar ? [5, 7.5] : [15, 20];
@@ -496,7 +497,7 @@ export default function ExerciseDetailScreen() {
     setExerciseClientNotes(ex?.clientNotes ?? []);
     setIsChecked(ex?.isChecked ?? false);
     setPeekingSetLocalId(null);
-    const newIsCableMachine = newEq === 'cable' || newEq === 'machine';
+    const newIsCableMachine = usesMachineBrand(newEq);
     setMachineBrand(ex?.currentMachineBrand ?? (newIsCableMachine ? 'Gym80' : null));
     brandSetValuesRef.current.clear();
     prevUncheckedShownRef.current = false;

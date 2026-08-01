@@ -8,6 +8,33 @@ export const EQUIPMENT_FILTER_OPTIONS = [
   'Barbell', 'Dumbbell', 'Cable', 'Machine', 'Bodyweight', 'Kettlebell', 'TRX',
 ] as const;
 
+// Filter label → the equipment values that satisfy it. Same job as MUSCLE_MAP:
+// the builder's option list is more granular than the filter row, so an exact
+// string test silently stops matching the moment a new option is added (Aug 2026
+// added the three machine kinds + the either-implement 'Dumbbell / Kettlebell').
+// A label with no entry here matches only itself.
+const EQUIPMENT_MAP: Record<string, string[]> = {
+  Machine:    ['Machine', 'Smith Machine', 'Plate Loaded Machine'],
+  Dumbbell:   ['Dumbbell', 'Dumbbell / Kettlebell'],
+  Kettlebell: ['Kettlebell', 'Dumbbell / Kettlebell'],
+};
+
+/**
+ * Does this equipment value take the machine-brand selector (and its per-brand
+ * weight memory) in Do Mode / Exercise Detail? Cable + every machine kind do.
+ *
+ * ⚠️ The ONE definition — Do Mode, Exercise Detail and the session-log writers all
+ * key off it. It used to be an inlined `eq === 'cable' || eq === 'machine'` in a
+ * dozen places, which is exactly why 'Smith Machine' and 'Plate Loaded Machine'
+ * had to be threaded by hand when they were added. Accepts the raw column value
+ * (any case) or null.
+ */
+export function usesMachineBrand(equipment: string | null | undefined): boolean {
+  const eq = (equipment ?? '').trim().toLowerCase();
+  return eq === 'cable' || eq === 'machine'
+    || eq === 'smith machine' || eq === 'plate loaded machine';
+}
+
 // Filter label → actual muscle_groups values stored on the exercise.
 // Includes the granular muscle names from the exercise builder picker as well
 // as the legacy group names, so both old and new exercises still match.
@@ -85,9 +112,11 @@ export function filterExercises(
   }
 
   if (equipmentFilters.size > 0) {
+    const wanted = new Set<string>();
+    for (const f of equipmentFilters) for (const v of EQUIPMENT_MAP[f] ?? [f]) wanted.add(v);
     list = list.filter(e =>
-      (e.equipment != null && equipmentFilters.has(e.equipment)) ||
-      (e.extra_equipment ?? []).some(x => equipmentFilters.has(x))
+      (e.equipment != null && wanted.has(e.equipment)) ||
+      (e.extra_equipment ?? []).some(x => wanted.has(x))
     );
   }
 

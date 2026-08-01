@@ -127,7 +127,7 @@ import EquipmentPopup, { EquipmentIcon } from '@/components/EquipmentPopup';
 import { BottomSheet } from '@/components/BottomSheet';
 import CategoryCover, { categoryHasCover } from '@/components/CategoryCover';
 import { LightHeader, HeaderIcon, HEADER_ICON, useHeaderHeight } from '@/components/LightHeader';
-import { MUSCLE_FILTER_OPTIONS, matchesMuscleFilters, muscleFilterLabels } from '@/lib/exerciseFilters';
+import { MUSCLE_FILTER_OPTIONS, matchesMuscleFilters, muscleFilterLabels, usesMachineBrand } from '@/lib/exerciseFilters';
 import { fd } from '@/lib/appType';
 
 // ─── Types ──────────────────────────────────────────────────────────────────────
@@ -1390,7 +1390,7 @@ export default function TrainerWorkoutSessionScreen() {
       const targetSets = setsMap.get(we.id) ?? [];
       const exId = we.exercises?.id;
       const exEquipment = (we.exercises?.equipment ?? '').toLowerCase();
-      const isExCable = exEquipment === 'cable' || exEquipment === 'machine';
+      const isExCable = usesMachineBrand(exEquipment);
       const lookupBrand = machineBrandsRef.current.get(we.id) ?? (isExCable ? 'Gym80' : null);
       const wMap = crossWorkoutWeightMap.get(`${exId}:${lookupBrand ?? ''}`)
         ?? (lookupBrand ? crossWorkoutWeightMap.get(`${exId}:`) : undefined);
@@ -3259,7 +3259,7 @@ export default function TrainerWorkoutSessionScreen() {
               const eqLower = (ex.equipment ?? '').toLowerCase();
               const isBarbelEx = eqLower.includes('barbell') || eqLower === 'z bar';
               const isZBarEx = eqLower === 'z bar';
-              const isCableMachineEx = eqLower === 'cable' || eqLower === 'machine';
+              const isCableMachineEx = usesMachineBrand(eqLower);
               inserts.push({
                 session_id: targetSessionId,
                 workout_exercise_id: ex.workoutExerciseId,
@@ -3299,7 +3299,7 @@ export default function TrainerWorkoutSessionScreen() {
         const { error } = await supabase.from('session_logs').insert(freshLogs.map(({ weId, set: s, ex }) => {
           const eqLower = (ex.equipment ?? '').toLowerCase();
           const isBarbelEx = eqLower.includes('barbell') || eqLower === 'z bar';
-          const isCableMachineEx = eqLower === 'cable' || eqLower === 'machine';
+          const isCableMachineEx = usesMachineBrand(eqLower);
           return {
             session_id: targetSessionId,
             workout_exercise_id: weId,
@@ -3583,7 +3583,7 @@ export default function TrainerWorkoutSessionScreen() {
         const isBarbelEx = eqLower.includes('barbell') || eqLower === 'z bar';
         const isZBarEx = eqLower === 'z bar';
         const barbellKgUsed = isBarbelEx ? (barbellWeightsRef.current.get(ex.workoutExerciseId) ?? (isZBarEx ? 5 : 20)) : null;
-        const isCableMachineEx = eqLower === 'cable' || eqLower === 'machine';
+        const isCableMachineEx = usesMachineBrand(eqLower);
         const machineBrandUsed = isCableMachineEx ? (machineBrandsRef.current.get(ex.workoutExerciseId) ?? null) : null;
         let dropOrder = 0;
         return ex.sets.map(sx => {
@@ -5552,7 +5552,7 @@ function ExerciseCard({
   const eqRaw = (exercise.equipment ?? '').toLowerCase();
   const isBarbell = eqRaw.includes('barbell');
   const isZBar = eqRaw === 'z bar';
-  const isCableMachine = eqRaw === 'cable' || eqRaw === 'machine';
+  const isCableMachine = usesMachineBrand(eqRaw);
   const isBarType = isBarbell || isZBar;
   // What the exercise USES (main + extras/attachments, Aug 2026): the info pill
   // ALWAYS leads with the main implement (`Cable +2`) whenever any equipment
