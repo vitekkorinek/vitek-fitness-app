@@ -570,6 +570,28 @@ function useSheetDismissGesture(onClose: () => void) {
   return { translateY, panHandlers: panResponder.panHandlers, dismiss };
 }
 
+// ─── Whose keyboard is it? ──────────────────────────────────────────────────────
+// The screen pads the list and scroll-lifts the focused input when the keyboard
+// opens — but that is only ever right for inputs INSIDE the list (the set rows and
+// the card note footer). Every overlay here is a `Modal` with its own
+// KeyboardAvoidingView, and their keyboards fire the very same GLOBAL Keyboard
+// events: the screen was padding the list and scrolling it toward an input that
+// isn't in it, so closing a set-note sheet dumped you at a random point in the
+// workout — with the one open card (accordion) now off-screen, which reads as
+// "all the cards closed". In-list inputs register their native node on focus and
+// the listener ignores any keyboard whose focused input isn't that node.
+// Identity, not a boolean: focus MOVING into an overlay is the case to catch, and
+// iOS re-fires keyboardDidShow when the keyboard type changes (decimal-pad → text).
+// A stale node is harmless — it can never equal the currently-focused one.
+let listInputNode: any = null;
+const markListInputFocused = () => {
+  listInputNode = (TextInput as any).State?.currentlyFocusedInput?.() ?? null;
+};
+const isListInputFocused = () => {
+  const focused = (TextInput as any).State?.currentlyFocusedInput?.() ?? null;
+  return focused != null && focused === listInputNode;
+};
+
 // ─── Screen ─────────────────────────────────────────────────────────────────────
 
 export default function TrainerWorkoutSessionScreen() {
@@ -793,12 +815,15 @@ export default function TrainerWorkoutSessionScreen() {
   const scrollFocusedInputAboveKeyboardRef = useRef<(kbTopScreenY: number) => void>(() => {});
   useEffect(() => {
     const show = Keyboard.addListener('keyboardDidShow', e => {
+      // Not our keyboard — an overlay sheet (set notes, exercise info, rest timer…)
+      // owns it and does its own avoiding. See `isListInputFocused`.
+      if (!isListInputFocused()) return;
       const h = e.endCoordinates.height;
       setKbHeight(h); kbHeightRef.current = h;
       // Lift the focused input above the keyboard (+ the Done button).
       requestAnimationFrame(() => scrollFocusedInputAboveKeyboardRef.current(e.endCoordinates.screenY));
     });
-    const hide = Keyboard.addListener('keyboardWillHide', () => { setKbHeight(0); kbHeightRef.current = 0; });
+    const hide = Keyboard.addListener('keyboardWillHide', () => { listInputNode = null; setKbHeight(0); kbHeightRef.current = 0; });
     return () => { show.remove(); hide.remove(); };
   }, []);
 
@@ -2201,6 +2226,7 @@ export default function TrainerWorkoutSessionScreen() {
   };
 
   const handleSetFocusDo = (exIdx: number, setLocalId: string) => {
+    markListInputFocused(); // claim the keyboard for the list (before any early return)
     // Use ref so we always read the latest exercises, not a potentially stale closure
     const ex = exercisesRef.current[exIdx];
     if (!ex) return;
@@ -6779,6 +6805,7 @@ function CardNoteFooter({ exercise, lastCompletedSessionAt, onAddNote, onEditNot
           style={styles.noteInlineInput}
           value={draft}
           onChangeText={setDraft}
+          onFocus={markListInputFocused}
           placeholder={editingId ? 'Edit note…' : 'Add a note…'}
           placeholderTextColor="#bbb"
           multiline
