@@ -14,7 +14,7 @@ import {
   Pressable,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useFocusEffect, useRouter } from 'expo-router';
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { smartBack } from '@/lib/navHistory';
 import { SymbolView } from 'expo-symbols';
 import { VFIcon } from '@/components/VFIcon';
@@ -129,6 +129,19 @@ async function fetchAllWorkouts(clientId: string): Promise<WorkoutRow[]> {
 export default function AllWorkoutsScreen() {
   const { profile } = useAuth();
   const router = useRouter();
+  // planDate=YYYY-MM-DD → arrived from the Training tab's "Plan any workout" for
+  // a non-today day (Aug 1 2026). The library is unchanged — only the amber strip
+  // and the fact that a card opens Do Mode in PLAN mode. Mirrors the routine
+  // screen exactly; Vitek asked for the two "Plan …" rows to behave the same.
+  const { planDate } = useLocalSearchParams<{ planDate?: string }>();
+  const isPlanMode = !!planDate;
+  const planDayLabel = planDate
+    ? new Date(planDate + 'T12:00:00').toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'short' })
+    : '';
+  const openWorkout = useCallback(
+    (id: string) => router.push((planDate ? `/(client)/workout/${id}?planDate=${planDate}` : `/(client)/workout/${id}`) as any),
+    [router, planDate],
+  );
   const headerH = useHeaderHeight();
   const tabBarH = useTabBarHeight();
 
@@ -208,6 +221,16 @@ export default function AllWorkoutsScreen() {
           keyboardShouldPersistTaps="handled"
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={ACCENT} progressViewOffset={headerH} />}
         >
+          {/* Plan mode (Aug 1 2026) — the library twin of the routine screen's
+              strip. Same wording, same amber, so both "Plan …" rows lead to a
+              browsable screen that announces what the tap will do. */}
+          {isPlanMode && (
+            <View style={awStyles.planBanner}>
+              <SymbolView name="calendar" size={15} tintColor="#f5a623" />
+              <Text style={[awStyles.planBannerText, ft(600)]}>Planning for {planDayLabel} — pick a workout</Text>
+            </View>
+          )}
+
           {/* Workouts / Stretching tab */}
           <View style={awStyles.tabBar}>
             <TouchableOpacity
@@ -325,7 +348,7 @@ export default function AllWorkoutsScreen() {
             const restList = workouts.filter(w => w.thisWeekCount === 0);
             const makeOnPress = (w: WorkoutRow) => () => {
               if (w.status === 'completed') { setDonePromptWorkout(w); }
-              else { router.push(`/(client)/workout/${w.id}` as any); }
+              else { openWorkout(w.id); }
             };
             return (
               // Dark cards need more air between them than the old white ones did.
@@ -355,10 +378,10 @@ export default function AllWorkoutsScreen() {
                 <Text style={donePromptStyles.body}>{donePromptWorkout.name}</Text>
                 <TouchableOpacity
                   style={donePromptStyles.primaryBtn}
-                  onPress={() => { setDonePromptWorkout(null); router.push(`/(client)/workout/${donePromptWorkout.id}` as any); }}
+                  onPress={() => { const id = donePromptWorkout.id; setDonePromptWorkout(null); openWorkout(id); }}
                   activeOpacity={0.8}
                 >
-                  <Text style={donePromptStyles.primaryBtnText}>Open for this session</Text>
+                  <Text style={donePromptStyles.primaryBtnText}>{isPlanMode ? 'Plan it anyway' : 'Open for this session'}</Text>
                 </TouchableOpacity>
                 <TouchableOpacity onPress={() => setDonePromptWorkout(null)} style={donePromptStyles.cancelBtn}>
                   <Text style={donePromptStyles.cancelText}>Cancel</Text>
@@ -559,6 +582,14 @@ const awStyles = StyleSheet.create({
   tabItemActive: { borderBottomWidth: 2, borderBottomColor: '#24ac88' },
   tabText:       { fontSize: 17, fontWeight: '600', color: '#bbb' },
   tabTextActive: { color: '#1a1a1a' },
+
+  // Plan-mode strip — identical to the routine screen's (client/routine/[routineId]).
+  planBanner: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    backgroundColor: '#fdf3e2', borderRadius: 12,
+    paddingHorizontal: 12, paddingVertical: 10, marginBottom: 14,
+  },
+  planBannerText: { flex: 1, fontSize: 12.5, color: '#8a5f12' },
 });
 
 const styles = StyleSheet.create({

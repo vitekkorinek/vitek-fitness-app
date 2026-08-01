@@ -100,10 +100,24 @@ async function fetchRoutineDetail(routineId: string, clientId: string): Promise<
 }
 
 export default function ClientRoutineDetailScreen() {
-  const { routineId } = useLocalSearchParams<{ routineId: string }>();
+  // planDate=YYYY-MM-DD → the client came from the Training tab's "Plan workout
+  // from your routine" for a non-today day (Aug 1 2026). Same screen, same cards
+  // — the only differences are the amber strip at the top and the fact that
+  // tapping a workout opens Do Mode in PLAN mode instead of a startable one.
+  // Vitek: "going to the normal routine screen is more intuitive."
+  const { routineId, planDate } = useLocalSearchParams<{ routineId: string; planDate?: string }>();
+  const isPlanMode = !!planDate;
+  const planDayLabel = planDate
+    ? new Date(planDate + 'T12:00:00').toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'short' })
+    : '';
   const { profile } = useAuth();
   const router = useRouter();
   const headerH = useHeaderHeight();
+  // One tap handler for all three card lists — plan mode just carries the date on.
+  const openWorkout = useCallback(
+    (id: string) => router.push((planDate ? `/(client)/workout/${id}?planDate=${planDate}` : `/(client)/workout/${id}`) as any),
+    [router, planDate],
+  );
 
   const [routine, setRoutine] = useState<Routine | null>(null);
   const [workouts, setWorkouts] = useState<RoutineWorkout[]>([]);
@@ -161,7 +175,16 @@ export default function ClientRoutineDetailScreen() {
           showsVerticalScrollIndicator={false}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={ACCENT} progressViewOffset={headerH} />}
         >
-          {isActive && (
+          {/* Plan mode says so up front — otherwise the screen looks like the
+              ordinary "train now" routine and the amber PLAN pill one push later
+              would be the first hint. */}
+          {isPlanMode && (
+            <View style={styles.planBanner}>
+              <SymbolView name="calendar" size={15} tintColor="#f5a623" />
+              <Text style={[styles.planBannerText, ft(600)]}>Planning for {planDayLabel} — pick a workout</Text>
+            </View>
+          )}
+          {isActive && !isPlanMode && (
             <View style={styles.activeBadgeRow}>
               <View style={styles.activeBadge}>
                 <Text style={styles.activeBadgeText}>Active Routine</Text>
@@ -205,7 +228,7 @@ export default function ClientRoutineDetailScreen() {
                   <WorkoutItem
                     workout={startHere}
                     isDone={false}
-                    onPress={() => router.push(`/(client)/workout/${startHere.id}` as any)}
+                    onPress={() => openWorkout(startHere.id)}
                     onQuickLook={() => setQuickLookWorkout({ id: startHere.id, name: startHere.name })}
                   />
                 </>
@@ -215,7 +238,7 @@ export default function ClientRoutineDetailScreen() {
                   key={w.id}
                   workout={w}
                   isDone={false}
-                  onPress={() => router.push(`/(client)/workout/${w.id}` as any)}
+                  onPress={() => openWorkout(w.id)}
                   onQuickLook={() => setQuickLookWorkout({ id: w.id, name: w.name })}
                 />
               ))}
@@ -227,7 +250,7 @@ export default function ClientRoutineDetailScreen() {
                       key={w.id}
                       workout={w}
                       isDone={true}
-                      onPress={() => router.push(`/(client)/workout/${w.id}` as any)}
+                      onPress={() => openWorkout(w.id)}
                       onQuickLook={() => setQuickLookWorkout({ id: w.id, name: w.name })}
                     />
                   ))}
@@ -453,6 +476,15 @@ const styles = StyleSheet.create({
     backgroundColor: '#E1F5EE', borderRadius: 100, paddingHorizontal: 12, paddingVertical: 5,
   },
   activeBadgeText: { fontSize: 12, fontWeight: '600', color: ACCENT },
+
+  // Plan-mode strip — amber, the app's "later, not now" colour (bonus sessions,
+  // the 48h hint, the Do Mode PLAN pill this screen leads to).
+  planBanner: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    backgroundColor: '#fdf3e2', borderRadius: 12,
+    paddingHorizontal: 12, paddingVertical: 10, marginBottom: 12,
+  },
+  planBannerText: { flex: 1, fontSize: 12.5, color: '#8a5f12' },
 
   emptyCard: {
     backgroundColor: '#ffffff', borderRadius: 16,

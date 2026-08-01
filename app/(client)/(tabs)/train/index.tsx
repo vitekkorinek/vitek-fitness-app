@@ -14,7 +14,7 @@ import { useAuth } from '@/context/AuthContext';
 import { supabase } from '@/lib/supabase';
 import { useSessionStore } from '@/store/sessionStore';
 import { fetchClientTraining } from '@/lib/clientTraining';
-import { fetchMuscleRestConflict, fetchMuscleWorkAround, recommendedCategories, type NearbyMuscleWork } from '@/lib/muscleRest';
+import { fetchMuscleWorkAround, recommendedCategories, type NearbyMuscleWork } from '@/lib/muscleRest';
 import { resolveWeeklyGoal } from '@/lib/weeklyGoal';
 import type { ClientTrainingData } from '@/lib/clientTraining';
 import { BottomSheet } from '@/components/BottomSheet';
@@ -22,7 +22,6 @@ import { useHeaderHeight } from '@/components/LightHeader';
 import GlassPanel from '@/components/GlassPanel';
 import { useTabBarHeight } from '@/components/FloatingTabBar';
 import { SessionDetailsSheet } from '@/components/SessionDetailsSheet';
-import CategoryCover, { categoryHasCover, WORKOUT_COVER_PHOTOS_ENABLED } from '@/components/CategoryCover';
 import WorkoutPaperCover, { DARK_CARD_FOOTER } from '@/components/WorkoutPaperCover';
 import { useFooterDark } from '@/lib/cardVariant';
 import { fetchExerciseNames } from '@/lib/exerciseNames';
@@ -349,9 +348,6 @@ export default function TrainTabScreen() {
   const [movingDate, setMovingDate]             = useState(false);
   const [moveConfirmDate, setMoveConfirmDate]   = useState<string | null>(null);
 
-  // Plan (schedule a session for a non-today day, without performing it)
-  const [planPickerOpen, setPlanPickerOpen]     = useState(false);
-  const [scheduling, setScheduling]             = useState(false);
 
   const weekDates = useMemo(() => getWeekDates(weekOffset), [weekOffset]);
   const weekDatesRef = useRef(weekDates);
@@ -673,45 +669,17 @@ export default function TrainTabScreen() {
     checkGoalCelebration();
   }, [deleteConfirmSess, loadWeekSessions, loadWeeklyGoal, checkGoalCelebration]);
 
-  // Plan a workout onto the selected (non-today) day: insert a scheduled session
-  // (no performing). Shows up as a "planned" card on that day; the client logs it for
-  // real when the day comes. Reloads the strip + goal on completion.
-  const scheduleWorkout = useCallback(async (workoutId: string) => {
-    if (!profile?.id || scheduling) return;
-    setScheduling(true);
-    let error: any = null;
-    try {
-      ({ error } = await supabase.from('sessions').insert({
-        client_id: profile.id,
-        workout_id: workoutId,
-        date: selectedDate,
-        status: 'scheduled',
-      }));
-    } catch (e) {
-      error = e; // a network throw must not leave `scheduling` stuck true
-    }
-    setScheduling(false);
-    if (error) {
-      console.log('[scheduleWorkout] error:', error);
-      Alert.alert('Error', 'Could not plan the training.');
-      return;
-    }
-    setPlanPickerOpen(false);
-    setStartModalOpen(false);
-    await loadWeekSessions(weekDatesRef.current);
-  }, [profile?.id, scheduling, selectedDate, loadWeekSessions]);
-
-  // Plan-time 48h guard (July 2026 — mirrors Do Mode's guardStart, but for
-  // scheduling): checks completed AND already-planned sessions within a day of
-  // the target date. Conflict → in-sheet warning panel (planWarn) — a centered
-  // Modal here would stack on the BottomSheet's native Modal and block touches
-  // on iOS, so the sheet swaps its content instead.
-  const [planWarn, setPlanWarn] = useState<{ message: string; workoutId: string } | null>(null);
-  const [planChecking, setPlanChecking] = useState(false);
-  // Muscle work (completed + planned) within a day of the PLAN target date —
-  // fetched when the + modal opens on a non-today day, feeds the plan-variant
-  // rest hint so the message is visible BEFORE picking a workout (Vitek's July
-  // 24 report: the today variant hinted, the plan variant showed nothing).
+  // ⚠️ The + sheet does NOT schedule anything any more (Aug 1 2026). Both plan
+  // rows hand off to a browsable screen — the workout library or the routine —
+  // which opens Do Mode in PLAN mode, and the insert + the 48h guard live there
+  // (CLAUDE-domode.md "Pre-session"). `scheduleWorkout`, `guardPlan` and the
+  // in-sheet `planWarn` panel are gone with the in-sheet pickers; do not
+  // reintroduce a second way to write a scheduled session.
+  //
+  // What stays here: the muscle work (completed + planned) within a day of the
+  // PLAN target date, which feeds the amber hint the sheet shows BEFORE the
+  // client leaves for the picker (Vitek's July 24 report: the today variant
+  // hinted, the plan variant showed nothing).
   const [planNearby, setPlanNearby] = useState<NearbyMuscleWork[]>([]);
   useEffect(() => {
     if (!startModalOpen || selectedDate === todayStr || !profile?.id) { setPlanNearby([]); return; }
@@ -721,21 +689,6 @@ export default function TrainTabScreen() {
       .catch(() => {});
     return () => { alive = false; };
   }, [startModalOpen, selectedDate, profile?.id]);
-  const guardPlan = useCallback(async (workoutId: string, category: string | null) => {
-    if (!profile?.id || scheduling || planChecking) return;
-    setPlanChecking(true);
-    const c = category
-      ? await fetchMuscleRestConflict(profile.id, category, selectedDate, { includePlanned: true }).catch(() => null)
-      : null;
-    setPlanChecking(false);
-    if (!c) { scheduleWorkout(workoutId); return; }
-    const day = new Date(c.date + 'T12:00:00').toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
-    const what = `${c.category}${c.workoutName ? ` — ${c.workoutName}` : ''}`;
-    setPlanWarn({
-      message: `${c.status === 'scheduled' ? `You have ${what} planned on ${day}` : `You trained ${what} on ${day}`}. The same muscle group needs at least 48 hours of rest.\n\nRecommended: ${recommendedCategories(c.trainedCategories).join(', ')}.`,
-      workoutId,
-    });
-  }, [profile?.id, scheduling, planChecking, selectedDate, scheduleWorkout]);
 
   const load = useCallback(async () => {
     if (!profile?.id) return;
@@ -1093,63 +1046,9 @@ export default function TrainTabScreen() {
             const planRec = planHint ? recommendedCategories(planNearby.map(r => r.category)) : [];
             const anyRec = isToday ? (restHint ? restRec : null) : (planHint ? planRec : null);
             return (
-              <BottomSheet onClose={() => { setStartModalOpen(false); setPlanPickerOpen(false); setPlanWarn(null); }}>
+              <BottomSheet onClose={() => setStartModalOpen(false)}>
                 {close => (
                   <View style={{ paddingHorizontal: 20 }}>
-                    {planWarn ? (
-                      <>
-                        <Text style={startModalStyles.title}>Same muscles within 48 hours</Text>
-                        <Text style={[startModalStyles.warnMsg, ft(500)]}>{planWarn.message}</Text>
-                        <TouchableOpacity
-                          style={startModalStyles.warnPrimaryBtn}
-                          activeOpacity={0.85}
-                          onPress={() => { setPlanWarn(null); setPlanPickerOpen(true); }}
-                        >
-                          <Text style={startModalStyles.warnPrimaryText}>Pick a different workout</Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity
-                          style={startModalStyles.cancel}
-                          disabled={scheduling}
-                          onPress={() => { const id = planWarn.workoutId; setPlanWarn(null); scheduleWorkout(id); }}
-                        >
-                          <Text style={startModalStyles.cancelText}>Plan anyway</Text>
-                        </TouchableOpacity>
-                      </>
-                    ) : planPickerOpen ? (
-                      <>
-                        <Text style={startModalStyles.title}>Plan a workout</Text>
-                        <Text style={startModalStyles.subtitle}>{dayFull}</Text>
-                        {workoutCards.length === 0 ? (
-                          <Text style={startModalStyles.emptyPlan}>No workouts to plan yet.</Text>
-                        ) : (
-                          <ScrollView style={{ maxHeight: 320, marginTop: 8 }} showsVerticalScrollIndicator={false}>
-                            {workoutCards.map(c => (
-                              <TouchableOpacity
-                                key={c.id}
-                                style={startModalStyles.planRow}
-                                onPress={() => guardPlan(c.id, c.category)}
-                                disabled={scheduling || planChecking}
-                                activeOpacity={0.7}
-                              >
-                                <View style={startModalStyles.planThumb}>
-                                  {WORKOUT_COVER_PHOTOS_ENABLED && c.coverUrl
-                                    ? <Image source={{ uri: c.coverUrl }} style={StyleSheet.absoluteFill} resizeMode="cover" />
-                                    : categoryHasCover(c.category)
-                                    ? <CategoryCover category={c.category} variant="soft" />
-                                    : <LinearGradient colors={['#2a5448', '#1a3832']} style={StyleSheet.absoluteFill} />}
-                                </View>
-                                <Text style={startModalStyles.planName} numberOfLines={1}>{c.name}</Text>
-                                <Text style={startModalStyles.optionChevron}>›</Text>
-                              </TouchableOpacity>
-                            ))}
-                          </ScrollView>
-                        )}
-                        <TouchableOpacity style={startModalStyles.cancel} onPress={() => setPlanPickerOpen(false)} disabled={scheduling}>
-                          <Text style={startModalStyles.cancelText}>Back</Text>
-                        </TouchableOpacity>
-                      </>
-                    ) : (
-                      <>
                         <Text style={startModalStyles.title}>{isToday ? 'Log training' : 'Plan training'}</Text>
                         <Text style={startModalStyles.subtitle}>{isToday ? 'Today' : dayFull}</Text>
                         {/* Amber day-status on top; the green Recommended line lives on
@@ -1167,7 +1066,7 @@ export default function TrainTabScreen() {
                           activeOpacity={hasWorkouts ? 0.8 : 1}
                           onPress={!hasWorkouts ? undefined : isToday
                             ? () => { useSessionStore.getState().setPendingLogDate(null); close(() => router.push('/(client)/(tabs)/train/all-workouts' as any)); }
-                            : () => setPlanPickerOpen(true)}
+                            : () => close(() => router.push(`/(client)/(tabs)/train/all-workouts?planDate=${selectedDate}` as any))}
                         >
                           <View style={startModalStyles.optionText}>
                             <Text style={startModalStyles.optionLabel}>{isToday ? 'Log any workout' : 'Plan any workout'}</Text>
@@ -1179,9 +1078,18 @@ export default function TrainTabScreen() {
                         </TouchableOpacity>
 
                         {/* From the routine — hidden entirely without an active routine
-                            (same rule as the ROUTINE section on the tab) */}
+                            (same rule as the ROUTINE section on the tab).
+                            TODAY reads "Continue your routine", mirroring the trainer's
+                            own menu (Aug 1 2026) — both open the active routine's detail
+                            screen, so the two sides now name the same action the same way.
+                            The PLAN variant keeps "Plan workout from your routine": it
+                            does something the trainer's row doesn't (schedules the weekly
+                            next workout), and "continue" would misdescribe it. */}
                         {activeRoutine && (() => {
-                          const routineEnabled = isToday || !!weeklyNextRW;
+                          // Both variants now END on a pick, so the row only needs
+                          // the routine to HAVE workouts (it used to require a
+                          // weekly "next", because it planned that one blind).
+                          const routineEnabled = isToday || rw.length > 0;
                           return (
                         <>
                         <View style={startModalStyles.sep} />
@@ -1190,10 +1098,10 @@ export default function TrainTabScreen() {
                           activeOpacity={routineEnabled ? 0.8 : 1}
                           onPress={!routineEnabled ? undefined : isToday
                             ? () => { useSessionStore.getState().setPendingLogDate(null); close(() => router.push(`/(client)/routine/${activeRoutine.id}` as any)); }
-                            : () => guardPlan(weeklyNextRW!.id, weeklyNextRW!.category)}
+                            : () => close(() => router.push(`/(client)/routine/${activeRoutine.id}?planDate=${selectedDate}` as any))}
                         >
                           <View style={startModalStyles.optionText}>
-                            <Text style={startModalStyles.optionLabel}>{isToday ? 'Log workout from your routine' : 'Plan workout from your routine'}</Text>
+                            <Text style={startModalStyles.optionLabel}>{isToday ? 'Continue your routine' : 'Plan workout from your routine'}</Text>
                             {routineSub && (
                               <Text style={[startModalStyles.optionSub, startModalStyles.optionSubAccent, ft(600)]} numberOfLines={1}>{routineSub}</Text>
                             )}
@@ -1242,8 +1150,6 @@ export default function TrainTabScreen() {
                         <TouchableOpacity style={startModalStyles.cancel} onPress={() => close()}>
                           <Text style={startModalStyles.cancelText}>Cancel</Text>
                         </TouchableOpacity>
-                      </>
-                    )}
                   </View>
                 )}
               </BottomSheet>
@@ -2298,13 +2204,6 @@ const startModalStyles = StyleSheet.create({
   title:         { fontSize: 16, fontWeight: '700', color: TEXT, marginBottom: 2 },
   subtitle:      { fontSize: 13, fontWeight: '600', color: ACCENT, marginBottom: 14 },
   restHint:      { fontSize: 12, color: '#f5a623', lineHeight: 17, marginTop: -8, marginBottom: 12 },
-  warnMsg:        { fontSize: 13, color: '#555', lineHeight: 19, marginTop: 2, marginBottom: 18 },
-  warnPrimaryBtn: { backgroundColor: ACCENT, borderRadius: 100, paddingVertical: 13, alignItems: 'center' },
-  warnPrimaryText: { fontSize: 15, fontWeight: '700', color: '#fff' },
-  emptyPlan:     { fontSize: 13, color: MUTED, textAlign: 'center', paddingVertical: 20 },
-  planRow:       { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 8 },
-  planThumb:     { width: 44, height: 44, borderRadius: 8, overflow: 'hidden', backgroundColor: '#2a5448' },
-  planName:      { flex: 1, fontSize: 15, fontWeight: '600', color: TEXT },
   option:        { flexDirection: 'row', alignItems: 'center', paddingVertical: 14, gap: 12 },
   optionIcon:    { fontSize: 22, width: 32, textAlign: 'center' },
   optionText:    { flex: 1 },

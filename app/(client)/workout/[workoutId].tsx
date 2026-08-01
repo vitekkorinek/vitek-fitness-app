@@ -585,10 +585,17 @@ export default function TrainerWorkoutSessionScreen() {
   const COLLAPSE_END = HEADER_MAX - HEADER_MIN;
   const COLLAPSE_START = Math.max(0, COLLAPSE_END - 80);
 
-  const { workoutId, resumeSessionId, resumeStartedAt, viewOnly, viewMode, previewLocked, plannedDate, sessionDate } = useLocalSearchParams<{ workoutId: string; resumeSessionId?: string; resumeStartedAt?: string; viewOnly?: string; viewMode?: string; previewLocked?: string; plannedDate?: string; sessionDate?: string }>();
+  const { workoutId, resumeSessionId, resumeStartedAt, viewOnly, viewMode, previewLocked, plannedDate, sessionDate, planDate } = useLocalSearchParams<{ workoutId: string; resumeSessionId?: string; resumeStartedAt?: string; viewOnly?: string; viewMode?: string; previewLocked?: string; plannedDate?: string; sessionDate?: string; planDate?: string }>();
   // previewLocked=1 → a FUTURE planned session: browsable read-only, but with NO
   // start affordance — it isn't its day yet.
   const isPreviewLocked = previewLocked === '1';
+  // planDate=YYYY-MM-DD → PLAN MODE (Aug 1 2026): the client walked in from the
+  // routine screen to put this workout on another day. Same read-only browse as a
+  // locked preview — you are looking at the workout, not doing it — but the
+  // banner's START slot becomes an AMBER "date · PLAN" pill that schedules it.
+  // Vitek: "going to the normal routine screen is more intuitive … instead of
+  // start 00:00 we have plan DATE."
+  const isPlanMode = !!planDate && !isPreviewLocked && viewOnly !== '1';
   const isViewParam = viewOnly === '1';
   // Pressing Start inside a view-only entry turns THIS mount into a real session (no
   // re-navigation — a remount can't animate). Everything gated on `isViewOnly` —
@@ -863,6 +870,73 @@ export default function TrainerWorkoutSessionScreen() {
     });
   };
 
+  // ── PLAN MODE — schedule this workout onto planDate (Aug 1 2026) ───────────
+  // The plan-day twin of START. Same 48h warning as starting (the ref was
+  // preloaded against the TARGET day, planned sessions included), then one
+  // `sessions` insert with status 'scheduled' — the identical row the Training
+  // tab's own plan flow writes; there is no second way to plan a session.
+  const [planning, setPlanning] = useState(false);
+  const planningRef = useRef(false);
+  const fmtPlanDay = (d: string) => {
+    const label = new Date(d + 'T12:00:00').toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'short' });
+    const today = new Date().toISOString().split('T')[0];
+    // Vitek's ask: say "(tomorrow)" when it is. Same for today/yesterday — a
+    // date alone makes the client do the arithmetic.
+    const rel = d === today ? 'today' : d === shiftDateStr(today, 1) ? 'tomorrow' : d === shiftDateStr(today, -1) ? 'yesterday' : null;
+    return rel ? `${label} (${rel})` : label;
+  };
+  const doPlanSession = async () => {
+    if (!planDate || !clientId || planningRef.current) return;
+    planningRef.current = true;
+    setPlanning(true);
+    let error: any = null;
+    try {
+      ({ error } = await supabase.from('sessions').insert({
+        client_id: clientId,
+        workout_id: workoutId,
+        date: planDate,
+        status: 'scheduled',
+      }));
+    } catch (e) {
+      error = e; // a network throw must not leave the pill stuck spinning
+    }
+    planningRef.current = false;
+    setPlanning(false);
+    if (error) {
+      console.log('[planSession] error:', error);
+      setConfirmModal({
+        title: 'Could not plan it',
+        message: 'The training was not planned. Check your connection and try again.',
+        actions: [{ text: 'OK', primary: true, onPress: () => {} }],
+      });
+      return;
+    }
+    setConfirmModal({
+      title: 'Planned',
+      message: `${workout?.name ?? 'This workout'} is planned for ${fmtPlanDay(planDate)}.`,
+      actions: [{ text: 'Done', primary: true, onPress: () => router.replace('/(client)/(tabs)/train' as any) }],
+    });
+  };
+  const handlePlanPress = () => {
+    if (planningRef.current || !planDate) return;
+    const c = muscleRestConflictRef.current;
+    if (!c) { void doPlanSession(); return; }
+    const day = new Date(c.date + 'T12:00:00').toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
+    const what = `${c.category}${c.workoutName ? ` — ${c.workoutName}` : ''}`;
+    // Warn-only, like guardStart. The coached action here is simply to go back
+    // to the routine and pick another workout — a plain pop, NOT the tab-root
+    // replace guardStart uses (that one exists because starting can arrive from
+    // anywhere; plan mode always came from the routine screen one push back).
+    setConfirmModal({
+      title: 'Same muscles within 48 hours',
+      message: `${c.status === 'scheduled' ? `You have ${what} planned on ${day}` : `You trained ${what} on ${day}`}. The same muscle group needs at least 48 hours of rest.\n\nRecommended: ${recommendedCategories(c.trainedCategories).join(', ')}.`,
+      actions: [
+        { text: 'Pick a different workout', primary: true, onPress: () => router.back() },
+        { text: 'Plan anyway', onPress: () => { void doPlanSession(); } },
+      ],
+    });
+  };
+
   const [isEditMode, setIsEditMode] = useState(false);
   const isEditModeRef = useRef(false);
   const editBarAnim = useRef(new Animated.Value(100)).current;
@@ -1116,7 +1190,10 @@ export default function TrainerWorkoutSessionScreen() {
     if (liveOwnedByOther) setBlockedByOtherSession(true);
     const liveSessionId = !isViewOnly && !logDatePending && liveIsToday && !liveOwnedByOther ? (liveSess as any).id as string : null;
     if (isViewOnly && !logDatePending && liveIsToday) viewOnlyLiveSessionRef.current = (liveSess as any).id as string;
-    if (liveSessionId && !resumeSessionId) {
+    // Plan mode never adopts a running session — you are here to put this workout
+    // on a FUTURE day, and adopting would start the timer and hide the PLAN pill
+    // behind the running-session chrome.
+    if (liveSessionId && !resumeSessionId && !isPlanMode) {
       activeSessionIdRef.current = liveSessionId;
       setActiveSessionId(liveSessionId);
       setBridgeActiveSessionId(liveSessionId);
@@ -1135,8 +1212,10 @@ export default function TrainerWorkoutSessionScreen() {
     // Awaited so nothing can race past it. Skipped when a session is already open (nothing to
     // warn about), on locked previews (can't start), and for stretch workouts.
     if (categoryVal && !isStretchSessionRef.current && !isPreviewLocked && !liveSessionId && !resumeSessionId) {
-      const restRefDate = logDatePending ?? new Date().toISOString().split('T')[0];
-      muscleRestConflictRef.current = await fetchMuscleRestConflict(clientId, categoryVal, restRefDate).catch(() => null);
+      // In plan mode the day that matters is the TARGET day, and already-PLANNED
+      // sessions count too — the same rule the Training tab's guardPlan uses.
+      const restRefDate = planDate ?? logDatePending ?? new Date().toISOString().split('T')[0];
+      muscleRestConflictRef.current = await fetchMuscleRestConflict(clientId, categoryVal, restRefDate, planDate ? { includePlanned: true } : undefined).catch(() => null);
     }
     // The draft only belongs to a session that is still open — never replay an old
     // one over a fresh start.
@@ -3570,14 +3649,18 @@ export default function TrainerWorkoutSessionScreen() {
   // Overline + meta say WHICH session this is — the three cases the deleted session-intro
   // screen used to label ("Today's session" / "Planned session" / "Past session").
   const fmtPreviewDate = (d: string) => new Date(d).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
-  const previewTopLabel = isPreviewLocked
+  const previewTopLabel = isPlanMode
+    ? 'PLAN THIS WORKOUT'
+    : isPreviewLocked
     ? 'PLANNED SESSION'
     : canRepeatViewed
     ? 'PAST SESSION'
     : isViewParam && !isCompletedView
     ? 'VIEW ONLY' // opened from the session-details sheet with no date — a pure review
     : "TODAY'S SESSION";
-  const previewMetaText = isCompletedView
+  const previewMetaText = isPlanMode && planDate
+    ? `For ${fmtPreviewDate(planDate)}`
+    : isCompletedView
     ? `Done · ${fmtPreviewDate(sessionDate as string)}`
     : isPreviewLocked && plannedDate
     ? `Planned · ${fmtPreviewDate(plannedDate)}`
@@ -3614,7 +3697,15 @@ export default function TrainerWorkoutSessionScreen() {
     </GlassPill>
   ) : null;
 
-  const bannerStartControl = isEditMode || isRunning ? null : showFinishedPill ? (
+  const bannerStartControl = isEditMode || isRunning ? null : isPlanMode && planDate ? (
+    /* PLAN pill — START's slot, START's anatomy (left value · right verb), amber
+       instead of green so it never reads as "this starts now". */
+    <GlassPill onPress={planning ? undefined : handlePlanPress}>
+      <Text style={styles.planPillDateText}>{fmtPreviewDate(planDate).toUpperCase()}</Text>
+      <View style={[styles.combinedPillSep, styles.planPillSep]} />
+      <Text style={styles.planPillText}>{planning ? 'PLANNING…' : 'PLAN'}</Text>
+    </GlassPill>
+  ) : showFinishedPill ? (
     <GlassPill>
       {viewedSessionDuration != null && (
         <>
@@ -4042,8 +4133,8 @@ export default function TrainerWorkoutSessionScreen() {
                                   isLiveShown={false}
                                   isLiveActive={false}
                                   onLiveTap={undefined}
-                                  readOnly={isViewOnly || isPreviewLocked}
-                                  previewMode={isPreviewLocked}
+                                  readOnly={isViewOnly || isPreviewLocked || isPlanMode}
+                                  previewMode={isPreviewLocked || isPlanMode}
                                   lastCompletedSessionAt={lastCompletedSessionAt}
                                   isRevealed={revealedExId === member.workoutExerciseId}
                                   onReveal={setRevealedExId}
@@ -4115,8 +4206,8 @@ export default function TrainerWorkoutSessionScreen() {
                           isLiveShown={false}
                           isLiveActive={false}
                           onLiveTap={undefined}
-                          readOnly={isViewOnly || isPreviewLocked}
-                          previewMode={isPreviewLocked}
+                          readOnly={isViewOnly || isPreviewLocked || isPlanMode}
+                          previewMode={isPreviewLocked || isPlanMode}
                           lastCompletedSessionAt={lastCompletedSessionAt}
                           isRevealed={revealedExId === ex.workoutExerciseId}
                           onReveal={setRevealedExId}
@@ -4326,7 +4417,7 @@ export default function TrainerWorkoutSessionScreen() {
           onEditClientNote={(noteId, text) => editClientNote(infoModalExIdx, noteId, text)}
           onDeleteClientNote={noteId => deleteClientNote(infoModalExIdx, noteId)}
           onClose={() => setInfoModalExIdx(null)}
-          readOnly={isViewOnly || isPreviewLocked}
+          readOnly={isViewOnly || isPreviewLocked || isPlanMode}
         />
       )}
 
@@ -4455,7 +4546,7 @@ export default function TrainerWorkoutSessionScreen() {
           onAddNote={addTrainingNote}
           onDeleteNote={deleteTrainingNote}
           onMarkViewed={() => setTrainingNotesViewed(true)}
-          readOnly={isViewOnly || isPreviewLocked}
+          readOnly={isViewOnly || isPreviewLocked || isPlanMode}
           muscleGroups={muscleGroups}
           equipmentList={equipmentList}
           sessionHistory={sessionHistory}
@@ -7823,6 +7914,11 @@ const styles = StyleSheet.create({
   combinedPillSep: { width: 1, height: 14, backgroundColor: 'rgba(36,172,136,0.35)' },
   combinedPillTimerText: { color: '#24ac88', fontSize: 13, fontVariant: ['tabular-nums'], letterSpacing: 0.4, ...fd(800) },
   combinedPillFinishText: { color: '#24ac88', fontWeight: '700', fontSize: 13, letterSpacing: 0.4 },
+  // PLAN pill (plan mode) — the START pill's twin in amber, the app's "not now,
+  // later" colour (bonus sessions, the 48h rest hint).
+  planPillSep: { backgroundColor: 'rgba(245,166,35,0.35)' },
+  planPillDateText: { color: '#f5a623', fontSize: 13, letterSpacing: 0.4, ...fd(800) },
+  planPillText: { color: '#f5a623', fontWeight: '700', fontSize: 13, letterSpacing: 0.4 },
   dotsSessionInfo: { fontSize: 13, color: '#999', textAlign: 'center', marginTop: 2, marginBottom: 8 },
   floatCenterOverlay: { justifyContent: 'center', alignItems: 'center' },
   floatRight: { flexDirection: 'row', alignItems: 'center', gap: 6 },
