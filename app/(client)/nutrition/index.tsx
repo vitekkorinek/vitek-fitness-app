@@ -39,6 +39,7 @@ import { VFIcon } from '@/components/VFIcon';
 import { PearIcon } from '@/components/icons/PearIcon';
 import { NotificationOverlay } from '@/components/NotificationOverlay';
 import { useSessionStore } from '@/store/sessionStore';
+import { RestTimerChip } from '@/components/RestTimerChip';
 
 const BG     = '#faf9f7';
 const SCREEN_BG = '#faf9f7';
@@ -1830,12 +1831,15 @@ export default function NutritionDailyScreen() {
         }
         overlay={
           hasSession ? (
-            <TouchableOpacity style={styles.hdrSessIndicator} onPress={() => setSessionModalVisible(true)} hitSlop={12} activeOpacity={0.8}>
-              <SymbolView name="timer" size={13} tintColor="#24ac88" />
-              <Text style={styles.hdrSessTimer}>
-                {String(Math.floor(sessionElapsed / 60)).padStart(2, '0')}:{String(sessionElapsed % 60).padStart(2, '0')}
-              </Text>
-            </TouchableOpacity>
+            <>
+              <TouchableOpacity style={styles.hdrSessIndicator} onPress={() => setSessionModalVisible(true)} hitSlop={12} activeOpacity={0.8}>
+                <SymbolView name="timer" size={13} tintColor="#24ac88" />
+                <Text style={styles.hdrSessTimer}>
+                  {String(Math.floor(sessionElapsed / 60)).padStart(2, '0')}:{String(sessionElapsed % 60).padStart(2, '0')}
+                </Text>
+              </TouchableOpacity>
+              <RestTimerChip />
+            </>
           ) : null
         }
       />

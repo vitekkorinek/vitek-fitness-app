@@ -49,6 +49,7 @@ import type {
 import type { ClientTrainingData, WorkoutWithLastDate } from '@/lib/clientTraining';
 import ProgressTab from './progress-tab';
 import { useSessionStore } from '@/store/sessionStore';
+import { RestTimerChip } from '@/components/RestTimerChip';
 
 type Tab = 'training' | 'sessions' | 'nutrition' | 'progress' | 'info';
 
@@ -446,12 +447,15 @@ export default function ClientProfileScreen() {
         }
         overlay={
           sessionActive ? (
-            <TouchableOpacity style={styles.hdrSessIndicator} onPress={resumeSession} hitSlop={12} activeOpacity={0.8}>
-              <SymbolView name="timer" size={13} tintColor={ACCENT} />
-              <Text style={styles.hdrSessTimer}>
-                {String(Math.floor(sessionElapsed / 60)).padStart(2, '0')}:{String(sessionElapsed % 60).padStart(2, '0')}
-              </Text>
-            </TouchableOpacity>
+            <>
+              <TouchableOpacity style={styles.hdrSessIndicator} onPress={resumeSession} hitSlop={12} activeOpacity={0.8}>
+                <SymbolView name="timer" size={13} tintColor={ACCENT} />
+                <Text style={styles.hdrSessTimer}>
+                  {String(Math.floor(sessionElapsed / 60)).padStart(2, '0')}:{String(sessionElapsed % 60).padStart(2, '0')}
+                </Text>
+              </TouchableOpacity>
+              <RestTimerChip />
+            </>
           ) : null
         }
       />

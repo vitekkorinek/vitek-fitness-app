@@ -1,7 +1,11 @@
+import { useEffect, useState } from 'react';
+import { AppState, Vibration } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { create } from 'zustand';
 
 import { loadSessionDraft } from '@/lib/sessionDraft';
+import { syncRestActivity, reviveSessionActivity } from '@/lib/liveActivity';
+import { scheduleRestEndNotification, cancelRestEndNotification } from '@/lib/restNotifications';
 
 export type SuspendedSession = {
   clientId: string;
@@ -9,6 +13,24 @@ export type SuspendedSession = {
   workoutName: string;
   startedAt: number;
   activeSessionId: string | null;
+};
+
+/**
+ * The rest countdown, app-wide. It used to be local state + a setInterval inside each
+ * Do Mode file, so leaving the screen killed the clock. It lives here now, keyed on an
+ * ABSOLUTE end timestamp instead of a ticking counter — surviving navigation is free,
+ * and backgrounding the app (which freezes JS intervals) can no longer make it drift:
+ * whoever renders it just recomputes from `endsAt`.
+ *
+ * `pausedRemainingSecs` holds the frozen remaining seconds while paused; it may be
+ * NEGATIVE (paused during overtime), and resume re-derives `endsAt` from it so an
+ * overtime pause resumes still in overtime.
+ */
+export type RestTimer = {
+  endsAt: number;
+  totalSecs: number;
+  paused: boolean;
+  pausedRemainingSecs: number | null;
 };
 
 interface SessionStore {
@@ -33,6 +55,11 @@ interface SessionStore {
   // (replace/navigate/back) all failed on device — see CLAUDE-domode.md 48h guard.
   pendingOpenWorkoutGallery: boolean;
   setPendingOpenWorkoutGallery: (v: boolean) => void;
+  restTimer: RestTimer | null;
+  startRestTimer: (totalSecs: number) => void;
+  pauseRestTimer: () => void;
+  resumeRestTimer: () => void;
+  stopRestTimer: () => void;
 }
 
 /**
@@ -102,7 +129,7 @@ export async function hydrateSuspendedSession(userId: string): Promise<void> {
   }
 }
 
-export const useSessionStore = create<SessionStore>((set) => ({
+export const useSessionStore = create<SessionStore>((set, get) => ({
   startedAt: null,
   workoutId: null,
   start: (workoutId = null) => set({ startedAt: Date.now(), workoutId }),
@@ -117,4 +144,132 @@ export const useSessionStore = create<SessionStore>((set) => ({
   clearPendingLogDate: () => set({ pendingLogDate: null }),
   pendingOpenWorkoutGallery: false,
   setPendingOpenWorkoutGallery: (v) => set({ pendingOpenWorkoutGallery: v }),
+  restTimer: null,
+  // Each action also mirrors the new state onto the Live Activity (Dynamic
+  // Island) — a no-op on builds without the native module.
+  startRestTimer: (totalSecs) => {
+    const endsAt = Date.now() + totalSecs * 1000;
+    armRestVibration(endsAt);
+    scheduleRestEndNotification(endsAt);
+    const next: RestTimer = { endsAt, totalSecs, paused: false, pausedRemainingSecs: null };
+    syncRestActivity(next);
+    set({ restTimer: next });
+  },
+  pauseRestTimer: () => {
+    const rt = get().restTimer;
+    if (!rt || rt.paused) return;
+    disarmRestVibration();
+    cancelRestEndNotification();
+    const next: RestTimer = { ...rt, paused: true, pausedRemainingSecs: restRemainingRaw(rt) };
+    syncRestActivity(next);
+    set({ restTimer: next });
+  },
+  resumeRestTimer: () => {
+    const rt = get().restTimer;
+    if (!rt?.paused) return;
+    const endsAt = Date.now() + (rt.pausedRemainingSecs ?? 0) * 1000;
+    armRestVibration(endsAt);
+    scheduleRestEndNotification(endsAt);
+    const next: RestTimer = { ...rt, endsAt, paused: false, pausedRemainingSecs: null };
+    syncRestActivity(next);
+    set({ restTimer: next });
+  },
+  stopRestTimer: () => {
+    disarmRestVibration();
+    cancelRestEndNotification();
+    syncRestActivity(null);
+    set({ restTimer: null });
+  },
 }));
+
+// ─── Rest timer plumbing ─────────────────────────────────────────────────────
+
+/** Remaining whole seconds; NEGATIVE once in overtime. Frozen value while paused. */
+function restRemainingRaw(rt: RestTimer): number {
+  return rt.paused ? (rt.pausedRemainingSecs ?? 0) : Math.ceil((rt.endsAt - Date.now()) / 1000);
+}
+
+/**
+ * The end-of-rest buzz used to fire from Do Mode's interval, so it only worked while
+ * that screen was mounted. Owned here instead: one timeout armed at start/resume,
+ * disarmed on pause/stop — it buzzes wherever in the app the user is. (A backgrounded
+ * app freezes JS timers, so there it fires on return to foreground; the scheduled
+ * local notification — Phase 3 of the notifications work — covers that gap.)
+ */
+let restVibrateTimeout: ReturnType<typeof setTimeout> | null = null;
+function armRestVibration(endsAt: number): void {
+  disarmRestVibration();
+  const delay = endsAt - Date.now();
+  if (delay <= 0) return; // resumed already in overtime — the crossing buzz happened
+  restVibrateTimeout = setTimeout(() => {
+    Vibration.vibrate([0, 400, 100, 400]);
+    // Repaint the Live Activity into its overtime look (red + minus) the moment
+    // the rest ends — the widget only re-evaluates "over" on a repaint, and
+    // iOS's staleDate does NOT repaint on its own (see lib/liveActivity.ts /
+    // CLAUDE-infra.md). A backgrounded app fires this late, on return — same
+    // as the vibration.
+    syncRestActivity(useSessionStore.getState().restTimer);
+  }, delay);
+}
+function disarmRestVibration(): void {
+  if (restVibrateTimeout) { clearTimeout(restVibrateTimeout); restVibrateTimeout = null; }
+}
+
+// A cleared lock-screen card ENDS the Live Activity (iOS behavior) — bring it
+// back on the next app foreground while a SUSPENDED session is running. The
+// in-Do-Mode case is covered by the screen's own foreground effect (it knows
+// the workout name); reviveSessionActivity itself no-ops when a healthy
+// activity exists.
+AppState.addEventListener('change', (st) => {
+  if (st !== 'active') return;
+  const s = useSessionStore.getState();
+  if (s.suspendedSession) {
+    reviveSessionActivity(s.suspendedSession.workoutName, s.suspendedSession.startedAt, s.restTimer);
+  }
+});
+
+export type RestTick = {
+  paused: boolean;
+  totalSecs: number;
+  /** Seconds still to rest — 0 once the countdown is over. */
+  remaining: number;
+  /** Seconds PAST the end — 0 until the countdown is over. */
+  overtime: number;
+};
+
+/**
+ * Live view of the rest timer for anything that renders it (Do Mode, the header
+ * session chips). Returns null when no rest is running; otherwise re-renders the
+ * caller about once a second. Ticks at 500ms but sets plain numbers, so React
+ * bails out of the no-change half of the ticks — the half-step just keeps the
+ * displayed second from ever lagging a full second behind the clock.
+ */
+export function useRestTimerTick(): RestTick | null {
+  const rt = useSessionStore((s) => s.restTimer);
+  // The state exists only to CAUSE the ~1/s re-render (identical values bail out);
+  // the returned clock is computed fresh at render time, so a new timer replacing
+  // an old one can never show a stale first frame.
+  const [, setRaw] = useState(0);
+  useEffect(() => {
+    if (!rt || rt.paused) return;
+    const update = () => setRaw(restRemainingRaw(rt));
+    update();
+    const id = setInterval(update, 500);
+    return () => clearInterval(id);
+  }, [rt]);
+  if (!rt) return null;
+  const raw = restRemainingRaw(rt);
+  return {
+    paused: rt.paused,
+    totalSecs: rt.totalSecs,
+    remaining: Math.max(0, raw),
+    overtime: raw < 0 ? -raw : 0,
+  };
+}
+
+/** mm:ss — the Do Mode rest-clock format, shared so the header chips match it. */
+export function formatRestClock(secs: number): string {
+  const m = Math.floor(secs / 60);
+  const s = secs % 60;
+  return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+}

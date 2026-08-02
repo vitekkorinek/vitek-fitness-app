@@ -22,6 +22,7 @@ import { KettlebellIcon } from '@/components/icons/KettlebellIcon';
 import { supabase } from '@/lib/supabase';
 import { SLOGANS } from '@/i18n/en';
 import { useSessionStore } from '@/store/sessionStore';
+import { RestTimerChip } from '@/components/RestTimerChip';
 
 const TYPE_LABELS: Record<string, string> = {
   pt_session:   'PT Session',
@@ -395,18 +396,22 @@ export default function HomeScreen() {
         </View>
       </ScrollView>
 
-      {/* Session indicator — rendered after ScrollView so it's on top */}
+      {/* Session indicator — rendered after ScrollView so it's on top. The rest
+          countdown gets its own mirrored pill on the LEFT (`RestTimerChip hero`). */}
       {hasSession && (
-        <TouchableOpacity
-          style={[styles.heroSessionPill, { top: insets.top + 10, right: 20 }]}
-          onPress={handleReturnToSession}
-          activeOpacity={0.85}
-        >
-          <SymbolView name="timer" size={12} tintColor="#fff" />
-          <Text style={styles.heroSessionTimer}>
-            {String(Math.floor(sessionElapsed / 60)).padStart(2, '0')}:{String(sessionElapsed % 60).padStart(2, '0')}
-          </Text>
-        </TouchableOpacity>
+        <>
+          <TouchableOpacity
+            style={[styles.heroSessionPill, { top: insets.top + 10, right: 20 }]}
+            onPress={handleReturnToSession}
+            activeOpacity={0.85}
+          >
+            <SymbolView name="timer" size={12} tintColor="#fff" />
+            <Text style={styles.heroSessionTimer}>
+              {String(Math.floor(sessionElapsed / 60)).padStart(2, '0')}:{String(sessionElapsed % 60).padStart(2, '0')}
+            </Text>
+          </TouchableOpacity>
+          <RestTimerChip hero heroTop={insets.top + 10} />
+        </>
       )}
     </View>
   );

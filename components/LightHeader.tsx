@@ -6,6 +6,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import MaskedView from '@react-native-masked-view/masked-view';
 import { fd } from '@/lib/appType';
 import { SessionResumeChip } from '@/components/SessionResumeChip';
+import { RestTimerChip } from '@/components/RestTimerChip';
 
 /**
  * Light, airy screen header (redesign July 2026).
@@ -95,7 +96,7 @@ export function LightHeader({
         <View style={[lh.row, { marginTop: insets.top, height: HEADER_ROW_HEIGHT - 10 }]}>
           <View style={lh.side}>{left}</View>
           {titleNode}
-          {overlay ?? <SessionResumeChip />}
+          {overlay ?? <><SessionResumeChip /><RestTimerChip /></>}
           <View style={[lh.side, lh.right]}>{right}</View>
         </View>
       </View>
@@ -162,12 +163,15 @@ export function LightHeader({
           style={{ position: 'absolute', top: 0, left: 0, right: 0, height: rowBottom + TINT_DROP }}
         />
       )}
-      {/* Default overlay: the in-progress session chip — every LightHeader screen
-          can jump back into a suspended session. A custom `overlay` overrides it. */}
+      {/* Default overlay: the in-progress session chip (right) + the rest-timer
+          chip (left) — every LightHeader screen can jump back into a suspended
+          session or check the running rest. A custom `overlay` overrides BOTH
+          (the Do Mode picker passes <View /> to suppress them); overlay screens
+          that still want the rest chip render <RestTimerChip /> themselves. */}
       <View style={[lh.row, { marginTop: insets.top }]}>
         <View style={lh.side}>{left}</View>
         {titleNode}
-        {overlay ?? <SessionResumeChip />}
+        {overlay ?? <><SessionResumeChip /><RestTimerChip /></>}
         <View style={[lh.side, lh.right]}>{right}</View>
       </View>
     </View>

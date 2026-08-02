@@ -11,6 +11,7 @@ import GlassPanel from '@/components/GlassPanel';
 import { useAuth } from '@/context/AuthContext';
 import { supabase } from '@/lib/supabase';
 import { useSessionStore } from '@/store/sessionStore';
+import { RestTimerChip } from '@/components/RestTimerChip';
 import { smartBack } from '@/lib/navHistory';
 
 const ACCENT = '#24ac88';
@@ -55,14 +56,19 @@ function ClientTabHeader({
     </HeaderIcon>
   );
 
-  // Session indicator — absolute so title never shifts (sits left of the VF chip)
+  // Session indicator — absolute so title never shifts (sits left of the VF chip).
+  // The rest countdown has its own chip on the header's LEFT (`RestTimerChip`) —
+  // added here explicitly because a custom overlay replaces LightHeader's default.
   const overlay = hasSession ? (
-    <TouchableOpacity style={hdrStyles.sessIndicator} onPress={onSessionTap} hitSlop={12} activeOpacity={0.8}>
-      <SymbolView name="timer" size={13} tintColor={ACCENT} />
-      <Text style={hdrStyles.sessTimerText}>
-        {String(Math.floor(sessionElapsed / 60)).padStart(2, '0')}:{String(sessionElapsed % 60).padStart(2, '0')}
-      </Text>
-    </TouchableOpacity>
+    <>
+      <TouchableOpacity style={hdrStyles.sessIndicator} onPress={onSessionTap} hitSlop={12} activeOpacity={0.8}>
+        <SymbolView name="timer" size={13} tintColor={ACCENT} />
+        <Text style={hdrStyles.sessTimerText}>
+          {String(Math.floor(sessionElapsed / 60)).padStart(2, '0')}:{String(sessionElapsed % 60).padStart(2, '0')}
+        </Text>
+      </TouchableOpacity>
+      <RestTimerChip />
+    </>
   ) : null;
 
   return <LightHeader left={left} title={title} right={right} overlay={overlay} />;

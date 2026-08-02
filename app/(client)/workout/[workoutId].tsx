@@ -72,6 +72,7 @@ import {
   StatusBar,
   ActivityIndicator,
   Alert,
+  AppState,
   Keyboard,
   Modal,
   Pressable,
@@ -81,7 +82,6 @@ import {
   Image,
   Dimensions,
   FlatList,
-  Vibration,
   PanResponder,
   Switch,
 } from 'react-native';
@@ -118,7 +118,8 @@ import {
   registerOnLiveActivate,
   BridgedSet,
 } from '@/lib/doModeBridge';
-import { useSessionStore } from '@/store/sessionStore';
+import { useSessionStore, useRestTimerTick } from '@/store/sessionStore';
+import { startSessionActivity, endSessionActivity, updateProgressActivity, reviveSessionActivity } from '@/lib/liveActivity';
 import Swipeable from 'react-native-gesture-handler/Swipeable';
 import { useAuth } from '@/context/AuthContext';
 import type { Workout } from '@/types/database';
@@ -624,7 +625,7 @@ export default function TrainerWorkoutSessionScreen() {
   const showFinishedPill = isViewOnly && viewMode === 'finished' && !canRepeatViewed;
   const isFreeSession = workoutId === 'free';
   const router = useRouter();
-  const { startedAt, start: startSession, resume: resumeSession, finish: finishSession, suspendSession, clearSuspendedSession } = useSessionStore();
+  const { startedAt, start: startSession, resume: resumeSession, finish: finishSession, suspendSession, clearSuspendedSession, startRestTimer, pauseRestTimer, resumeRestTimer, stopRestTimer } = useSessionStore();
   const { profile } = useAuth();
   const clientId = profile?.id ?? '';
   // ⚠️ VESTIGIAL since July 30 2026 — it no longer gates anything in this file. It used to hide
@@ -700,16 +701,20 @@ export default function TrainerWorkoutSessionScreen() {
   const [replacementModal, setReplacementModal] = useState<{ exIdx: number } | null>(null);
 
   const [restVisible, setRestVisible] = useState(false);
-  const [restRemaining, setRestRemaining] = useState(0);
-  const restRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const timerPromptShown = useRef(false);
 
   const [preferredRestSecs, setPreferredRestSecs] = useState(60);
   const [restApplyAll, setRestApplyAll] = useState(true);
-  const [restTotalSecs, setRestTotalSecs] = useState(60);
-  const [restRunning, setRestRunning] = useState(false);
-  const [restPaused, setRestPaused] = useState(false);
   const [restInputText, setRestInputText] = useState('60');
+  // The countdown itself lives in the session store (absolute end timestamp) so it
+  // survives leaving this screen — the header session chips render it app-wide.
+  // This hook is the 1s tick; everything below derives the old local-state names.
+  const restTick = useRestTimerTick();
+  const restRunning = restTick != null;
+  const restPaused = restTick?.paused ?? false;
+  const restRemaining = restTick?.remaining ?? 0;
+  const restOvertimeSecs = restTick?.overtime ?? 0;
+  const restTotalSecs = restTick?.totalSecs ?? 60;
   // Running-rest pill drag: offset from its default bottom-right spot. Taps (< 6px move)
   // fall through to the pill's touchables; a real move steals the responder and drags.
   // The chosen spot persists for the rest of the session (ref-held ValueXY).
@@ -725,7 +730,6 @@ export default function TrainerWorkoutSessionScreen() {
     })
   ).current;
   // Long-press on the banner photo → view it full-screen, uncropped (tap to close)
-  const [restOvertimeSecs, setRestOvertimeSecs] = useState(0);
   const [exercisePhotos, setExercisePhotos] = useState<Map<string, string[]>>(new Map());
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const activeSessionIdRef = useRef<string | null>(null);
@@ -1949,7 +1953,49 @@ export default function TrainerWorkoutSessionScreen() {
     return () => { if (timerRef.current) clearInterval(timerRef.current); };
   }, [startedAt]);
 
-  useEffect(() => () => { if (restRef.current) clearInterval(restRef.current); }, []);
+  // Live Activity (Dynamic Island + lock screen): starts with the session. The
+  // name is a dep so a free-session rename refreshes the island; startActivity
+  // ends any stale activity first, so re-running (and a resumed session, which
+  // re-enters with the original startedAt) is safe. Ended where the session
+  // ends — the FINISH branches and Discard — never on suspend.
+  useEffect(() => {
+    if (!startedAt) return;
+    const name = isFreeSession ? freeSessionName : workout?.name;
+    if (name) startSessionActivity(name, startedAt);
+  }, [startedAt, isFreeSession, freeSessionName, workout?.name]);
+
+  // A cleared lock-screen card ended the activity — bring it back on foreground
+  // while THIS screen holds the running session (the suspended case lives in
+  // the store). No-op while a healthy activity exists.
+  useEffect(() => {
+    if (!startedAt) return;
+    const sub = AppState.addEventListener('change', (st) => {
+      if (st !== 'active') return;
+      const name = isFreeSession ? freeSessionNameRef.current : workout?.name;
+      if (name) reviveSessionActivity(name, startedAt, useSessionStore.getState().restTimer);
+    });
+    return () => sub.remove();
+  }, [startedAt, isFreeSession, workout?.name]);
+
+  // Lock-card progress: `N/M` beside the name + the NOW/NEXT lines. NOW follows
+  // the exercise whose card was last opened (falls back to the first not-done),
+  // NEXT is the next not-done after it in order. Deduped by key — `exercises`
+  // changes identity on every keystroke and ActivityKit updates aren't free.
+  const lastProgressKeyRef = useRef('');
+  useEffect(() => {
+    if (!startedAt || exercises.length === 0) return;
+    const done = exercises.filter(e => e.isDone).length;
+    const activeIdx = activeHeaderId ? exercises.findIndex(e => e.workoutExerciseId === activeHeaderId) : -1;
+    const curIdx = activeIdx >= 0 ? activeIdx : exercises.findIndex(e => !e.isDone);
+    const current = exercises[curIdx] ?? exercises[exercises.length - 1];
+    const next = exercises.find((e, i) => i > curIdx && !e.isDone)
+      ?? exercises.find((e, i) => !e.isDone && i !== curIdx)
+      ?? null;
+    const key = `${done}/${exercises.length}|${current?.workoutExerciseId ?? ''}|${next?.workoutExerciseId ?? ''}`;
+    if (key === lastProgressKeyRef.current) return;
+    lastProgressKeyRef.current = key;
+    updateProgressActivity(done, exercises.length, current?.exerciseName ?? null, next?.exerciseName ?? null);
+  }, [startedAt, exercises, activeHeaderId]);
 
   // Register start-session callback with bridge so Exercise Detail can trigger it.
   // Reset softPromptDismissed on screen open so the flag doesn't bleed between workouts.
@@ -2043,13 +2089,11 @@ export default function TrainerWorkoutSessionScreen() {
     };
   }, []);
 
+  // "Rest timer" ALWAYS opens a fresh setup — a running/paused countdown is
+  // cancelled (Vitek: "start timer means start timer, starts from the beginning").
   const startRest = (secs?: number) => {
     const duration = (typeof secs === 'number' && !isNaN(secs) && secs > 0) ? secs : preferredRestSecs;
-    if (restRef.current) { clearInterval(restRef.current); restRef.current = null; }
-    setRestRunning(false);
-    setRestPaused(false);
-    setRestRemaining(duration);
-    setRestOvertimeSecs(0);
+    stopRestTimer();
     setRestInputText(String(duration));
     setRestVisible(true);
   };
@@ -2057,42 +2101,16 @@ export default function TrainerWorkoutSessionScreen() {
   // Cancel the countdown outright. Closing the panel no longer does this — only
   // "Stop" (in the panel) or the ✕ on the running-rest pill.
   const stopRest = () => {
-    if (restRef.current) { clearInterval(restRef.current); restRef.current = null; }
-    setRestRunning(false);
-    setRestPaused(false);
-    setRestOvertimeSecs(0);
+    stopRestTimer();
     setRestVisible(false);
   };
 
-  // The 1s tick, shared by begin + resume. State stays in the screen so the clock
-  // outlives the panel.
-  const runRestInterval = () => {
-    if (restRef.current) { clearInterval(restRef.current); restRef.current = null; }
-    restRef.current = setInterval(() => {
-      setRestRemaining(prev => {
-        if (prev <= 0) {
-          setRestOvertimeSecs(ot => {
-            if (ot === 0) Vibration.vibrate([0, 400, 100, 400]);
-            return ot + 1;
-          });
-          return 0;
-        }
-        return prev - 1;
-      });
-    }, 1000);
-  };
+  // Pause freezes the countdown where it is; Resume picks it back up. Stop is the
+  // only thing that cancels. The clock itself (and the end-of-rest buzz) live in
+  // the session store, so all of these survive leaving the screen.
+  const pauseRest = () => { pauseRestTimer(); };
 
-  // Pause freezes the countdown where it is (interval cleared, remaining kept);
-  // Resume just restarts the tick. Stop is the only thing that cancels.
-  const pauseRest = () => {
-    if (restRef.current) { clearInterval(restRef.current); restRef.current = null; }
-    setRestPaused(true);
-  };
-
-  const resumeRest = () => {
-    setRestPaused(false);
-    runRestInterval();
-  };
+  const resumeRest = () => { resumeRestTimer(); };
 
   const beginCountdown = () => {
     // The number pad has no Done key — Start is the commit, so it must also drop
@@ -2101,12 +2119,7 @@ export default function TrainerWorkoutSessionScreen() {
     const secs = parseInt(restInputText, 10);
     if (isNaN(secs) || secs <= 0) return;
     if (restApplyAll) setPreferredRestSecs(secs);
-    setRestTotalSecs(secs);
-    setRestOvertimeSecs(0);
-    setRestRemaining(secs);
-    setRestRunning(true);
-    setRestPaused(false);
-    runRestInterval();
+    startRestTimer(secs);
   };
 
   const handleEditBeforeStart = () => {
@@ -3479,6 +3492,8 @@ export default function TrainerWorkoutSessionScreen() {
         // whole point of the outbox, and it is why no IN PROGRESS card is left behind.
         // The overview needs his history from the server to work out records, so it waits.
         finishSession();
+        stopRestTimer();
+        endSessionActivity();
         void clearSessionDraft(clientId, isFreeSession ? 'free' : workoutId!);
         setConfirmModal({
           title: 'Session saved on your phone',
@@ -3487,6 +3502,8 @@ export default function TrainerWorkoutSessionScreen() {
         });
       } else {
         finishSession();
+        stopRestTimer();
+        endSessionActivity();
         void clearSessionDraft(clientId, isFreeSession ? 'free' : workoutId!);
         if (isStretchSessionRef.current) {
           router.replace({
@@ -3565,6 +3582,8 @@ export default function TrainerWorkoutSessionScreen() {
               void clearSessionDraft(clientId, isFreeSession ? 'free' : workoutId!);
               clearSuspendedSession();
               finishSession();
+              stopRestTimer();
+              endSessionActivity();
               router.back();
             },
           },

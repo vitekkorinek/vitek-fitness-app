@@ -4,6 +4,8 @@ import { Session, User } from '@supabase/supabase-js';
 import { supabase } from '@/lib/supabase';
 import { bindCardVariantToUser } from '@/lib/cardVariant';
 import { bindSuspendedSessionToUser, useSessionStore } from '@/store/sessionStore';
+import { registerPushToken, unregisterPushToken } from '@/lib/pushTokens';
+import { endSessionActivity } from '@/lib/liveActivity';
 import type { User as UserProfile } from '@/types/database';
 
 type AuthContextType = {
@@ -190,6 +192,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     bindSuspendedSessionToUser(profile?.id ?? null);
   }, [profile?.id]);
 
+  // Register this device for push notifications once the signed-in profile is
+  // known — fire-and-forget, and deliberately OFF the auth callback stack (an
+  // awaited Supabase call inside onAuthStateChange wedges the auth lock).
+  useEffect(() => {
+    if (!profile?.id) return;
+    void registerPushToken(profile.id);
+  }, [profile?.id]);
+
   const clearPasswordRecovery = useCallback(() => setPasswordRecovery(false), []);
 
   const refreshProfile = useCallback(async () => {
@@ -209,6 +219,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
    * which is what a hung sign-out looked like on device. Report it instead.
    */
   const signOut = async (): Promise<{ ok: boolean }> => {
+    // The push token row must go BEFORE the auth session does (RLS needs the
+    // signed-in client for the delete) — a push for this account must not
+    // reach the phone once someone else signs in.
+    await unregisterPushToken();
     let failed = false;
     try {
       const { error } = await supabase.auth.signOut();
@@ -216,7 +230,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } catch {
       failed = true; // offline, or the request hit its deadline
     }
-    if (failed) return { ok: false };
+    if (failed) {
+      // Still signed in — put the token registration back.
+      const { data: { user } } = await supabase.auth.getUser().catch(() => ({ data: { user: null } }));
+      if (user) void registerPushToken(user.id);
+      return { ok: false };
+    }
 
     setProfile(null);
     setPasswordRecovery(false);
@@ -228,6 +247,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     useSessionStore.getState().clearSuspendedSession();
     useSessionStore.getState().finish();
     useSessionStore.getState().clearPendingLogDate();
+    // The rest timer + Live Activity are session-scoped too — without this a
+    // signed-out phone kept a ticking island and a scheduled rest notification.
+    useSessionStore.getState().stopRestTimer();
+    endSessionActivity();
     return { ok: true };
   };
 

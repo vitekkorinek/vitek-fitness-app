@@ -19,6 +19,10 @@ const ACCENT = '#24ac88';
  * the app I should be able to come back to that session". Screens that pass
  * their own `overlay` (the main client tabs, whose chip opens the session
  * modal instead) override it; renders null when nothing is suspended.
+ *
+ * The REST countdown deliberately does NOT touch this chip — it has its own
+ * indicator on the header's LEFT side (`RestTimerChip`), Vitek's call Aug 2026:
+ * "the countdown of the session keeps behaving the same it behaved till now."
  */
 export function SessionResumeChip() {
   const router = useRouter();

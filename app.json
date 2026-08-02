@@ -2,7 +2,7 @@
   "expo": {
     "name": "vitek-fitness-app",
     "slug": "vitek-fitness-app",
-    "version": "1.0.0",
+    "version": "1.1.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "vitekfitnessapp",
@@ -15,8 +15,13 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.vitekfitness.trainer",
+      "appleTeamId": "SGZ83SR8YV",
       "infoPlist": {
-        "ITSAppUsesNonExemptEncryption": false
+        "ITSAppUsesNonExemptEncryption": false,
+        "NSSupportsLiveActivities": true
+      },
+      "entitlements": {
+        "aps-environment": "production"
       }
     },
     "android": {
@@ -39,6 +44,8 @@
     },
     "plugins": [
       "expo-router",
+      "expo-notifications",
+      "@bacons/apple-targets",
       [
         "expo-font",
         {
