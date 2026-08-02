@@ -69,6 +69,45 @@ export function computeWeeklyRoutineMarks(args: {
   }]));
 }
 
+/**
+ * "Where are we in the program?" — a DISPLAY counter for the routine-detail header
+ * (Aug 2026, Vitek: "what week are we in? or round? like 3 rounds checked,
+ * something easy to see immediately").
+ *
+ * A round = one full pass through the routine: every workout done once. The walk is
+ * chronological — the first completed session of each workout fills the round, a
+ * repeat inside the same round doesn't advance it, and the round resets once all of
+ * them are in. `round` is therefore the pass currently IN PROGRESS (1 before anything
+ * is done) and `doneInRound`/`total` its progress.
+ *
+ * ⚠️ This is NOT the marks rule. The ✓/→/⋯ marks are WEEKLY and come from
+ * `computeWeeklyRoutineMarks` above — the old cycle-driven arrow was deleted in July
+ * 2026 for suggesting a workout done yesterday. Never drive marks from this.
+ *
+ * Known distortion: a workout added to an established routine starts at zero sessions,
+ * so the round in progress can't complete until it has been done once. That is the
+ * honest reading of "a full pass" and matches what the trainer sees in the card list.
+ */
+export function computeRoutineRounds(args: {
+  workoutIds: string[];
+  /** COMPLETED sessions for those workouts (any order — sorted here). */
+  completed: { workout_id: string | null; date: string }[];
+}): { round: number; doneInRound: number; total: number } {
+  const total = args.workoutIds.length;
+  if (total === 0) return { round: 1, doneInRound: 0, total: 0 };
+  const inRoutine = new Set(args.workoutIds);
+  const ordered = [...args.completed].sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+
+  let rounds = 0;
+  let seen = new Set<string>();
+  for (const s of ordered) {
+    if (!s.workout_id || !inRoutine.has(s.workout_id) || seen.has(s.workout_id)) continue;
+    seen.add(s.workout_id);
+    if (seen.size === total) { rounds++; seen = new Set(); }
+  }
+  return { round: rounds + 1, doneInRound: seen.size, total };
+}
+
 export type WorkoutWithLastDate = Workout & { lastSessionDate: string | null; isDoneInCycle?: boolean; doneThisWeek?: boolean; missedLastWeek?: boolean };
 export type ClosedRoutineRow = Pick<Routine, 'id' | 'name' | 'auto_name' | 'closed_at'>;
 

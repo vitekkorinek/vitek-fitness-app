@@ -705,9 +705,11 @@ const rcStyles = StyleSheet.create({
 const menuStyles = StyleSheet.create({
   overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'center', paddingHorizontal: 40 },
   sheet: { backgroundColor: CARD, borderRadius: 16, overflow: 'hidden' },
+  // 17/700 dark — the app's sheet-title treatment. See the note in the client
+  // profile's menuStyles: at 13/600 MUTED it read as a caption, not the subject.
   sheetTitle: {
-    fontSize: 13, fontWeight: '600', color: MUTED,
-    paddingHorizontal: 16, paddingVertical: 14, textAlign: 'center',
+    fontSize: 17, fontWeight: '700', color: TEXT,
+    paddingHorizontal: 20, paddingTop: 2, paddingBottom: 14, textAlign: 'center',
   },
   sheetDivider: { height: 1, backgroundColor: BORDER },
   option: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 20, paddingVertical: 15 },

@@ -59,10 +59,16 @@ export function useHeaderHeight() {
 }
 
 export function LightHeader({
-  left, title, right, overlay, solid,
+  left, title, titleAccessory, right, overlay, solid,
 }: {
   left?: ReactNode;
   title: string;
+  /** Small control rendered INLINE, right of the title (e.g. the routine screens'
+   *  (i) info button) — the title + accessory pair stays centred together, and the
+   *  title shrinks first when the name is long. Use this rather than the `overlay`
+   *  slot for anything that belongs to the title: `overlay` sits by the right-hand
+   *  glyph and replaces the session-resume chip. */
+  titleAccessory?: ReactNode;
   right?: ReactNode;
   overlay?: ReactNode;
   /** Opaque light header (no see-through glass) — content is hidden cleanly behind
@@ -73,6 +79,14 @@ export function LightHeader({
   const insets = useSafeAreaInsets();
   const rowBottom = insets.top + HEADER_ROW_HEIGHT;
   const totalH = rowBottom + FADE_ZONE;
+  const titleNode = titleAccessory ? (
+    <View style={lh.titleRow}>
+      <Text style={[lh.titleInline, fd(700)]} numberOfLines={1}>{title}</Text>
+      {titleAccessory}
+    </View>
+  ) : (
+    <Text style={[lh.title, fd(700)]} numberOfLines={1}>{title}</Text>
+  );
   if (solid) {
     return (
       <View style={[lh.wrap, { height: rowBottom, backgroundColor: BG }]} pointerEvents="box-none">
@@ -80,7 +94,7 @@ export function LightHeader({
             higher (the solid header otherwise reads as sitting too low). */}
         <View style={[lh.row, { marginTop: insets.top, height: HEADER_ROW_HEIGHT - 10 }]}>
           <View style={lh.side}>{left}</View>
-          <Text style={[lh.title, fd(700)]} numberOfLines={1}>{title}</Text>
+          {titleNode}
           {overlay ?? <SessionResumeChip />}
           <View style={[lh.side, lh.right]}>{right}</View>
         </View>
@@ -152,7 +166,7 @@ export function LightHeader({
           can jump back into a suspended session. A custom `overlay` overrides it. */}
       <View style={[lh.row, { marginTop: insets.top }]}>
         <View style={lh.side}>{left}</View>
-        <Text style={[lh.title, fd(700)]} numberOfLines={1}>{title}</Text>
+        {titleNode}
         {overlay ?? <SessionResumeChip />}
         <View style={[lh.side, lh.right]}>{right}</View>
       </View>
@@ -197,6 +211,10 @@ const lh = StyleSheet.create({
   side:  { width: 44, alignItems: 'flex-start', justifyContent: 'center' },
   right: { alignItems: 'flex-end' },
   title: { flex: 1, fontSize: 20, fontWeight: '700', color: TEXT, textAlign: 'center' },
+  // Title + inline accessory. The row takes the flex:1 the bare title would have,
+  // so the pair centres as one unit; the text shrinks (and ellipsises) first.
+  titleRow: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7 },
+  titleInline: { fontSize: 20, fontWeight: '700', color: TEXT, textAlign: 'center', flexShrink: 1 },
 });
 
 const hi = StyleSheet.create({

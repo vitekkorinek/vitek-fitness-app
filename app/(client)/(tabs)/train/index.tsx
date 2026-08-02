@@ -217,6 +217,9 @@ type WorkoutCard = {
   routineName: string | null;
   lastDoneDate: string | null;
   doneThisWeek: boolean;
+  /** Completed sessions, all-time — the `N×` after the date. A PLANNED session is
+   *  not counted (it isn't completed), so planning one leaves the number alone. */
+  sessionCount: number;
   exerciseNames: string[];
 };
 
@@ -427,9 +430,11 @@ export default function TrainTabScreen() {
 
     const lastDone = new Map<string, string>();
     const doneThisWeek = new Set<string>();
+    const doneCount = new Map<string, number>();
     for (const s of (doneSess ?? []) as any[]) {
       if (!s.workout_id) continue;
       if (!lastDone.has(s.workout_id)) lastDone.set(s.workout_id, s.date);
+      doneCount.set(s.workout_id, (doneCount.get(s.workout_id) ?? 0) + 1);
       if (s.date >= weekStart && s.date <= weekEnd) doneThisWeek.add(s.workout_id);
     }
 
@@ -446,6 +451,7 @@ export default function TrainTabScreen() {
         routineName: w.routines?.name ?? null,
         lastDoneDate: lastDone.get(w.id) ?? null,
         doneThisWeek: doneThisWeek.has(w.id),
+        sessionCount: doneCount.get(w.id) ?? 0,
         exerciseNames: exMap.get(w.id) ?? [],
       }));
 
@@ -973,6 +979,13 @@ export default function TrainTabScreen() {
                     <Text style={[sectionStyles.wStatus, ft(600), { color: c.lastDoneDate ? ACCENT : galleryFooterDark ? 'rgba(255,255,255,0.5)' : '#999' }]} numberOfLines={1}>
                       {c.lastDoneDate ? formatShortDate(c.lastDoneDate) : '—'}
                     </Text>
+                    {/* All-time session count, right after the date it belongs to —
+                        the same slot as My Workouts. Completed sessions only. */}
+                    {c.sessionCount > 0 && (
+                      <Text style={[sectionStyles.wCount, galleryFooterDark && darkCardStyles.subOnDark]} numberOfLines={1}>
+                        {c.sessionCount}×
+                      </Text>
+                    )}
                     <TouchableOpacity style={sectionStyles.wFooterMenuBtn} hitSlop={8} activeOpacity={0.6} onPress={() => openWorkoutDetails(c)}>
                       <SymbolView name="ellipsis" size={16} tintColor={galleryFooterDark ? DARK_MUTED_ICON : '#bbb'} />
                     </TouchableOpacity>
@@ -2050,6 +2063,8 @@ const sectionStyles = StyleSheet.create({
   wFooterMenuBtn: { paddingHorizontal: 2, paddingBottom: 1 },
   wSub:           { fontSize: 11, fontWeight: '400', color: '#999' },
   wStatus:        { fontSize: 11, fontWeight: '600' },
+  // All-time session count — muted, so the green date stays the card's live value.
+  wCount:         { fontSize: 11, fontWeight: '600', color: '#999' },
 
   seeAllCard:     { width: 80, height: 112, borderRadius: 14, backgroundColor: 'rgba(36,172,136,0.08)', borderWidth: 1.5, borderStyle: 'dashed', borderColor: 'rgba(36,172,136,0.3)', alignItems: 'center', justifyContent: 'center', gap: 6 },
   seeAllArrow:    { fontSize: 18, color: '#24ac88' },

@@ -24,6 +24,7 @@ import { relativeTime } from '@/lib/utils';
 import { useAuth } from '@/context/AuthContext';
 import { SessionDetailsSheet } from '@/components/SessionDetailsSheet';
 import { BottomSheet } from '@/components/BottomSheet';
+import { RoutineInfoSheet } from '@/components/RoutineInfoSheet';
 import GlassPanel from '@/components/GlassPanel';
 import { CATEGORY_COLORS } from '@/lib/workoutCategories';
 import type { WorkoutCategory } from '@/lib/workoutCategories';
@@ -31,7 +32,7 @@ import WorkoutPaperCover, { DARK_CARD_FOOTER } from '@/components/WorkoutPaperCo
 import { useFooterDark } from '@/lib/cardVariant';
 import { ft, fd } from '@/lib/appType';
 import { fetchExerciseNames } from '@/lib/exerciseNames';
-import { computeWeeklyRoutineMarks } from '@/lib/clientTraining';
+import { computeWeeklyRoutineMarks, computeRoutineRounds } from '@/lib/clientTraining';
 import type { Routine } from '@/types/database';
 
 type RoutineWorkout = {
@@ -41,6 +42,9 @@ type RoutineWorkout = {
   category: string | null;
   cover_image_url: string | null;
   lastSessionDate: string | null;
+  /** Completed sessions, all-time — the `N×` on the card footer. A PLANNED session
+   *  is not counted (it isn't completed), so planning one leaves the number alone. */
+  sessionCount: number;
   exerciseNames: string[];
 };
 
@@ -53,11 +57,13 @@ type TemplateRow = {
 };
 
 type WeeklyMarks = ReturnType<typeof computeWeeklyRoutineMarks>;
+type Rounds = ReturnType<typeof computeRoutineRounds>;
 
 async function fetchRoutineDetail(routineId: string, clientId: string): Promise<{
   routine: Routine | null;
   workouts: RoutineWorkout[];
   marks: WeeklyMarks;
+  rounds: Rounds;
 }> {
   const [{ data: routineData }, { data: workoutData }] = await Promise.all([
     supabase.from('routines').select('*').eq('id', routineId).single(),
@@ -65,7 +71,7 @@ async function fetchRoutineDetail(routineId: string, clientId: string): Promise<
   ]);
 
   if (!workoutData?.length) {
-    return { routine: routineData as Routine | null, workouts: [], marks: new Map() };
+    return { routine: routineData as Routine | null, workouts: [], marks: new Map(), rounds: { round: 1, doneInRound: 0, total: 0 } };
   }
 
   const workoutIds = (workoutData as any[]).map(w => w.id);
@@ -80,8 +86,10 @@ async function fetchRoutineDetail(routineId: string, clientId: string): Promise<
     .order('created_at', { ascending: true });
 
   const lastDateMap = new Map<string, string>();
+  const countMap = new Map<string, number>();
   for (const s of (sessionsData ?? []) as { workout_id: string; date: string }[]) {
     lastDateMap.set(s.workout_id, s.date); // ascending order → last write = most recent date
+    countMap.set(s.workout_id, (countMap.get(s.workout_id) ?? 0) + 1);
   }
 
   // WEEKLY marks (July 26 2026) — this screen used to run its own CYCLE detection and
@@ -103,9 +111,12 @@ async function fetchRoutineDetail(routineId: string, clientId: string): Promise<
       category: w.category ?? null,
       cover_image_url: w.cover_image_url ?? null,
       lastSessionDate: lastDateMap.get(w.id) ?? null,
+      sessionCount: countMap.get(w.id) ?? 0,
       exerciseNames: exerciseMap.get(w.id) ?? [],
     })),
     marks,
+    // Program progress for the header pill — display only, never the marks.
+    rounds: computeRoutineRounds({ workoutIds, completed: (sessionsData ?? []) as { workout_id: string; date: string }[] }),
   };
 }
 
@@ -121,6 +132,7 @@ export default function RoutineDetailScreen() {
   const [refreshing, setRefreshing] = useState(false);
 
   const [marks, setMarks] = useState<WeeklyMarks>(new Map());
+  const [rounds, setRounds] = useState<Rounds>({ round: 1, doneInRound: 0, total: 0 });
   const [historyModal, setHistoryModal] = useState(false);
   const [reorderModal, setReorderModal] = useState(false);
   const [reorderList, setReorderList] = useState<RoutineWorkout[]>([]);
@@ -226,10 +238,11 @@ export default function RoutineDetailScreen() {
   };
 
   const load = useCallback(async () => {
-    const { routine: r, workouts: w, marks: m } = await fetchRoutineDetail(routineId, clientId);
+    const { routine: r, workouts: w, marks: m, rounds: rd } = await fetchRoutineDetail(routineId, clientId);
     setRoutine(r);
     setWorkouts(w);
     setMarks(m);
+    setRounds(rd);
   }, [routineId, clientId]);
 
   useFocusEffect(
@@ -390,9 +403,22 @@ export default function RoutineDetailScreen() {
           {/* The Active pill used to sit under the title in the dark header bar. The
               glass header centres its title and can't carry a second line, so it moved
               here — first thing in the content, same information. */}
-          {isActive && (
-            <View style={styles.activeBadge}>
-              <Text style={styles.activeBadgeText}>Active</Text>
+          {/* Status row — the Active pill, plus "where are we in the program" (Aug
+              2026). The round pill shows on a closed routine too: the count is the
+              point of it, and it's the same history either way. */}
+          {(isActive || rounds.total > 0) && (
+            <View style={styles.statusRow}>
+              {isActive && (
+                <View style={styles.activeBadge}>
+                  <Text style={styles.activeBadgeText}>Active</Text>
+                </View>
+              )}
+              {rounds.total > 0 && (
+                <View style={styles.roundBadge}>
+                  <Text style={styles.roundBadgeText}>Round {rounds.round}</Text>
+                  <Text style={styles.roundBadgeCount}>{rounds.doneInRound}/{rounds.total}</Text>
+                </View>
+              )}
             </View>
           )}
           {workouts.length === 0 ? (
@@ -539,24 +565,14 @@ export default function RoutineDetailScreen() {
         </>)}</BottomSheet>
       )}
 
-      {/* ── History modal ─────────────────────────────────────────────────────── */}
+      {/* ── Routine info sheet ────────────────────────────────────────────────── */}
       {routine && historyModal && (
-        <BottomSheet onClose={() => setHistoryModal(false)}>{close => (<>
-          <Text style={popStyles.heading}>Routine History</Text>
-          <View style={{ width: '100%', paddingHorizontal: 20, paddingBottom: 8 }}>
-            {buildPeriods(routine.created_at, routine.status_history ?? [], routine.closed_at).map((p, i) => (
-              <View key={i} style={histStyles.periodRow}>
-                <View style={[histStyles.dot, p.to === null && histStyles.dotActive]} />
-                <Text style={histStyles.periodText}>
-                  {fmtDate(p.from)}{' – '}{p.to === null ? 'present' : fmtDate(p.to)}
-                </Text>
-              </View>
-            ))}
-          </View>
-          <TouchableOpacity style={popStyles.cancelBtn} onPress={() => close()}>
-            <Text style={popStyles.cancelText}>Close</Text>
-          </TouchableOpacity>
-        </>)}</BottomSheet>
+        <RoutineInfoSheet
+          routineId={routineId}
+          clientId={clientId}
+          routineName={routine.name}
+          onClose={() => setHistoryModal(false)}
+        />
       )}
 
       {/* ── Reorder modal ────────────────────────────────────────────────────────── */}
@@ -728,12 +744,10 @@ export default function RoutineDetailScreen() {
           </HeaderIcon>
         }
         title={routine?.name ?? 'Routine'}
-        overlay={
-          <View style={styles.infoBtnWrap}>
-            <TouchableOpacity onPress={() => setHistoryModal(true)} hitSlop={10} style={styles.infoBtn} activeOpacity={0.7}>
-              <Text style={styles.infoBtnText}>i</Text>
-            </TouchableOpacity>
-          </View>
+        titleAccessory={
+          <TouchableOpacity onPress={() => setHistoryModal(true)} hitSlop={12} style={styles.infoBtn} activeOpacity={0.7}>
+            <Text style={styles.infoBtnText}>i</Text>
+          </TouchableOpacity>
         }
         right={
           <HeaderIcon onPress={() => setAddModal(true)}>
@@ -819,6 +833,14 @@ function WorkoutItem({
           >
             {lastDoneText}
           </Text>
+          {/* How many times this workout has been done, all-time — right after the
+              date it belongs to, the same slot My Workouts uses. Completed sessions
+              only, so planning one doesn't move it. */}
+          {workout.sessionCount > 0 && (
+            <Text style={[coverCardStyles.footerCount, footerDark && coverCardStyles.subOnDark]}>
+              {workout.sessionCount}×
+            </Text>
+          )}
           <View style={coverCardStyles.footerSpacer} />
           <TouchableOpacity style={coverCardStyles.footerMenuBtn} onPress={onMenuPress} hitSlop={8} activeOpacity={0.5}>
             <SymbolView name="ellipsis" size={16} tintColor={footerDark ? 'rgba(255,255,255,0.65)' : '#bbb'} />
@@ -917,38 +939,8 @@ function RoutinePickerModal({
 }
 
 
-// ─── History helpers ──────────────────────────────────────────────────────────
-
-type HistoryEntry = { status: 'active' | 'closed'; at: string };
-
-function buildPeriods(
-  createdAt: string,
-  history: HistoryEntry[],
-  closedAt: string | null,
-): Array<{ from: string; to: string | null }> {
-  if (history.length === 0) {
-    return [{ from: createdAt, to: closedAt }];
-  }
-  // If the first event is 'active', the original close wasn't recorded.
-  // Reconstruct it using closedAt (kept from deactivation) as the end date.
-  const full: HistoryEntry[] =
-    history[0].status === 'active' && closedAt
-      ? [{ status: 'closed', at: closedAt }, ...history]
-      : history;
-  const periods: Array<{ from: string; to: string | null }> = [];
-  let start = createdAt;
-  for (const e of full) {
-    if (e.status === 'closed') { periods.push({ from: start, to: e.at }); start = ''; }
-    else if (e.status === 'active') { start = e.at; }
-  }
-  if (start) periods.push({ from: start, to: null });
-  return periods;
-}
-
-function fmtDate(iso: string): string {
-  const d = new Date(iso);
-  return `${d.getDate()}.${d.getMonth() + 1}.${d.getFullYear()}`;
-}
+// The routine-history period helpers moved into components/RoutineInfoSheet.tsx
+// (both routine screens carried a copy) when the (i) panel grew its per-workout stats.
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -975,21 +967,31 @@ const GRADIENT_DEFAULT: [string, string] = ['#2a2a2a', '#444444'];
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: BG },
-  // (i) routine-history button — absolute in the LightHeader overlay slot, left of the
-  // + so it never shifts the centred title (mirrors the client routine screen).
-  infoBtnWrap: { position: 'absolute', right: 58, top: 0, bottom: 0, justifyContent: 'center' },
+  // (i) routine-info button — INLINE beside the routine name (LightHeader's
+  // `titleAccessory` slot), mirroring the client routine screen. It used to sit in
+  // the overlay slot next to the +, where it read as belonging to that button.
   infoBtn: {
     width: 20, height: 20, borderRadius: 100,
     borderWidth: 1.5, borderColor: HEADER,
     alignItems: 'center', justifyContent: 'center',
   },
   infoBtnText: { fontSize: 11, fontStyle: 'italic', fontWeight: '700', color: HEADER },
+  statusRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 12 },
   // Mint pill on the page now, rather than white-alpha on dark green.
   activeBadge: {
     alignSelf: 'flex-start', backgroundColor: 'rgba(36,172,136,0.12)', borderRadius: 100,
-    paddingHorizontal: 9, paddingVertical: 3, marginBottom: 12,
+    paddingHorizontal: 9, paddingVertical: 3,
   },
   activeBadgeText: { color: ACCENT, fontSize: 10, fontWeight: '700' },
+  // Program progress — neutral next to the mint Active pill, so the green stays the
+  // status colour and this reads as information rather than a second state.
+  roundBadge: {
+    flexDirection: 'row', alignItems: 'center', gap: 5, alignSelf: 'flex-start',
+    backgroundColor: 'rgba(36,78,67,0.07)', borderRadius: 100,
+    paddingHorizontal: 9, paddingVertical: 3,
+  },
+  roundBadgeText: { color: HEADER, fontSize: 10, fontWeight: '700' },
+  roundBadgeCount: { color: 'rgba(36,78,67,0.55)', fontSize: 10, fontWeight: '700' },
 
   loaderWrap: { flex: 1, backgroundColor: BG, alignItems: 'center', justifyContent: 'center' },
   scroll: { flex: 1, backgroundColor: BG },
@@ -1033,6 +1035,7 @@ const coverCardStyles = StyleSheet.create({
   footerSpacer: { flex: 1, minWidth: 8 },
   footerDate: { fontSize: 12 },
   footerSub: { fontSize: 11, color: '#999' },
+  footerCount: { fontSize: 11, fontWeight: '600', color: '#999' },
   subOnDark: { color: 'rgba(255,255,255,0.6)' },
   // paddingHorizontal only — matching the gallery mini's wFooterMenuBtn. With
   // `padding: 4` the button was 24pt tall (16pt glyph + 8), which made IT the
@@ -1119,19 +1122,14 @@ const reorderStyles = StyleSheet.create({
   saveBtnText: { color: '#fff', fontWeight: '700', fontSize: 15 },
 });
 
-const histStyles = StyleSheet.create({
-  periodRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 8 },
-  dot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#ccc', flexShrink: 0 },
-  dotActive: { backgroundColor: '#24ac88' },
-  periodText: { fontSize: 14, color: '#1a1a1a' },
-});
-
 const menuStyles = StyleSheet.create({
   overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'center', paddingHorizontal: 40 },
   sheet: { backgroundColor: '#fff', borderRadius: 16, overflow: 'hidden' },
+  // 17/700 dark — the app's sheet-title treatment. See the note in the client
+  // profile's menuStyles: at 13/600 grey it read as a caption, not the subject.
   sheetTitle: {
-    fontSize: 13, fontWeight: '600', color: '#999',
-    paddingHorizontal: 16, paddingVertical: 14, textAlign: 'center',
+    fontSize: 17, fontWeight: '700', color: '#1a1a1a',
+    paddingHorizontal: 20, paddingTop: 2, paddingBottom: 14, textAlign: 'center',
   },
   sheetDivider: { height: 1, backgroundColor: '#e8e8e4' },
   option: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 20, paddingVertical: 15 },

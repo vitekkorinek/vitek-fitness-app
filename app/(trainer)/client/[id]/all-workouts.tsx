@@ -42,6 +42,9 @@ type WorkoutRow = {
   lastSessionDate: string | null;
   createdAt: string;
   thisWeekCount: number;
+  /** Completed sessions, all-time — the `N×` after the date. A PLANNED session is
+   *  not counted (it isn't completed), so planning one leaves the number alone. */
+  sessionCount: number;
   isStretch: boolean;
   exerciseNames: string[];
 };
@@ -106,8 +109,10 @@ async function fetchAllWorkouts(clientId: string): Promise<WorkoutRow[]> {
 
   const lastDateMap = new Map<string, string>();
   const thisWeekCountMap = new Map<string, number>();
+  const totalCountMap = new Map<string, number>();
   (sessions ?? []).forEach((s: any) => {
     if (!lastDateMap.has(s.workout_id)) lastDateMap.set(s.workout_id, s.date);
+    totalCountMap.set(s.workout_id, (totalCountMap.get(s.workout_id) ?? 0) + 1);
     if (s.date >= weekStart && s.date <= weekEnd) {
       thisWeekCountMap.set(s.workout_id, (thisWeekCountMap.get(s.workout_id) ?? 0) + 1);
     }
@@ -124,6 +129,7 @@ async function fetchAllWorkouts(clientId: string): Promise<WorkoutRow[]> {
     lastSessionDate: lastDateMap.get(w.id) ?? null,
     createdAt: w.created_at,
     thisWeekCount: thisWeekCountMap.get(w.id) ?? 0,
+    sessionCount: totalCountMap.get(w.id) ?? 0,
     isStretch: STRETCHING_CATEGORIES.includes(w.category),
     exerciseNames: exerciseMap.get(w.id) ?? [],
   }));
@@ -602,6 +608,14 @@ function WorkoutItem({
           >
             {workout.lastSessionDate ? formatShortDate(workout.lastSessionDate) : '—'}
           </Text>
+          {/* How many times it has been done, all-time — right after the date it
+              belongs to (the right cluster is the source label's). Completed
+              sessions only, so planning one doesn't move it. */}
+          {workout.sessionCount > 0 && (
+            <Text style={[coverCardStyles.footerCount, footerDark && coverCardStyles.subOnDark]}>
+              {workout.sessionCount}×
+            </Text>
+          )}
           <View style={coverCardStyles.footerSpacer} />
           <Text style={[coverCardStyles.footerSource, footerDark && coverCardStyles.subOnDark, ft(400)]} numberOfLines={1}>
             {workout.routineName ?? 'Standalone'}
@@ -749,6 +763,7 @@ const coverCardStyles = StyleSheet.create({
   // to, and pushes the source label + ⋯ to the right edge as their own cluster.
   footerSpacer: { flex: 1, minWidth: 8 },
   footerDate:   { fontSize: 12 },
+  footerCount:  { fontSize: 11, fontWeight: '600', color: '#999' },
   footerSource: { fontSize: 11, color: '#999', flexShrink: 1 },
   // paddingHorizontal only — matching the gallery mini's wFooterMenuBtn. With
   // `padding: 4` the button was 24pt tall (16pt glyph + 8), which made IT the
@@ -883,9 +898,11 @@ const styles = StyleSheet.create({
 const menuStyles = StyleSheet.create({
   overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'center', paddingHorizontal: 40 },
   sheet: { backgroundColor: CARD, borderRadius: 16, overflow: 'hidden' },
+  // 17/700 dark — the app's sheet-title treatment. See the note in the client
+  // profile's menuStyles: at 13/600 MUTED it read as a caption, not the subject.
   sheetTitle: {
-    fontSize: 13, fontWeight: '600', color: MUTED,
-    paddingHorizontal: 16, paddingVertical: 14, textAlign: 'center',
+    fontSize: 17, fontWeight: '700', color: TEXT,
+    paddingHorizontal: 20, paddingTop: 2, paddingBottom: 14, textAlign: 'center',
   },
   sheetDivider: { height: 1, backgroundColor: BORDER },
   option: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 20, paddingVertical: 15 },
