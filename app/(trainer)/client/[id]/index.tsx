@@ -461,7 +461,12 @@ export default function ClientProfileScreen() {
         <BottomSheet onClose={() => setAddModal(false)}>
           {close => (
             <View style={addPopStyles.sheetContent}>
-              <Text style={addPopStyles.heading}>Add Session</Text>
+              {/* 17/700 dark + divider — the sheet-title treatment (menuStyles), not
+                  the uppercase grey `heading`, which stays for the GLASS popups that
+                  share this stylesheet. The divider needs alignSelf:'stretch' because
+                  sheetContent centres its children (a width-less View would collapse). */}
+              <Text style={menuStyles.sheetTitle}>Add Session</Text>
+              <View style={[menuStyles.sheetDivider, addPopStyles.sheetDividerStretch]} />
 
               <TouchableOpacity
                 style={addPopStyles.option}
@@ -519,9 +524,6 @@ export default function ClientProfileScreen() {
                 <Text style={[addPopStyles.optionText, { color: '#24ac88' }]}>Start Free Session</Text>
               </TouchableOpacity>
 
-              <TouchableOpacity style={addPopStyles.cancelBtn} onPress={() => close()}>
-                <Text style={addPopStyles.cancelText}>Cancel</Text>
-              </TouchableOpacity>
             </View>
           )}
         </BottomSheet>
@@ -542,7 +544,8 @@ export default function ClientProfileScreen() {
         <BottomSheet onClose={() => { if (!applyingTemplate) setTemplateModal(false); }}>
           {close => (
             <View style={addPopStyles.sheetContent}>
-              <Text style={addPopStyles.heading}>Pick a Template</Text>
+              <Text style={menuStyles.sheetTitle}>Pick a Template</Text>
+              <View style={[menuStyles.sheetDivider, addPopStyles.sheetDividerStretch]} />
               {loadingTemplates ? (
                 <ActivityIndicator color="#24ac88" style={{ marginVertical: 20 }} />
               ) : templates.length === 0 ? (
@@ -567,9 +570,6 @@ export default function ClientProfileScreen() {
                   </View>
                 ))
               )}
-              <TouchableOpacity style={addPopStyles.cancelBtn} onPress={() => { if (!applyingTemplate) close(); }}>
-                <Text style={addPopStyles.cancelText}>Cancel</Text>
-              </TouchableOpacity>
             </View>
           )}
         </BottomSheet>
@@ -2335,7 +2335,8 @@ function WeekStripCard({
         <BottomSheet onClose={() => setNoSessModal(false)}>
           {close => (
             <View style={addPopStyles.sheetContent}>
-              <Text style={addPopStyles.heading}>Add Session</Text>
+              <Text style={menuStyles.sheetTitle}>Add Session</Text>
+              <View style={[menuStyles.sheetDivider, addPopStyles.sheetDividerStretch]} />
 
               <TouchableOpacity style={addPopStyles.option} activeOpacity={0.7}
                 onPress={() => close(() => router.push(`/(trainer)/workout-builder?clientId=${clientId}&scheduleDate=${selectedDate}` as any))}>
@@ -2378,9 +2379,6 @@ function WeekStripCard({
                 <Text style={[addPopStyles.optionText, { color: '#24ac88' }]}>Start Free Session</Text>
               </TouchableOpacity>
 
-              <TouchableOpacity style={addPopStyles.cancelBtn} onPress={() => close()}>
-                <Text style={addPopStyles.cancelText}>Cancel</Text>
-              </TouchableOpacity>
             </View>
           )}
         </BottomSheet>
@@ -4885,10 +4883,15 @@ const addPopStyles = StyleSheet.create({
   cancelTextOnGlass: { color: '#414b45', fontWeight: '600' },
   emptyTextOnGlass: { color: '#1f2823' },
   emptySubOnGlass: { color: '#414b45' },
+  // Kept for the GLASS popups that share this stylesheet (Plan a Workout / Schedule /
+  // Session in progress, via headingOnGlass). The BottomSheets moved to
+  // menuStyles.sheetTitle — 13/700 uppercase grey read as a caption, not a title.
   heading: {
     fontSize: 13, fontWeight: '700', color: '#aaa',
     letterSpacing: 0.6, textTransform: 'uppercase', marginBottom: 8,
   },
+  // sheetContent centres its children, so a width-less divider would collapse.
+  sheetDividerStretch: { alignSelf: 'stretch' },
   option: {
     width: '100%', flexDirection: 'row', alignItems: 'center',
     paddingHorizontal: 20, paddingVertical: 16, gap: 12,

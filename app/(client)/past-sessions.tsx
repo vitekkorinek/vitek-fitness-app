@@ -270,10 +270,6 @@ export default function PastSessionsScreen() {
                   </View>
                 </TouchableOpacity>
               ))}
-              <View style={s.pickerDivider} />
-              <TouchableOpacity style={s.pickerCancel} onPress={() => close()} activeOpacity={0.7}>
-                <Text style={s.pickerCancelText}>Cancel</Text>
-              </TouchableOpacity>
             </View>
           )}
         </BottomSheet>
@@ -312,10 +308,6 @@ export default function PastSessionsScreen() {
                   </View>
                 </TouchableOpacity>
               ))}
-              <View style={s.pickerDivider} />
-              <TouchableOpacity style={s.pickerCancel} onPress={() => close()} activeOpacity={0.7}>
-                <Text style={s.pickerCancelText}>Cancel</Text>
-              </TouchableOpacity>
             </View>
           )}
         </BottomSheet>

@@ -614,9 +614,6 @@ export default function ScheduleTabScreen() {
                     <Text style={[mr.optionText, { color: RED }]}>Request cancellation</Text>
                     <SymbolView name="chevron.right" size={13} tintColor={MUTED} />
                   </TouchableOpacity>
-                  <TouchableOpacity onPress={() => close()} style={mr.cancelLink}>
-                    <Text style={mr.cancelLinkText}>Close</Text>
-                  </TouchableOpacity>
                 </>
               ) : (
                 <>

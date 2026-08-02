@@ -863,9 +863,6 @@ export default function AccountScreen() {
                   {cardVariant === v && <SymbolView name="checkmark" size={15} tintColor="#24ac88" weight="semibold" />}
                 </TouchableOpacity>
               ))}
-              <TouchableOpacity onPress={() => close()} hitSlop={8} style={{ alignSelf: 'center', paddingTop: 4 }}>
-                <Text style={modalStyles.cancel}>{t.common.cancel}</Text>
-              </TouchableOpacity>
             </View>
           )}
         </BottomSheet>

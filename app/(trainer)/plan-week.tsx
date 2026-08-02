@@ -1272,9 +1272,6 @@ export default function PlanWeekScreen() {
                   );
                 })}
               </ScrollView>
-              <TouchableOpacity onPress={() => close()} style={{ paddingTop: 12, alignItems: 'center' }}>
-                <Text style={{ color: MUTED, fontSize: 15 }}>Close</Text>
-              </TouchableOpacity>
             </View>
             )}
           </BottomSheet>
@@ -1391,9 +1388,6 @@ export default function PlanWeekScreen() {
                 );
               })}
             </ScrollView>
-            <TouchableOpacity onPress={() => close()} style={{ paddingTop: 12, alignItems: 'center' }}>
-              <Text style={{ color: MUTED, fontSize: 15 }}>Close</Text>
-            </TouchableOpacity>
           </View>
           )}
         </BottomSheet>
@@ -1664,9 +1658,6 @@ function NewAppointmentSheet({
                 </TouchableOpacity>
               ))}
             </ScrollView>
-            <TouchableOpacity onPress={() => close()} style={{ paddingTop:12, alignItems:'center' }}>
-              <Text style={{ color:MUTED, fontSize:15 }}>Cancel</Text>
-            </TouchableOpacity>
           </View>
           )}
         </BottomSheet>
@@ -1703,9 +1694,6 @@ function NewAppointmentSheet({
                 );
               })}
             </View>
-            <TouchableOpacity onPress={() => close()} style={{ paddingTop:14, alignItems:'center' }}>
-              <Text style={{ color:MUTED, fontSize:15 }}>Cancel</Text>
-            </TouchableOpacity>
           </View>
           )}
         </BottomSheet>

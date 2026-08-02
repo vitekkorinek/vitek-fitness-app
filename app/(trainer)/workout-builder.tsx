@@ -1377,9 +1377,6 @@ export default function WorkoutBuilderScreen() {
                         </TouchableOpacity>
                       );
                     })}
-                    <TouchableOpacity onPress={() => close()} style={catPickerStyles.cancelBtn}>
-                      <Text style={catPickerStyles.cancelText}>Cancel</Text>
-                    </TouchableOpacity>
                   </View>
                 )}
               </BottomSheet>

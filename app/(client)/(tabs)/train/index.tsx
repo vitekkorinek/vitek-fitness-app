@@ -1160,9 +1160,6 @@ export default function TrainTabScreen() {
                           </>
                         )}
 
-                        <TouchableOpacity style={startModalStyles.cancel} onPress={() => close()}>
-                          <Text style={startModalStyles.cancelText}>Cancel</Text>
-                        </TouchableOpacity>
                   </View>
                 )}
               </BottomSheet>
@@ -1237,10 +1234,6 @@ export default function TrainTabScreen() {
                   <SymbolView name="dumbbell.fill" size={9} tintColor={ACCENT} />
                   <Text style={calModalStyles.legendText}>Workout completed</Text>
                 </View>
-
-                <TouchableOpacity style={calModalStyles.doneBtn} onPress={() => close()} activeOpacity={0.8}>
-                  <Text style={calModalStyles.doneBtnText}>Done</Text>
-                </TouchableOpacity>
               </View>
               )}
             </BottomSheet>
@@ -1311,9 +1304,6 @@ export default function TrainTabScreen() {
             >
               <SymbolView name="trash" size={18} tintColor="#e85d4a" />
               <Text style={[sessMenuStyles.optionLabel, { color: '#e85d4a' }]}>Delete</Text>
-            </TouchableOpacity>
-            <TouchableOpacity onPress={() => close()} hitSlop={8} style={{ marginTop: 8 }}>
-              <Text style={sessMenuStyles.cancelText}>Cancel</Text>
             </TouchableOpacity>
           </View>
           )}
@@ -1915,9 +1905,6 @@ function WeeklyGaugeCard({
                 ))}
               </ScrollView>
             )}
-            <TouchableOpacity style={sessListStyles.doneBtn} onPress={() => close()} activeOpacity={0.85}>
-              <Text style={sessListStyles.doneText}>Done</Text>
-            </TouchableOpacity>
           </View>
           )}
         </BottomSheet>

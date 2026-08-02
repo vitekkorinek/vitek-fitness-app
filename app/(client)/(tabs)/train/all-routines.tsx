@@ -589,9 +589,6 @@ function RoutineQuickLookModal({
               ))}
             </ScrollView>
           )}
-          <TouchableOpacity style={qlStyles.doneBtn} onPress={() => close()} activeOpacity={0.8}>
-            <Text style={qlStyles.doneBtnText}>Done</Text>
-          </TouchableOpacity>
         </View>
       )}
     </BottomSheet>

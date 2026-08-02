@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import {
   View, Text, ScrollView,
-  ActivityIndicator, TouchableOpacity, StyleSheet, Dimensions,
+  ActivityIndicator, StyleSheet, Dimensions,
 } from 'react-native';
 import { supabase } from '@/lib/supabase';
 import { BottomSheet } from './BottomSheet';
@@ -127,9 +127,6 @@ export function WorkoutExercisesModal({
               })}
             </ScrollView>
           )}
-          <TouchableOpacity style={s.doneBtn} onPress={() => close()} activeOpacity={0.8}>
-            <Text style={s.doneBtnText}>Done</Text>
-          </TouchableOpacity>
         </View>
       )}
     </BottomSheet>
@@ -157,9 +154,4 @@ const s = StyleSheet.create({
   exEquip: { fontSize: 11, color: MUTED, marginTop: 2 },
   exSets: { fontSize: 13, color: TEXT, marginTop: 4 },
   empty: { color: MUTED, textAlign: 'center', paddingVertical: 24, fontSize: 14 },
-  doneBtn: {
-    marginTop: 18, backgroundColor: ACCENT, borderRadius: 100,
-    paddingVertical: 12, alignItems: 'center',
-  },
-  doneBtnText: { color: '#fff', fontWeight: '700', fontSize: 15 },
 });

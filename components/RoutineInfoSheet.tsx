@@ -10,7 +10,7 @@
 import { useEffect, useState } from 'react';
 import {
   View, Text, ScrollView,
-  ActivityIndicator, TouchableOpacity, StyleSheet, Dimensions,
+  ActivityIndicator, StyleSheet, Dimensions,
 } from 'react-native';
 import { supabase } from '@/lib/supabase';
 import { BottomSheet } from './BottomSheet';
@@ -172,10 +172,6 @@ export function RoutineInfoSheet({
               ))}
             </ScrollView>
           )}
-
-          <TouchableOpacity style={s.doneBtn} onPress={() => close()} activeOpacity={0.8}>
-            <Text style={s.doneBtnText}>Done</Text>
-          </TouchableOpacity>
         </View>
       )}
     </BottomSheet>
@@ -274,9 +270,4 @@ const s = StyleSheet.create({
 
   empty: { color: MUTED, fontSize: 13, paddingVertical: 12 },
 
-  doneBtn: {
-    marginTop: 18, backgroundColor: ACCENT, borderRadius: 100,
-    paddingVertical: 12, alignItems: 'center',
-  },
-  doneBtnText: { color: '#fff', fontWeight: '700', fontSize: 15 },
 });

@@ -143,9 +143,6 @@ export default function RecommendationsScreen() {
                   <Text style={s.modalText}>{selected.body}</Text>
                 )}
               </View>
-              <TouchableOpacity style={s.modalClose} onPress={() => close()}>
-                <Text style={s.modalCloseText}>Close</Text>
-              </TouchableOpacity>
             </>
           )}
         </BottomSheet>

@@ -296,14 +296,6 @@ export default function ClientsScreen() {
                   </View>
                 ))}
               </ScrollView>
-
-              <TouchableOpacity
-                style={styles.modalDoneBtn}
-                activeOpacity={0.85}
-                onPress={() => close()}
-              >
-                <Text style={styles.modalDoneText}>Done</Text>
-              </TouchableOpacity>
             </View>
           )}
         </BottomSheet>

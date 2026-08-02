@@ -933,6 +933,13 @@ export default function TrainerWorkoutSessionScreen() {
     void saveSessionRef.current();
   }, [pendingFinishTrigger]);
 
+  // ⚠️ Present the sub-panel only AFTER the ⋯ sheet's Modal has actually gone (Aug
+  // 2026). The shared BottomSheet fires onClose() and then() back-to-back, so the two
+  // Modals swapped inside one commit — iOS then has a dismissing and a presenting
+  // window at once, and the survivor can keep swallowing touches, which reads as Do
+  // Mode being frozen after you come back. The client file has always staggered this
+  // (DotsMenuSheet.close → setTimeout(then, 230)).
+  const openAfterSheet = useCallback((fn: () => void) => { setTimeout(fn, 120); }, []);
   const [muscleSheetOpen, setMuscleSheetOpen] = useState(false);
   const [equipSheetOpen, setEquipSheetOpen] = useState(false);
   const [historySheetOpen, setHistorySheetOpen] = useState(false);
@@ -1969,7 +1976,18 @@ export default function TrainerWorkoutSessionScreen() {
   const handleEditBeforeStart = () => {
     if (startedAtRef.current || timerPromptShown.current || getSoftPromptDismissed()) return;
     timerPromptShown.current = true;
-    setConfirmModal({
+    // ⚠️ NEVER present this confirm while a sheet Modal is up (Aug 2026). iOS can't
+    // present a second modal over one that is already presented: the confirm never
+    // appears, but its overlay is live and swallows every tap — the screen looks
+    // frozen. This is reachable because the note SHEETS write notes too, and a note
+    // is an edit: add a set note before pressing START and the prompt fires from
+    // inside SetNoteModal. Close the sheets, then prompt on the next tick.
+    // (Notes added from the card footer are inline in the list, not a Modal, which
+    // is why this only ever showed up in the sheet path.)
+    setSetNoteModal(null);
+    setInfoModalExIdx(null);
+    setTrainingNotesOpen(false);
+    setTimeout(() => setConfirmModal({
       title: 'Start workout?',
       actions: [{ text: 'Start', primary: true, onPress: async () => {
         timerPromptShown.current = true;
@@ -1979,7 +1997,7 @@ export default function TrainerWorkoutSessionScreen() {
       }}],
       cancelText: 'Not yet',
       onCancel: () => setSoftPromptDismissed(true),
-    });
+    }), 260);
   };
 
   // ⚠️ A logged weight with no reps is not a valid record — Vitek: "kg and no reps
@@ -4999,7 +5017,7 @@ export default function TrainerWorkoutSessionScreen() {
             <View style={styles.sheetContent}>
               <Text style={styles.centeredModalTitle}>{isFreeSession ? freeSessionName : (workout?.name ?? 'Workout')}</Text>
 
-              <TouchableOpacity style={styles.dotsMenuItem} onPress={() => close(() => { setTrainingNotesOpen(true); setTrainingNotesViewed(true); })} activeOpacity={0.7}>
+              <TouchableOpacity style={styles.dotsMenuItem} onPress={() => close(() => openAfterSheet(() => { setTrainingNotesOpen(true); setTrainingNotesViewed(true); }))} activeOpacity={0.7}>
                 <View style={styles.floatIconBtn}>
                   <SymbolView name="note.text" size={18} tintColor="#fff" />
                 </View>
@@ -5008,7 +5026,7 @@ export default function TrainerWorkoutSessionScreen() {
                 <SymbolView name="chevron.right" size={13} tintColor="#ccc" />
               </TouchableOpacity>
 
-              <TouchableOpacity style={styles.dotsMenuItem} onPress={() => close(() => setMuscleSheetOpen(true))} activeOpacity={0.7}>
+              <TouchableOpacity style={styles.dotsMenuItem} onPress={() => close(() => openAfterSheet(() => setMuscleSheetOpen(true)))} activeOpacity={0.7}>
                 <View style={styles.floatIconBtn}>
                   <SymbolView name="figure.strengthtraining.traditional" size={18} tintColor="#fff" />
                 </View>
@@ -5016,7 +5034,7 @@ export default function TrainerWorkoutSessionScreen() {
                 <SymbolView name="chevron.right" size={13} tintColor="#ccc" />
               </TouchableOpacity>
 
-              <TouchableOpacity style={styles.dotsMenuItem} onPress={() => close(() => setEquipSheetOpen(true))} activeOpacity={0.7}>
+              <TouchableOpacity style={styles.dotsMenuItem} onPress={() => close(() => openAfterSheet(() => setEquipSheetOpen(true)))} activeOpacity={0.7}>
                 <View style={styles.floatIconBtn}>
                   <SymbolView name="dumbbell" size={18} tintColor="#fff" />
                 </View>
@@ -5024,7 +5042,7 @@ export default function TrainerWorkoutSessionScreen() {
                 <SymbolView name="chevron.right" size={13} tintColor="#ccc" />
               </TouchableOpacity>
 
-              <TouchableOpacity style={styles.dotsMenuItem} onPress={() => close(() => setHistorySheetOpen(true))} activeOpacity={0.7}>
+              <TouchableOpacity style={styles.dotsMenuItem} onPress={() => close(() => openAfterSheet(() => setHistorySheetOpen(true)))} activeOpacity={0.7}>
                 <View style={styles.floatIconBtn}>
                   <SymbolView name="clock.arrow.circlepath" size={18} tintColor="#fff" />
                 </View>
@@ -5045,10 +5063,6 @@ export default function TrainerWorkoutSessionScreen() {
                   })()}
                 </View>
               )}
-
-              <TouchableOpacity style={[styles.centeredModalDoneBtn, { marginTop: 6 }]} onPress={() => close()} activeOpacity={0.85}>
-                <Text style={styles.centeredModalDoneBtnText}>Done</Text>
-              </TouchableOpacity>
             </View>
           )}
         </BottomSheet>
@@ -6751,9 +6765,6 @@ function ExerciseInfoModal({
               <Text style={styles.infoSheetOutlineBtnText}>See progress →</Text>
             </TouchableOpacity>
           </View>
-          <TouchableOpacity style={styles.centeredModalDoneBtn} onPress={dismissSheet} activeOpacity={0.85}>
-            <Text style={styles.centeredModalDoneBtnText}>{en.exerciseDetail.done}</Text>
-          </TouchableOpacity>
         </Animated.View>
       </KeyboardAvoidingView>
       {historyOpen && (
@@ -6919,6 +6930,7 @@ function SetNoteModal({ trainerNotes, clientNotes, onAddNote, onEditNote, onDele
     else onAddNote(ownRole, text);
     setEditing(null);
     setNewNote('');
+    Keyboard.dismiss();
   };
   return (
     <Modal visible transparent animationType="none" onRequestClose={dismissSheet} statusBarTranslucent>
@@ -6927,6 +6939,9 @@ function SetNoteModal({ trainerNotes, clientNotes, onAddNote, onEditNote, onDele
         <Animated.View style={[styles.infoBottomSheet, { transform: [{ translateY: sheetY }] }]}>
           <View style={styles.infoSheetHandleHitArea} {...sheetPan}><View style={styles.infoSheetHandle} /></View>
           <Text style={styles.centeredModalTitle}>Set Notes</Text>
+          <TouchableOpacity style={styles.sheetCloseBtn} onPress={dismissSheet} hitSlop={12} activeOpacity={0.6}>
+            <SymbolView name="xmark" size={15} tintColor="#bbb" />
+          </TouchableOpacity>
           <ScrollView bounces={false} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} style={{ maxHeight: SCREEN_H * 0.55 }}>
             <Text style={[styles.infoLabel, { color: ACCENT }]}>TRAINER NOTE</Text>
             {sortedTrainer.map(n => (
@@ -7008,9 +7023,6 @@ function SetNoteModal({ trainerNotes, clientNotes, onAddNote, onEditNote, onDele
               <Text style={styles.seeHistoryBtnText}>{en.doMode.seeHistory}</Text>
             </TouchableOpacity>
           )}
-          <TouchableOpacity style={styles.centeredModalDoneBtn} onPress={dismissSheet} activeOpacity={0.85}>
-            <Text style={styles.centeredModalDoneBtnText}>Done</Text>
-          </TouchableOpacity>
         </Animated.View>
       </KeyboardAvoidingView>
     </Modal>
@@ -7117,9 +7129,6 @@ function SetHistoryModal({ workoutExerciseId, highlightSetNum, onClose }: {
             )}
             <View style={{ height: 8 }} />
           </ScrollView>
-          <TouchableOpacity style={styles.centeredModalDoneBtn} onPress={dismissSheet} activeOpacity={0.85}>
-            <Text style={styles.centeredModalDoneBtnText}>{en.exerciseDetail.done}</Text>
-          </TouchableOpacity>
         </Animated.View>
       </View>
     </Modal>
@@ -7412,9 +7421,6 @@ function ExerciseProgressSheet({ exerciseId, workoutId: progWorkoutId, profileId
             )}
             <View style={{ height: 8 }} />
           </ScrollView>
-          <TouchableOpacity style={styles.centeredModalDoneBtn} onPress={dismissSheet} activeOpacity={0.85}>
-            <Text style={styles.centeredModalDoneBtnText}>{en.exerciseDetail.done}</Text>
-          </TouchableOpacity>
         </Animated.View>
       </View>
       {tooltipPoint && (
@@ -7557,9 +7563,6 @@ function InfoSheet({ title, onClose, onBack, children }: {
             {children}
             <View style={{ height: 8 }} />
           </ScrollView>
-          <TouchableOpacity style={styles.centeredModalDoneBtn} onPress={() => dismiss(onBack)} activeOpacity={0.85}>
-            <Text style={styles.centeredModalDoneBtnText}>Done</Text>
-          </TouchableOpacity>
         </Animated.View>
       </View>
     </Modal>
@@ -7948,6 +7951,9 @@ function TrainingNotesModal({
         <Animated.View style={[styles.infoBottomSheet, { transform: [{ translateY: sheetY }] }]}>
           <View style={styles.infoSheetHandleHitArea} {...sheetPan}><View style={styles.infoSheetHandle} /></View>
           <Text style={styles.centeredModalTitle}>{en.doMode.sessionNotes.title}</Text>
+          <TouchableOpacity style={styles.sheetCloseBtn} onPress={dismiss} hitSlop={12} activeOpacity={0.6}>
+            <SymbolView name="xmark" size={15} tintColor="#bbb" />
+          </TouchableOpacity>
           <ScrollView bounces={false} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} style={{ maxHeight: SCREEN_H * 0.55 }}>
 
             {/* ── Previous sessions history (read-only) ─────────────── */}
@@ -8045,9 +8051,6 @@ function TrainingNotesModal({
             )}
             <View style={{ height: 8 }} />
           </ScrollView>
-          <TouchableOpacity style={styles.centeredModalDoneBtn} onPress={() => dismiss(onBack)} activeOpacity={0.85}>
-            <Text style={styles.centeredModalDoneBtnText}>{en.doMode.sessionNotes.done}</Text>
-          </TouchableOpacity>
         </Animated.View>
       </KeyboardAvoidingView>
     </Modal>
@@ -8385,7 +8388,10 @@ const styles = StyleSheet.create({
   centeredRoot: { flex: 1, backgroundColor: 'rgba(0,0,0,0.38)', justifyContent: 'center', paddingHorizontal: 24 },
   centeredModal: { backgroundColor: CARD, borderRadius: 20, padding: 20, maxHeight: SCREEN_H * 0.78 },
   sheetContent: { paddingHorizontal: 20, paddingBottom: 8 },
-  centeredModalTitle: { fontSize: 16, fontWeight: '700', color: TEXT, marginBottom: 14 },
+  // textAlign centre (Aug 2026): in a centred popup the parent centred this for
+  // free, but the ⋯ sheet and the sub-panels lay it out left-aligned, so the
+  // workout name sat against the edge while every other sheet centres its title.
+  centeredModalTitle: { fontSize: 16, fontWeight: '700', color: TEXT, marginBottom: 14, textAlign: 'center' },
   centeredModalDoneBtn: { backgroundColor: ACCENT, borderRadius: 100, paddingVertical: 13, alignItems: 'center', marginTop: 14 },
   centeredModalDoneBtnText: { color: '#fff', fontWeight: '700', fontSize: 15 },
 
@@ -8540,6 +8546,8 @@ const styles = StyleSheet.create({
 
   // Bottom sheet (info modal redesign)
   infoBottomSheet: { backgroundColor: CARD, borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 20, paddingTop: 12 },
+  // Top-right ✕ on the note sheets — absolute, so it never shifts the centred title.
+  sheetCloseBtn: { position: 'absolute', top: 12, right: 14, padding: 4, zIndex: 5 },
   infoSheetHandle: { width: 36, height: 4, borderRadius: 2, backgroundColor: '#e0e0dc' },
   infoSheetHandleHitArea: { alignItems: 'center', paddingVertical: 10, marginBottom: 4 },
   infoSheetBtnRow: { flexDirection: 'row', gap: 8, marginTop: 10 },

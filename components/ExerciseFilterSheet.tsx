@@ -61,11 +61,6 @@ export function ExerciseFilterSheet({
               );
             })}
           </ScrollView>
-          <View style={styles.footer}>
-            <TouchableOpacity style={styles.doneBtn} onPress={() => close()} activeOpacity={0.85}>
-              <Text style={styles.doneBtnText}>Done</Text>
-            </TouchableOpacity>
-          </View>
         </>
       )}
     </BottomSheet>
@@ -115,18 +110,4 @@ const styles = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center',
   },
   checkActive: { backgroundColor: HEADER, borderColor: HEADER },
-  footer: {
-    paddingHorizontal: 20,
-    paddingTop: 14,
-    paddingBottom: 20,
-    borderTopWidth: 1,
-    borderTopColor: '#f0f0f0',
-  },
-  doneBtn: {
-    backgroundColor: ACCENT,
-    borderRadius: 100,
-    paddingVertical: 13,
-    alignItems: 'center',
-  },
-  doneBtnText: { color: '#fff', fontWeight: '700', fontSize: 15 },
 });

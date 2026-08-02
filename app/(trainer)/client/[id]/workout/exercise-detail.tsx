@@ -1964,9 +1964,6 @@ function DetailMachineBrandModal({
               <Text style={styles.brandCustomSetBtnText}>{en.machineSelector.set}</Text>
             </TouchableOpacity>
           </View>
-          <TouchableOpacity style={[styles.centeredModalDoneBtn, { marginTop: 8 }]} onPress={() => close()} activeOpacity={0.85}>
-            <Text style={styles.centeredModalDoneBtnText}>{en.common.cancel}</Text>
-          </TouchableOpacity>
         </View>
       )}
     </BottomSheet>

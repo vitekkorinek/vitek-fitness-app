@@ -515,7 +515,11 @@ export default function RoutineDetailScreen() {
       {/* ── Add modal ─────────────────────────────────────────────────────────── */}
       {addModal && (
         <BottomSheet onClose={() => setAddModal(false)}>{close => (<>
-          <Text style={popStyles.heading}>Add to Routine</Text>
+          {/* Sheet title + divider — the same treatment as this file's ⋯ menu
+              (menuStyles), not the uppercase grey `popStyles.heading`, which has no
+              horizontal padding of its own and so sat flush against the screen edge. */}
+          <Text style={menuStyles.sheetTitle}>Add to Routine</Text>
+          <View style={menuStyles.sheetDivider} />
 
           <TouchableOpacity
             style={popStyles.option}
@@ -559,9 +563,6 @@ export default function RoutineDetailScreen() {
             <Text style={[popStyles.optionText, { color: ACCENT }]}>Start Free Session</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity style={popStyles.cancelBtn} onPress={() => close()}>
-            <Text style={popStyles.cancelText}>Cancel</Text>
-          </TouchableOpacity>
         </>)}</BottomSheet>
       )}
 
@@ -701,7 +702,8 @@ export default function RoutineDetailScreen() {
       {/* ── Template picker modal ──────────────────────────────────────────────── */}
       {templateModal && (
         <BottomSheet onClose={() => setTemplateModal(false)}>{close => (<>
-          <Text style={popStyles.heading}>Pick a Template</Text>
+          <Text style={menuStyles.sheetTitle}>Pick a Template</Text>
+          <View style={menuStyles.sheetDivider} />
 
           {loadingTemplates ? (
             <ActivityIndicator color={ACCENT} style={{ marginVertical: 20 }} />
@@ -728,9 +730,6 @@ export default function RoutineDetailScreen() {
             ))
           )}
 
-          <TouchableOpacity style={popStyles.cancelBtn} onPress={() => { if (!applyingTemplate) close(); }}>
-            <Text style={popStyles.cancelText}>Cancel</Text>
-          </TouchableOpacity>
         </>)}</BottomSheet>
       )}
 
@@ -1090,8 +1089,13 @@ const popStyles = StyleSheet.create({
     paddingHorizontal: 20, paddingVertical: 16, gap: 12,
   },
   optionText: { fontSize: 16, fontWeight: '500', color: '#1a1a1a', flex: 1 },
-  divider: { height: StyleSheet.hairlineWidth, backgroundColor: '#e8e8e4', width: '100%' },
-  cancelBtn: { paddingVertical: 14, marginTop: 4 },
+  // Inset from the option rows' left padding, like menuStyles.optionDivider — an
+  // edge-to-edge hairline cuts the sheet in half instead of separating rows.
+  divider: { height: StyleSheet.hairlineWidth, backgroundColor: '#e8e8e4', marginLeft: 20 },
+  // alignItems, so "Cancel" is centred in the SHEETS. Without it the button was a
+  // full-width block with its text hard against the screen's left edge (the glass
+  // popups never showed the bug — their GlassPanel centres its children).
+  cancelBtn: { paddingVertical: 14, marginTop: 4, alignItems: 'center', alignSelf: 'stretch' },
   cancelText: { fontSize: 14, color: '#aaa' },
   emptyWrap: { paddingVertical: 24, alignItems: 'center', gap: 6 },
   emptyText: { fontSize: 15, fontWeight: '500', color: '#666' },

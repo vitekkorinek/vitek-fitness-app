@@ -627,9 +627,6 @@ export default function MeScreen() {
                   {t.clientMe.female}
                 </Text>
               </TouchableOpacity>
-              <TouchableOpacity onPress={() => close()} hitSlop={8} style={{ alignSelf: 'center', paddingTop: 4 }}>
-                <Text style={modal.cancel}>{t.common.cancel}</Text>
-              </TouchableOpacity>
             </View>
           )}
         </BottomSheet>
@@ -667,9 +664,6 @@ export default function MeScreen() {
                   {cardVariant === v && <SymbolView name="checkmark" size={15} tintColor={ACCENT} weight="semibold" />}
                 </TouchableOpacity>
               ))}
-              <TouchableOpacity onPress={() => close()} hitSlop={8} style={{ alignSelf: 'center', paddingTop: 4 }}>
-                <Text style={modal.cancel}>{t.common.cancel}</Text>
-              </TouchableOpacity>
             </View>
           )}
         </BottomSheet>

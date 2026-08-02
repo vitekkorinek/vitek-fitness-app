@@ -426,9 +426,9 @@ function CalendarPicker({ current, onSelect, onClose, calTarget, calData, favDat
           })}
         </View>
       ))}
-      <TouchableOpacity onPress={() => onClose()} style={cp.doneBtn} activeOpacity={0.85}>
-        <Text style={cp.doneBtnText}>Done</Text>
-      </TouchableOpacity>
+      {/* No Done button (Aug 2026): tapping a day already calls onClose(), so it only
+          repeated the overlay tap / drag-down — and as a full-width green pill it read
+          as the sheet's primary action when the days themselves are. */}
     </View>
   );
 }
@@ -448,8 +448,6 @@ const cp = StyleSheet.create({
   dayNumToday: { color: ACCENT, fontWeight: '700' },
   indicator:  { position: 'absolute', bottom: 3, width: 16, height: 2.5, borderRadius: 2 },
   heartDot:   { position: 'absolute', bottom: 2, right: 4 },
-  doneBtn:    { backgroundColor: ACCENT, borderRadius: 100, paddingVertical: 13, alignItems: 'center', marginTop: 14 },
-  doneBtnText: { fontSize: 15, fontWeight: '700', color: '#fff' },
 });
 
 // ─── Food log row ─────────────────────────────────────────────────────────────
@@ -1622,9 +1620,6 @@ export default function NutritionDailyScreen() {
                 <Text style={styles.pipModalLabel}>Goal</Text>
                 <Text style={styles.pipModalValue}>{pipModal?.goal != null ? `${pipModal.goal}${pipModal.unit}` : '—'}</Text>
               </View>
-              <TouchableOpacity style={[styles.confirmBtn, { marginTop: 16 }]} onPress={() => close()} activeOpacity={0.85}>
-                <Text style={styles.confirmBtnText}>Done</Text>
-              </TouchableOpacity>
             </View>
           )}
         </BottomSheet>

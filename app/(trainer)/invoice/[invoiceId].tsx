@@ -1100,9 +1100,6 @@ function ClientPickerModal({
               </View>
             ))}
           </ScrollView>
-          <TouchableOpacity onPress={() => close()} hitSlop={8} style={{ paddingTop: 12 }}>
-            <Text style={cpSt.cancelText}>{t.common.cancel}</Text>
-          </TouchableOpacity>
         </View>
       )}
     </BottomSheet>
@@ -1148,9 +1145,6 @@ function PresetPickerModal({
               </View>
             ))}
           </ScrollView>
-          <TouchableOpacity onPress={() => close()} hitSlop={8} style={{ paddingTop: 12 }}>
-            <Text style={ppSt.cancelText}>{t.common.cancel}</Text>
-          </TouchableOpacity>
         </View>
       )}
     </BottomSheet>
