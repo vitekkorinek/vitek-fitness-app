@@ -58,9 +58,31 @@ private func isRestOver(_ state: WorkoutActivityAttributes.ContentState) -> Bool
   return false
 }
 
+/// ⚠️ Sizing a ticking clock: `Text(style: .timer)` is GREEDY — it fills any
+/// width it is offered (so it never re-layouts), its "ideal" width is unusable
+/// (`.fixedSize` made the layout blow past the card and the WHOLE card rendered
+/// EMPTY — build 37 on device), and a fixed frame leaves a gap to the icon.
+/// The reliable pattern: a HIDDEN static template ("8:88", monospaced digits)
+/// sizes the box to the clock's current digit count, and the live timer is
+/// painted in its overlay — offered exactly the template's width. A stale
+/// template (crossing 9:59→10:00 between repaints) briefly scales the digits
+/// down instead of overflowing; the next repaint recomputes it.
+@ViewBuilder
+private func sizedSessionClock(_ startedAt: Date) -> some View {
+  let elapsed = Date().timeIntervalSince(startedAt)
+  Text(elapsed < 600 ? "8:88" : elapsed < 3600 ? "88:88" : "8:88:88")
+    .hidden()
+    .overlay {
+      Text(startedAt, style: .timer)
+        .multilineTextAlignment(.trailing)
+        .lineLimit(1)
+        .minimumScaleFactor(0.7)
+    }
+}
+
 /// The rest clock: live countdown (keeps counting up past zero — free overtime),
 /// with a static "-" prefix once a repaint lands in overtime; frozen value while
-/// paused. Color is applied by the caller.
+/// paused. Sized via the same hidden-template trick. Color applied by the caller.
 @ViewBuilder
 private func restClock(_ state: WorkoutActivityAttributes.ContentState) -> some View {
   if state.restPaused {
@@ -68,7 +90,14 @@ private func restClock(_ state: WorkoutActivityAttributes.ContentState) -> some 
   } else if let ends = state.restEndsAt {
     HStack(spacing: 0) {
       if ends <= Date() { Text("-") }
-      Text(ends, style: .timer)
+      Text(abs(ends.timeIntervalSinceNow) < 600 ? "8:88" : "88:88")
+        .hidden()
+        .overlay {
+          Text(ends, style: .timer)
+            .multilineTextAlignment(.leading)
+            .lineLimit(1)
+            .minimumScaleFactor(0.7)
+        }
     }
   }
 }
@@ -105,7 +134,6 @@ struct WorkoutLiveActivity: Widget {
                 restClock(context.state)
                   .font(.title3.weight(.bold))
                   .monospacedDigit()
-                  .fixedSize(horizontal: true, vertical: false)
                   .foregroundColor(isRestOver(context.state) ? restOverRed : .white)
               }
             }
@@ -121,10 +149,9 @@ struct WorkoutLiveActivity: Widget {
               Image(systemName: "timer")
                 .font(.footnote.weight(.semibold))
                 .foregroundColor(accent)
-              Text(context.state.sessionStartedAt, style: .timer)
+              sizedSessionClock(context.state.sessionStartedAt)
                 .font(.title3.weight(.bold))
                 .monospacedDigit()
-                .fixedSize(horizontal: true, vertical: false)
                 .foregroundColor(accent)
             }
           }
@@ -270,7 +297,6 @@ struct LockScreenView: View {
               restClock(state)
                 .font(.title2.weight(.bold))
                 .monospacedDigit()
-                .fixedSize(horizontal: true, vertical: false)
                 .foregroundColor(over ? restOverRed : .white)
             } else {
               Text("0:00")
@@ -289,10 +315,9 @@ struct LockScreenView: View {
             Image(systemName: "timer")
               .font(.subheadline.weight(.semibold))
               .foregroundColor(accentBright)
-            Text(state.sessionStartedAt, style: .timer)
+            sizedSessionClock(state.sessionStartedAt)
               .font(.title2.weight(.bold))
               .monospacedDigit()
-              .fixedSize(horizontal: true, vertical: false)
               .foregroundColor(accentBright)
           }
         }
