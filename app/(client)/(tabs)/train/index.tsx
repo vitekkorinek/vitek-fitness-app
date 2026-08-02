@@ -86,6 +86,28 @@ function buildCalendarGrid(year: number, month: number): (number | null)[][] {
   return rows;
 }
 
+// Same Mo–Su grid as buildCalendarGrid, but the leading/trailing cells carry the
+// REAL adjacent-month days instead of blanks (Aug 2026, Vitek: "here i have a july
+// month but in this week there are two days from august, is there a way for me to
+// display it there?"). A half-empty week row hides days he actually trained, so
+// those cells render their session marks and are tappable like any other.
+type CalCell = { day: number; date: string; inMonth: boolean };
+
+function buildFullCalendarGrid(year: number, month: number): CalCell[][] {
+  const firstDow = new Date(year, month, 1).getDay();
+  const startOffset = firstDow === 0 ? 6 : firstDow - 1;   // Monday-first
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const total = Math.ceil((startOffset + daysInMonth) / 7) * 7;
+  const cells: CalCell[] = Array.from({ length: total }, (_, i) => {
+    // Out-of-range day numbers roll into the neighbouring month on their own.
+    const d = new Date(year, month, i - startOffset + 1);
+    return { day: d.getDate(), date: localDateStr(d), inMonth: d.getMonth() === month };
+  });
+  const rows: CalCell[][] = [];
+  for (let i = 0; i < cells.length; i += 7) rows.push(cells.slice(i, i + 7));
+  return rows;
+}
+
 const todayStr = localDateStr(new Date());
 
 function getWeekDates(weekOffset: number): string[] {
@@ -281,6 +303,7 @@ export default function TrainTabScreen() {
   const [calModalYear, setCalModalYear]                   = useState(() => new Date().getFullYear());
   const [calModalMonth, setCalModalMonth]                 = useState(() => new Date().getMonth());
   const [calModalSessionDates, setCalModalSessionDates]   = useState<Set<string>>(new Set());
+  const [calModalPlannedDates, setCalModalPlannedDates]   = useState<Set<string>>(new Set());
 
   // Unified "View details" bottom sheet (from session ⋯ menu and workout cards)
   const [detailsData, setDetailsData] = useState<{
@@ -356,7 +379,7 @@ export default function TrainTabScreen() {
   const weekDatesRef = useRef(weekDates);
   weekDatesRef.current = weekDates;
 
-  const calGrid     = useMemo(() => buildCalendarGrid(calModalYear, calModalMonth), [calModalYear, calModalMonth]);
+  const calGrid     = useMemo(() => buildFullCalendarGrid(calModalYear, calModalMonth), [calModalYear, calModalMonth]);
   const moveCalGrid = useMemo(() => buildCalendarGrid(moveCalYear, moveCalMonth), [moveCalYear, moveCalMonth]);
 
   const weekSwipe = useRef(
@@ -577,16 +600,27 @@ export default function TrainTabScreen() {
 
   const loadCalModalSessions = useCallback(async (year: number, month: number) => {
     if (!profile?.id) return;
-    const firstDay = toDateStr(year, month, 1);
-    const lastDay = toDateStr(year, month, new Date(year, month + 1, 0).getDate());
+    // Bounds come from the GRID, not the month — the first and last rows show
+    // days from the neighbouring months and their marks have to be fetched too.
+    const grid = buildFullCalendarGrid(year, month);
+    const firstDay = grid[0][0].date;
+    const lastDay = grid[grid.length - 1][6].date;
+    // Completed AND scheduled (Aug 2026, Vitek: "can we have a yellow dumbbell for
+    // planned workouts? so the planned workouts also appear in the calendar") —
+    // green dumbbell = done, amber = planned. A day with both shows green: the
+    // completed session is the stronger fact about that day.
     const { data } = await supabase
       .from('sessions')
-      .select('date')
+      .select('date, status')
       .eq('client_id', profile.id)
-      .eq('status', 'completed')
+      .in('status', ['completed', 'scheduled'])
       .gte('date', firstDay)
       .lte('date', lastDay);
-    setCalModalSessionDates(new Set((data ?? []).map((s: any) => s.date as string)));
+    const done = new Set<string>();
+    const planned = new Set<string>();
+    (data ?? []).forEach((s: any) => (s.status === 'completed' ? done : planned).add(s.date as string));
+    setCalModalSessionDates(done);
+    setCalModalPlannedDates(planned);
   }, [profile?.id]);
 
   const loadMoveCalSessions = useCallback(async (year: number, month: number) => {
@@ -845,8 +879,6 @@ export default function TrainTabScreen() {
     else setCalModalMonth(m => m + 1);
   };
 
-  const calNow = new Date();
-
   return (
     <View style={styles.root}>
       <StatusBar barStyle="dark-content" />
@@ -1062,13 +1094,26 @@ export default function TrainTabScreen() {
               <BottomSheet onClose={() => setStartModalOpen(false)}>
                 {close => (
                   <View style={{ paddingHorizontal: 20 }}>
+                        {/* Centred title + day, then a divider — the sheet-title
+                            treatment RoutineInfoSheet uses (Aug 2026, Vitek: "the log
+                            training title in the middle as we have it … with detail of
+                            routine panel, then today under it centered"). */}
                         <Text style={startModalStyles.title}>{isToday ? 'Log training' : 'Plan training'}</Text>
                         <Text style={startModalStyles.subtitle}>{isToday ? 'Today' : dayFull}</Text>
-                        {/* Amber day-status on top; the green Recommended line lives on
-                            the "any workout" row itself, mirroring the routine row's
-                            green Done/Next sub-line (Vitek: "that is clean") */}
-                        {restHint && <Text style={[startModalStyles.restHint, ft(600)]}>{restHint}</Text>}
-                        {planHint && <Text style={[startModalStyles.restHint, ft(600)]}>{planHint}</Text>}
+                        <View style={startModalStyles.headDivider} />
+                        {/* Amber day-status on top — a FILLED amber banner, the same
+                            block the plan-mode routine/library screens carry (Aug 2026);
+                            bare amber text read as a stray line under the subtitle.
+                            The green Recommended line stays ON the "any workout" row,
+                            mirroring the routine row's green Done/Next sub-line
+                            (Vitek: "that is clean") — do not move it up here.
+                            restHint and planHint are mutually exclusive (today vs not). */}
+                        {(restHint ?? planHint) && (
+                          <View style={startModalStyles.restBanner}>
+                            <SymbolView name="moon.zzz.fill" size={15} tintColor="#f5a623" />
+                            <Text style={[startModalStyles.restBannerText, ft(600)]}>{restHint ?? planHint}</Text>
+                          </View>
+                        )}
 
                         {/* Any workout — the full library (July 24 relabel, Vitek:
                             routine vs workout as sibling options was confusing since
@@ -1081,6 +1126,9 @@ export default function TrainTabScreen() {
                             ? () => { useSessionStore.getState().setPendingLogDate(null); close(() => router.push('/(client)/(tabs)/train/all-workouts' as any)); }
                             : () => close(() => router.push(`/(client)/(tabs)/train/all-workouts?planDate=${selectedDate}` as any))}
                         >
+                          <View style={startModalStyles.optionIcon}>
+                            <SymbolView name="plus.rectangle.on.rectangle" size={18} tintColor={HEADER} />
+                          </View>
                           <View style={startModalStyles.optionText}>
                             <Text style={startModalStyles.optionLabel}>{isToday ? 'Log any workout' : 'Plan any workout'}</Text>
                             {anyRec && anyRec.length > 0 && (
@@ -1113,6 +1161,9 @@ export default function TrainTabScreen() {
                             ? () => { useSessionStore.getState().setPendingLogDate(null); close(() => router.push(`/(client)/routine/${activeRoutine.id}` as any)); }
                             : () => close(() => router.push(`/(client)/routine/${activeRoutine.id}?planDate=${selectedDate}` as any))}
                         >
+                          <View style={startModalStyles.optionIcon}>
+                            <SymbolView name="arrow.triangle.2.circlepath" size={18} tintColor={HEADER} />
+                          </View>
                           <View style={startModalStyles.optionText}>
                             <Text style={startModalStyles.optionLabel}>{isToday ? 'Continue your routine' : 'Plan workout from your routine'}</Text>
                             {routineSub && (
@@ -1129,15 +1180,19 @@ export default function TrainTabScreen() {
                             A free session has no workout behind it until it is finished (the
                             outbox creates one from what was actually done), so there is
                             nothing to put on a future day.
-                            ⚠️ IT IS AN ORDINARY ROW — dark bold label + ACCENT sub-line, no icon,
-                            no coloured label. The first cut copied the trainer's ACCENT-tinted
-                            "Start Free Session" (green label + `timer` glyph) and Vitek rejected
-                            it on device: "we should keep the same system of design as we have
-                            with log.. so bold dark and under the description can be light green
-                            and perhaps no emoji?" — which is the rule these rows already had
-                            (the icons were taken out of ALL of them in July, see
-                            CLAUDE-screens.md). The trainer's popup is a different menu with its
-                            own conventions; do not port its styling here. */}
+                            ⚠️ IT IS AN ORDINARY ROW — dark bold label + ACCENT sub-line.
+                            Its LEADING GLYPH is the trainer's `timer`, but in HEADER dark
+                            green like the other two rows, NOT the trainer's ACCENT one:
+                            the first cut copied that popup wholesale (green label + green
+                            glyph) and Vitek rejected it on device — "we should keep the same
+                            system of design as we have with log.. so bold dark and under
+                            the description can be light green". In this list colour means
+                            SUB-LINE, never label, and no row is singled out.
+                            (Aug 2 2026 the leading glyphs came BACK to all three rows on
+                            Vitek's request — "i know we said no icons but here it will work
+                            well" — mirroring the trainer's Add Session menu. The July
+                            emoji removal that this note used to cite is superseded; the
+                            label-colour rule above is not.) */}
                         {isToday && (
                           <>
                             <View style={startModalStyles.sep} />
@@ -1151,6 +1206,9 @@ export default function TrainTabScreen() {
                                 close(() => router.push('/(client)/workout/free' as any));
                               }}
                             >
+                              <View style={startModalStyles.optionIcon}>
+                                <SymbolView name="timer" size={18} tintColor={HEADER} />
+                              </View>
                               <View style={startModalStyles.optionText}>
                                 <Text style={startModalStyles.optionLabel}>Start free session</Text>
                                 <Text style={[startModalStyles.optionSub, startModalStyles.optionSubAccent, ft(600)]} numberOfLines={1}>Add exercises as you go.</Text>
@@ -1192,37 +1250,36 @@ export default function TrainTabScreen() {
                 {/* Calendar grid */}
                 {calGrid.map((week, wi) => (
                   <View key={wi} style={calModalStyles.weekRow}>
-                    {week.map((day, di) => {
-                      const isToday = calModalYear === calNow.getFullYear()
-                        && calModalMonth === calNow.getMonth()
-                        && day === calNow.getDate();
-                      const dateStr = day != null ? toDateStr(calModalYear, calModalMonth, day) : null;
-                      const hasSession = dateStr ? calModalSessionDates.has(dateStr) : false;
+                    {week.map((cell, di) => {
+                      const isToday = cell.date === todayStr;
+                      const hasSession = calModalSessionDates.has(cell.date);
+                      const hasPlanned = !hasSession && calModalPlannedDates.has(cell.date);
                       return (
                         <TouchableOpacity
                           key={di}
                           style={calModalStyles.dayCell}
-                          disabled={day == null}
                           activeOpacity={0.6}
                           onPress={() => {
-                            if (day == null) return;
-                            const dateStr = toDateStr(calModalYear, calModalMonth, day);
-                            setWeekOffset(getWeekOffsetForDate(dateStr));
-                            setSelectedDate(dateStr);
+                            setWeekOffset(getWeekOffsetForDate(cell.date));
+                            setSelectedDate(cell.date);
                             close();
                           }}
                         >
-                          {day != null && (
-                            <>
-                              <View style={[calModalStyles.dayInner, isToday && calModalStyles.todayCircle]}>
-                                <Text style={[calModalStyles.dayText, isToday && calModalStyles.todayText]}>{day}</Text>
-                              </View>
-                              {hasSession
-                                ? <SymbolView name="dumbbell.fill" size={9} tintColor={ACCENT} />
-                                : <View style={{ height: 9 }} />
-                              }
-                            </>
-                          )}
+                          <View style={[calModalStyles.dayInner, isToday && calModalStyles.todayCircle]}>
+                            <Text style={[
+                              calModalStyles.dayText,
+                              !cell.inMonth && calModalStyles.dayTextOutside,
+                              isToday && calModalStyles.todayText,
+                            ]}>{cell.day}</Text>
+                          </View>
+                          {/* Marks stay full-strength on an outside day — a faded
+                              dumbbell would undo the point of showing it. */}
+                          {hasSession
+                            ? <SymbolView name="dumbbell.fill" size={9} tintColor={ACCENT} />
+                            : hasPlanned
+                              ? <SymbolView name="dumbbell.fill" size={9} tintColor="#f5a623" />
+                              : <View style={{ height: 9 }} />
+                          }
                         </TouchableOpacity>
                       );
                     })}
@@ -1231,8 +1288,14 @@ export default function TrainTabScreen() {
 
                 {/* Legend */}
                 <View style={calModalStyles.legendRow}>
-                  <SymbolView name="dumbbell.fill" size={9} tintColor={ACCENT} />
-                  <Text style={calModalStyles.legendText}>Workout completed</Text>
+                  <View style={calModalStyles.legendItem}>
+                    <SymbolView name="dumbbell.fill" size={9} tintColor={ACCENT} />
+                    <Text style={calModalStyles.legendText}>Workout completed</Text>
+                  </View>
+                  <View style={calModalStyles.legendItem}>
+                    <SymbolView name="dumbbell.fill" size={9} tintColor="#f5a623" />
+                    <Text style={calModalStyles.legendText}>Workout planned</Text>
+                  </View>
                 </View>
               </View>
               )}
@@ -2203,11 +2266,21 @@ const weekStyles = StyleSheet.create({
 const startModalStyles = StyleSheet.create({
   backdrop:      { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', alignItems: 'center', justifyContent: 'center', padding: 32 },
   card:          { backgroundColor: CARD, borderRadius: 16, padding: 20, width: '100%', shadowColor: '#000', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.15, shadowRadius: 20, elevation: 10 },
-  title:         { fontSize: 16, fontWeight: '700', color: TEXT, marginBottom: 2 },
-  subtitle:      { fontSize: 13, fontWeight: '600', color: ACCENT, marginBottom: 14 },
-  restHint:      { fontSize: 12, color: '#f5a623', lineHeight: 17, marginTop: -8, marginBottom: 12 },
+  // Centred header block + divider — the RoutineInfoSheet sheet-title treatment
+  // (Aug 2026). 17/700 matches the app-wide sheet-title rule.
+  title:         { fontSize: 17, fontWeight: '700', color: TEXT, textAlign: 'center' },
+  subtitle:      { fontSize: 13, fontWeight: '600', color: ACCENT, textAlign: 'center', marginTop: 3 },
+  // marginBottom is small on purpose — the first option row already carries 14pt
+  // of its own top padding (and the banner, when shown, adds 6 more).
+  headDivider:   { height: StyleSheet.hairlineWidth, backgroundColor: BORDER, marginTop: 14, marginBottom: 6 },
+  // Filled amber banner — same block as the plan-mode routine/library strips
+  // (`planBanner` in routine/[routineId].tsx + train/all-workouts.tsx). Keep the
+  // three in sync; a bare amber line here read as a stray sentence.
+  restBanner:    { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: '#fdf3e2', borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10, marginTop: 6, marginBottom: 2 },
+  restBannerText:{ flex: 1, fontSize: 12.5, color: '#8a5f12', lineHeight: 17 },
   option:        { flexDirection: 'row', alignItems: 'center', paddingVertical: 14, gap: 12 },
-  optionIcon:    { fontSize: 22, width: 32, textAlign: 'center' },
+  // Fixed width so the labels line up whether or not a row has a glyph.
+  optionIcon:    { width: 24, alignItems: 'center' },
   optionText:    { flex: 1 },
   optionLabel:   { fontSize: 15, fontWeight: '600', color: TEXT },
   optionSub:     { fontSize: 12, color: MUTED, marginTop: 1 },
@@ -2230,9 +2303,13 @@ const calModalStyles = StyleSheet.create({
   dayCell:     { flex: 1, alignItems: 'center', paddingVertical: 2 },
   dayInner:    { width: 30, height: 30, alignItems: 'center', justifyContent: 'center', borderRadius: 15 },
   dayText:     { fontSize: 13, color: TEXT },
+  // Leading/trailing days of the neighbouring month — present and tappable, but
+  // clearly not part of the month in the header.
+  dayTextOutside: { color: '#c8c8c4' },
   todayCircle: { backgroundColor: ACCENT },
   todayText:   { color: '#fff', fontWeight: '700' },
-  legendRow:   { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 14, paddingTop: 12, borderTopWidth: 1, borderTopColor: BORDER },
+  legendRow:   { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', columnGap: 16, rowGap: 6, marginTop: 14, paddingTop: 12, borderTopWidth: 1, borderTopColor: BORDER },
+  legendItem:  { flexDirection: 'row', alignItems: 'center', gap: 6 },
   legendText:  { fontSize: 11, color: MUTED },
   doneBtn:     { marginTop: 14, backgroundColor: ACCENT, borderRadius: 100, paddingVertical: 13, alignItems: 'center' },
   doneBtnText: { fontSize: 15, fontWeight: '700', color: '#fff' },
