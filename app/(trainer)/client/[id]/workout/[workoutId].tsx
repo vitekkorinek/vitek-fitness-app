@@ -100,6 +100,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { supabase } from '@/lib/supabase';
 import { CATEGORY_COLORS, WorkoutCategory } from '@/lib/workoutCategories';
 import { loadSessionDraft, saveSessionDraft, clearSessionDraft, mergeDraftIntoExercises } from '@/lib/sessionDraft';
+import { isSessionStillRunning } from '@/lib/sessionGuards';
 import { enqueueFinishJob, flushSessionOutbox, isSessionPending } from '@/lib/sessionOutbox';
 import {
   setBridgedExercises, flushPendingUpdates, addPendingSetDoneUpdate,
@@ -1480,6 +1481,14 @@ export default function TrainerWorkoutSessionScreen() {
       if (sessStatus === 'in_progress') {
         activeSessionIdRef.current = sessId;
         setActiveSessionId(sessId);
+        // You are IN the session now, so the "come back to it" chip has done its job —
+        // clear it even though you did not arrive by tapping it. The week strip's
+        // IN PROGRESS card pushes this screen directly, and a chip left alive there
+        // outlives the session it points at. Matched on client AND workout: a trainer
+        // can have another client's session suspended, and `null` is how a free
+        // session's workout is stored.
+        const susp = useSessionStore.getState().suspendedSession;
+        if (susp && susp.clientId === clientId && (susp.workoutId ?? 'free') === workoutId) clearSuspendedSession();
         // Load training-level notes for this session
         const { data: trainingNoteData } = await supabase
           .from('notes')
@@ -3783,6 +3792,15 @@ export default function TrainerWorkoutSessionScreen() {
         // whole point of the outbox, and it is why no IN PROGRESS card is left behind.
         // The overview needs the client's history from the server to work out records.
         finishSession();
+        // ⚠️ FINISHING ALSO ENDS THE SUSPENDED-SESSION CHIP — it was missing here and it
+        // cost a real client's whole session (Bastian, 3 Aug 2026). The chip survives
+        // FINISH unless this runs: it is only ever cleared by the thing that consumes it,
+        // and re-entering Do Mode from the week strip's IN PROGRESS card (the obvious way
+        // back) never touches it. Left behind, it keeps ticking with the id of a session
+        // that is now COMPLETED, tapping it reopens Do Mode looking untouched (the draft
+        // is gone), and Discard from there deletes the finished session and every log in
+        // it. `hydrateSuspendedSession` already documents finishing as a path that clears.
+        clearSuspendedSession();
         stopRestTimer();
         endSessionActivity();
         void clearSessionDraft(clientId, isFreeSession ? 'free' : workoutId!);
@@ -3793,6 +3811,7 @@ export default function TrainerWorkoutSessionScreen() {
         });
       } else {
         finishSession();
+        clearSuspendedSession(); // see the note in the offline branch above
         stopRestTimer();
         endSessionActivity();
         void clearSessionDraft(clientId, isFreeSession ? 'free' : workoutId!);
@@ -3852,7 +3871,7 @@ export default function TrainerWorkoutSessionScreen() {
             danger: true,
             onPress: async () => {
               const sid = activeSessionIdRef.current ?? activeSessionId;
-              if (sid) {
+              if (sid && (await isSessionStillRunning(sid))) {
                 // Throw away what this session produced...
                 await supabase.from('session_logs').delete().eq('session_id', sid);
                 if (sessionFromPlanRef.current) {
@@ -3862,9 +3881,10 @@ export default function TrainerWorkoutSessionScreen() {
                   await supabase
                     .from('sessions')
                     .update({ status: 'scheduled', duration_seconds: null, ...(sessionPlanDateRef.current ? { date: sessionPlanDateRef.current } : {}) })
-                    .eq('id', sid);
+                    .eq('id', sid)
+                    .eq('status', 'in_progress');
                 } else {
-                  await supabase.from('sessions').delete().eq('id', sid);
+                  await supabase.from('sessions').delete().eq('id', sid).eq('status', 'in_progress');
                 }
               }
               sessionFromPlanRef.current = false;
