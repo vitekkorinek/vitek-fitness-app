@@ -197,7 +197,10 @@ struct WorkoutLiveActivity: Widget {
               .font(.caption2)
               .foregroundColor(accent)
           }
-          Text(context.state.sessionStartedAt, style: .timer)
+          // Template-sized, NOT a raw greedy timer Text — that filled the whole
+          // maxWidth frame with the digits leading-aligned, leaving its slack as
+          // a dead gap between the time and the island's right edge.
+          sizedSessionClock(context.state.sessionStartedAt)
             .font(.caption.weight(.bold))
             .monospacedDigit()
             .foregroundColor(accent)
