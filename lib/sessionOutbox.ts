@@ -71,6 +71,12 @@ export type FinishJob = {
   isFreeSession: boolean;
   freeSessionName: string | null;
   /**
+   * Category assigned from the free session's rename sheet (Aug 3 2026) — lands on the
+   * backing workout so its card gets the silhouette + pill. Optional: jobs queued
+   * before it exist have none and the workout simply stays uncategorised.
+   */
+  freeSessionCategory?: string | null;
+  /**
    * The workout created BEHIND a free session to hold its exercises (Vitek's call, July 30
    * 2026). Minted on the device like `sessionId`, null unless this is a free session that
    * actually has exercises. See the free-workout stage in `uploadJob` for why it must exist.
@@ -260,6 +266,9 @@ async function uploadJob(job: FinishJob): Promise<boolean> {
       client_id: job.clientId,
       created_by: job.authorId ?? job.clientId,
       status: 'completed',
+      // Assigned from the rename sheet (Aug 3 2026) — what gives the session card its
+      // silhouette + category pill. Null is fine: the card then draws the plain figure.
+      category: job.freeSessionCategory ?? null,
     });
     if (error) { console.log('[outbox] free-session workout upsert failed:', error.message); return false; }
     job.done.freeWorkout = true;
@@ -278,6 +287,10 @@ async function uploadJob(job: FinishJob): Promise<boolean> {
           status: 'completed',
           duration_seconds: job.durationSeconds,
           ...(job.freeWorkoutId ? { workout_id: job.freeWorkoutId } : {}),
+          // A free session RENAMED after START must land its final name here too — the
+          // row's `name` was stamped at insert, and this UPDATE branch silently kept it
+          // (the fallback upsert below always wrote the name; only this path dropped it).
+          ...(job.isFreeSession && job.freeSessionName ? { name: job.freeSessionName } : {}),
         })
         .eq('id', job.runningSessionId)
         .select('id');

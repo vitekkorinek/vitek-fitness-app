@@ -32,6 +32,15 @@ export type SessionDraft = {
   fromPlan?: boolean;
   /** The planned session's original date, restored on discard. */
   planDate?: string | null;
+  /**
+   * Free sessions only (Aug 3 2026): the session's editable name + assigned category.
+   * The row's `name` is stamped at START and category has no DB home until FINISH
+   * creates the backing workout — so without these a mid-session rename/category pick
+   * was reverted by any suspend/resume cycle. Optional: pre-Aug-3 drafts simply keep
+   * the row's name.
+   */
+  freeSessionName?: string | null;
+  freeSessionCategory?: string | null;
   /** Full snapshot of the Do Mode `exercises` array (plain JSON — no class instances). */
   exercises: any[];
   barbellWeights: [string, number][];

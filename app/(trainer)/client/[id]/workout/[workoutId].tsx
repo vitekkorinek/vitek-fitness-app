@@ -98,7 +98,7 @@ import { Plus, ArrowLeftRight } from 'lucide-react-native';
 import * as ImagePicker from 'expo-image-picker';
 
 import { supabase } from '@/lib/supabase';
-import { CATEGORY_COLORS, WorkoutCategory } from '@/lib/workoutCategories';
+import { CATEGORY_COLORS, CATEGORY_OPTIONS, WorkoutCategory } from '@/lib/workoutCategories';
 import { loadSessionDraft, saveSessionDraft, clearSessionDraft, mergeDraftIntoExercises } from '@/lib/sessionDraft';
 import { isSessionStillRunning } from '@/lib/sessionGuards';
 import { enqueueFinishJob, flushSessionOutbox, isSessionPending } from '@/lib/sessionOutbox';
@@ -127,7 +127,7 @@ import { setKey, setLabel, buildSetLabels, nextSetNumber } from '@/lib/warmupSet
 import MuscleThumb, { MusclePopup } from '@/components/MuscleThumb';
 import EquipmentPopup, { EquipmentIcon } from '@/components/EquipmentPopup';
 import { BottomSheet } from '@/components/BottomSheet';
-import CategoryCover, { categoryHasCover } from '@/components/CategoryCover';
+import CategoryCover from '@/components/CategoryCover';
 import { LightHeader, HeaderIcon, HEADER_ICON, useHeaderHeight } from '@/components/LightHeader';
 import { MUSCLE_FILTER_OPTIONS, matchesMuscleFilters, muscleFilterLabels, usesMachineBrand } from '@/lib/exerciseFilters';
 import { fd } from '@/lib/appType';
@@ -621,6 +621,32 @@ export default function TrainerWorkoutSessionScreen() {
   const [freeSessionNameDraft, setFreeSessionNameDraft] = useState('');
   const freeSessionNameRef = useRef(freeSessionName);
   freeSessionNameRef.current = freeSessionName;
+  // Optional category, assignable from the same rename sheet (Aug 3 2026, Vitek: "we
+  // could perhaps in renaming assign a category too, very simply. no need to add
+  // stretching"). Drives the banner silhouette live and lands on the free session's
+  // backing workout at FINISH; persisted only through the draft until then.
+  const [freeSessionCategory, setFreeSessionCategory] = useState<string | null>(null);
+  const [freeSessionCatDraft, setFreeSessionCatDraft] = useState<string | null>(null);
+  const freeSessionCategoryRef = useRef(freeSessionCategory);
+  freeSessionCategoryRef.current = freeSessionCategory;
+  // One apply path for the rename sheet (Confirm button + keyboard return). A rename
+  // mid-session must ALSO land on the running row right away: load() reads
+  // `sessions.name` back when it adopts the open row, so a name held only in state was
+  // reverted by any suspend/resume cycle — which is exactly how "we can't rename the
+  // session" presented on device (Aug 3 2026). Fire-and-forget + status-guarded; the
+  // outbox finish stage writes the final name again regardless.
+  const applyFreeSessionEdit = () => {
+    const nm = freeSessionNameDraft.trim();
+    if (nm) {
+      setFreeSessionName(nm);
+      freeSessionNameRef.current = nm;
+      const sid = activeSessionIdRef.current;
+      if (sid) void supabase.from('sessions').update({ name: nm }).eq('id', sid).eq('status', 'in_progress');
+    }
+    setFreeSessionCategory(freeSessionCatDraft);
+    freeSessionCategoryRef.current = freeSessionCatDraft;
+    setEditFreeSessionName(false);
+  };
 
   const [loading, setLoading] = useState(true);
   const [workout, setWorkout] = useState<Workout | null>(null);
@@ -1017,6 +1043,18 @@ export default function TrainerWorkoutSessionScreen() {
       if (freeDraft) {
         barbellWeightsRef.current = new Map(freeDraft.barbellWeights ?? []);
         machineBrandsRef.current = new Map(freeDraft.machineBrands ?? []);
+        // Name + category from the draft win over the row's `name` — the draft is written
+        // on every change, so it carries a MID-session rename that the row may not have
+        // yet (the row's name is stamped at START). Without this, any suspend/resume
+        // cycle reverted a rename to the started-with name — Vitek hit exactly that.
+        if (freeDraft.freeSessionName) {
+          setFreeSessionName(freeDraft.freeSessionName);
+          freeSessionNameRef.current = freeDraft.freeSessionName;
+        }
+        if (freeDraft.freeSessionCategory !== undefined) {
+          setFreeSessionCategory(freeDraft.freeSessionCategory);
+          freeSessionCategoryRef.current = freeDraft.freeSessionCategory;
+        }
       }
       // A free session has no exercises of its own in the DB, so the draft IS the list.
       setExercises(freeDraft ? freeDraft.exercises : []);
@@ -1644,13 +1682,17 @@ export default function TrainerWorkoutSessionScreen() {
         savedAt: Date.now(),
         fromPlan: sessionFromPlanRef.current,
         planDate: sessionPlanDateRef.current,
+        // Free-session identity — a mid-session rename/category pick must survive the
+        // app being reclaimed (the row's `name` is only stamped at START, and category
+        // has no DB home at all until FINISH creates the backing workout).
+        ...(isFreeSession ? { freeSessionName, freeSessionCategory } : {}),
         exercises,
         barbellWeights: Array.from(barbellWeightsRef.current.entries()),
         machineBrands: Array.from(machineBrandsRef.current.entries()),
       });
     }, 500);
     return () => clearTimeout(t);
-  }, [exercises, activeSessionId, startedAt, loading, isViewOnly, pastSession, clientId, workoutId, isFreeSession]);
+  }, [exercises, activeSessionId, startedAt, loading, isViewOnly, pastSession, clientId, workoutId, isFreeSession, freeSessionName, freeSessionCategory]);
 
   exercisesRef.current = exercises;
   exercisePhotosRef.current = exercisePhotos;
@@ -3748,6 +3790,7 @@ export default function TrainerWorkoutSessionScreen() {
         workoutId: isFreeSession ? null : workoutId ?? null,
         isFreeSession,
         freeSessionName: isFreeSession ? freeSessionNameRef.current : null,
+        freeSessionCategory: isFreeSession ? freeSessionCategoryRef.current : null,
         freeWorkoutId,
         logDate: today,
         durationSeconds: duration,
@@ -4011,6 +4054,10 @@ export default function TrainerWorkoutSessionScreen() {
     ? new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
     : `Session ${sessionCount + 1} · ${new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}`;
   const bannerWorkoutName = (isFreeSession ? freeSessionName : workout?.name) ?? '—';
+  // What the banner silhouette describes: a free session's assigned category (pickable
+  // from the rename sheet, null until then), otherwise the workout's own. Null renders
+  // CategoryCover's PLAIN neutral figure on the brand wash.
+  const bannerCategory = isFreeSession ? freeSessionCategory : workout?.category ?? null;
   const exCountLabel = exercises.length > 0 ? `${exercises.length} exercise${exercises.length > 1 ? 's' : ''}` : null;
   const exercisesDoneCount = exercises.filter(e => e.isDone).length;
   // Pre-start bar meta (short date); while running the bar renders "Session N"
@@ -4047,17 +4094,18 @@ export default function TrainerWorkoutSessionScreen() {
   const bannerHeader = (
     <View style={{ height: bannerH + 10, backgroundColor: '#fff' }}>
       <View style={{ height: bannerH, overflow: 'hidden' }}>
-        {categoryHasCover(workout?.category) ? (
-          <CategoryCover category={workout?.category} variant="banner" watermarkSize={150} />
-        ) : (
-          <LinearGradient colors={['#2d6b5a', '#244e43', '#1a3832']} start={{ x: 1, y: 0 }} end={{ x: 0, y: 1 }} style={StyleSheet.absoluteFill} />
-        )}
+        {/* Always CategoryCover (Aug 3 2026): a real category lights its silhouette, NO
+            category draws the plain neutral figure, and a stretching category renders
+            the wash alone — the same brand-green triple the old <LinearGradient>
+            fallback painted, so nothing regressed by dropping the branch. Free
+            sessions follow their assigned-at-rename category live. */}
+        <CategoryCover category={bannerCategory} variant="banner" watermarkSize={150} />
         <LinearGradient colors={['rgba(0,0,0,0.30)', 'transparent', 'rgba(0,0,0,0.38)']} locations={[0, 0.45, 1]} style={StyleSheet.absoluteFill} pointerEvents="none" />
         {/* Bottom block: name (+ free-session rename pencil) + meta, START pill right */}
         <View style={styles.bannerBottom}>
           <View style={{ flex: 1 }}>
             {isFreeSession ? (
-              <TouchableOpacity onPress={() => { setFreeSessionNameDraft(freeSessionName); setEditFreeSessionName(true); }} activeOpacity={0.75} style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              <TouchableOpacity onPress={() => { setFreeSessionNameDraft(freeSessionName); setFreeSessionCatDraft(freeSessionCategory); setEditFreeSessionName(true); }} activeOpacity={0.75} style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                 <Text style={[styles.bannerTitle, { flexShrink: 1 }]} numberOfLines={1}>{bannerWorkoutName}</Text>
                 <SymbolView name="pencil" size={13} tintColor="rgba(255,255,255,0.5)" />
               </TouchableOpacity>
@@ -4280,7 +4328,7 @@ export default function TrainerWorkoutSessionScreen() {
                     )}
                     <View style={styles.headerExpanded}>
                       {isFreeSession ? (
-                        <TouchableOpacity onPress={() => { setFreeSessionNameDraft(freeSessionName); setEditFreeSessionName(true); }} activeOpacity={0.75} style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 6 }}>
+                        <TouchableOpacity onPress={() => { setFreeSessionNameDraft(freeSessionName); setFreeSessionCatDraft(freeSessionCategory); setEditFreeSessionName(true); }} activeOpacity={0.75} style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 6 }}>
                           <Text style={styles.headerWorkoutName} numberOfLines={2}>{freeSessionName}</Text>
                           <SymbolView name="pencil" size={13} tintColor="rgba(255,255,255,0.5)" />
                         </TouchableOpacity>
@@ -4459,7 +4507,23 @@ export default function TrainerWorkoutSessionScreen() {
               ref={flatListRef}
               data={listData}
               extraData={listExtraData}
-              ListFooterComponent={isRunning ? (
+              ListFooterComponent={(
+                <>
+                {/* Free session: the "Add exercise" bar rides under the LAST exercise
+                    (Aug 3 2026, Vitek — replaced the floating + circle). Filled green
+                    + squared so it can't be mistaken for the outline Finish pill.
+                    With no exercises yet the empty state renders its own copy. */}
+                {isFreeSession && exercises.length > 0 && (
+                  <TouchableOpacity
+                    style={styles.freeAddFooterBtn}
+                    onPress={() => setPickMode({ type: 'add', afterExIdx: exercises.length - 1 })}
+                    activeOpacity={0.85}
+                  >
+                    <SymbolView name="plus" size={15} tintColor="#fff" />
+                    <Text style={styles.freeAddFooterText}>Add exercise</Text>
+                  </TouchableOpacity>
+                )}
+                {isRunning ? (
                 <TouchableOpacity style={styles.finishFooterBtn} onPress={handleFinish} activeOpacity={0.85} disabled={savingSession}>
                   <View style={styles.finishFooterTitleRow}>
                     <Text style={styles.finishFooterTitle}>{savingSession ? 'Saving…' : 'Finish session'}</Text>
@@ -4500,6 +4564,8 @@ export default function TrainerWorkoutSessionScreen() {
                   </Text>
                 </TouchableOpacity>
               ) : null}
+                </>
+              )}
               keyExtractor={(item: DisplayItem) =>
                 item.kind === 'exercise' ? item.exercise.workoutExerciseId : item.groupId
               }
@@ -4529,7 +4595,7 @@ export default function TrainerWorkoutSessionScreen() {
                   )}
                   <View style={styles.headerExpanded}>
                     {isFreeSession ? (
-                      <TouchableOpacity onPress={() => { setFreeSessionNameDraft(freeSessionName); setEditFreeSessionName(true); }} activeOpacity={0.75} style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 6 }}>
+                      <TouchableOpacity onPress={() => { setFreeSessionNameDraft(freeSessionName); setFreeSessionCatDraft(freeSessionCategory); setEditFreeSessionName(true); }} activeOpacity={0.75} style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 6 }}>
                         <Text style={styles.headerWorkoutName} numberOfLines={2}>{freeSessionName}</Text>
                         <SymbolView name="pencil" size={13} tintColor="rgba(255,255,255,0.5)" />
                       </TouchableOpacity>
@@ -4553,7 +4619,17 @@ export default function TrainerWorkoutSessionScreen() {
                 <View style={styles.freeEmptyState}>
                   <SymbolView name="figure.strengthtraining.traditional" size={40} tintColor="#ccc" />
                   <Text style={styles.freeEmptyTitle}>No exercises yet</Text>
-                  <Text style={styles.freeEmptySubtitle}>Tap + to add exercises</Text>
+                  {/* The long Add bar IS the empty state's call to action (Aug 3 2026 —
+                      it used to say "Tap + to add exercises" about a floating circle
+                      that no longer exists). */}
+                  <TouchableOpacity
+                    style={[styles.freeAddFooterBtn, styles.freeAddEmptyBtn]}
+                    onPress={() => setPickMode({ type: 'add', afterExIdx: exercises.length - 1 })}
+                    activeOpacity={0.85}
+                  >
+                    <SymbolView name="plus" size={15} tintColor="#fff" />
+                    <Text style={styles.freeAddFooterText}>Add exercise</Text>
+                  </TouchableOpacity>
                 </View>
               ) : undefined}
               onScrollToIndexFailed={({ index }) => {
@@ -4712,15 +4788,10 @@ export default function TrainerWorkoutSessionScreen() {
           )}
         </KeyboardAvoidingView>
 
-        {isFreeSession && (
-          <TouchableOpacity
-            style={[styles.freeAddBtn, { bottom: insets.bottom + 24 }]}
-            onPress={() => setPickMode({ type: 'add', afterExIdx: exercises.length - 1 })}
-            activeOpacity={0.85}
-          >
-            <SymbolView name="plus" size={22} tintColor="#fff" />
-          </TouchableOpacity>
-        )}
+        {/* The free-session floating + circle is GONE (Aug 3 2026, Vitek: "lets have just
+            long button in the middle (at the beginning) ... then always this button is
+            under the last exercise") — adding now lives in the list itself: the
+            `freeAddFooterBtn` bar in ListEmptyComponent / ListFooterComponent above. */}
       </View>
 
       {/* ── Edit mode action bar (trainer only) ─────────────────────── */}
@@ -5245,9 +5316,12 @@ export default function TrainerWorkoutSessionScreen() {
         </Modal>
       )}
 
-      {/* ── Free session name edit modal ──────────────────────────── */}
+      {/* ── Free session name + category edit modal ───────────────── */}
       {editFreeSessionName && (
         <Modal visible transparent animationType="fade" onRequestClose={() => setEditFreeSessionName(false)}>
+          {/* KAV per the centered-text-entry rule — the category pills make this box
+              tall enough for the keyboard to reach it. */}
+          <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
           <View style={styles.centeredRoot}>
             <Pressable style={StyleSheet.absoluteFill} onPress={() => setEditFreeSessionName(false)} />
             <View style={styles.confirmBoxShadow}>
@@ -5263,12 +5337,32 @@ export default function TrainerWorkoutSessionScreen() {
                 // as a filled system-blue key, which is off-palette everywhere in this app; see the
                 // picker's search field, where Vitek rejected it. `onSubmitEditing` below still fires
                 // on the plain return key, so nothing about the behaviour changes.
-                onSubmitEditing={() => { if (freeSessionNameDraft.trim()) { setFreeSessionName(freeSessionNameDraft.trim()); freeSessionNameRef.current = freeSessionNameDraft.trim(); } setEditFreeSessionName(false); }}
+                onSubmitEditing={applyFreeSessionEdit}
               />
+              {/* Optional category, "very simply" (Vitek, Aug 3 2026): the 8 standard
+                  options, no stretching section. Tap the active one again to clear it.
+                  It lands on the backing workout at FINISH — silhouette + pill on the
+                  session card — and recolours the banner right away. */}
+              <Text style={styles.freeCatLabel}>CATEGORY</Text>
+              <View style={styles.freeCatWrap}>
+                {CATEGORY_OPTIONS.map(cat => {
+                  const active = freeSessionCatDraft === cat;
+                  return (
+                    <TouchableOpacity
+                      key={cat}
+                      onPress={() => setFreeSessionCatDraft(active ? null : cat)}
+                      activeOpacity={0.8}
+                      style={[styles.freeCatPill, active && styles.freeCatPillActive]}
+                    >
+                      <Text style={[styles.freeCatPillText, active && styles.freeCatPillTextActive]}>{cat}</Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
               <TouchableOpacity
                 style={styles.confirmPrimaryBtn}
                 activeOpacity={0.85}
-                onPress={() => { if (freeSessionNameDraft.trim()) { setFreeSessionName(freeSessionNameDraft.trim()); freeSessionNameRef.current = freeSessionNameDraft.trim(); } setEditFreeSessionName(false); }}
+                onPress={applyFreeSessionEdit}
               >
                 <Text style={styles.confirmPrimaryBtnText}>Confirm</Text>
               </TouchableOpacity>
@@ -5278,6 +5372,7 @@ export default function TrainerWorkoutSessionScreen() {
             </GlassPanel>
             </View>
           </View>
+          </KeyboardAvoidingView>
         </Modal>
       )}
 
@@ -8571,15 +8666,28 @@ const styles = StyleSheet.create({
   orderMismatchName: { fontSize: 14, fontWeight: '600', color: TEXT },
   orderMismatchMeta: { fontSize: 12, color: '#414b45' },
 
-  // Free session
-  freeAddBtn: {
-    position: 'absolute', right: 20, width: 56, height: 56, borderRadius: 28,
-    backgroundColor: ACCENT, alignItems: 'center', justifyContent: 'center',
-    shadowColor: '#000', shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.2, shadowRadius: 8, elevation: 6,
+  // Free session — the long "Add exercise" bar (Aug 3 2026; replaced the floating +
+  // circle). Filled ACCENT + SQUARED corners on purpose: the outline radius-100 pill
+  // right below it is "Finish session", and the two must never read as siblings.
+  freeAddFooterBtn: {
+    marginHorizontal: 14, marginTop: 2, marginBottom: 8,
+    backgroundColor: ACCENT, borderRadius: 14, paddingVertical: 14,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7,
   },
+  freeAddFooterText: { color: '#fff', fontSize: 15, fontWeight: '700' },
+  // The empty state centres its children, which would shrink the bar to its label —
+  // stretch it back to the full width the footer copy has.
+  freeAddEmptyBtn: { alignSelf: 'stretch', marginTop: 14 },
   freeEmptyState: { alignItems: 'center', justifyContent: 'center', paddingTop: 80, gap: 10 },
   freeEmptyTitle: { fontSize: 16, fontWeight: '600', color: '#bbb' },
-  freeEmptySubtitle: { fontSize: 13, color: '#ccc' },
+  // Category pills in the free-session rename sheet (Aug 3 2026). On-glass values:
+  // unselected text darkened per the glass-legibility rule; selected = plain ACCENT.
+  freeCatLabel: { alignSelf: 'flex-start', fontSize: 11, fontWeight: '700', color: '#414b45', letterSpacing: 0.5, marginTop: 14, marginBottom: 8 },
+  freeCatWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, alignSelf: 'stretch' },
+  freeCatPill: { borderRadius: 100, paddingHorizontal: 12, paddingVertical: 7, backgroundColor: 'rgba(255,255,255,0.6)' },
+  freeCatPillActive: { backgroundColor: ACCENT },
+  freeCatPillText: { fontSize: 12, fontWeight: '600', color: '#414b45' },
+  freeCatPillTextActive: { color: '#fff' },
 
   editDoneBtn: { backgroundColor: 'rgba(255,255,255,0.18)', borderRadius: 8, paddingHorizontal: 13, paddingVertical: 7, borderWidth: 1, borderColor: 'rgba(255,255,255,0.3)' },
   editDoneBtnText: { color: '#fff', fontWeight: '700', fontSize: 13, letterSpacing: 0.4 },

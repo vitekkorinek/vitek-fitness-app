@@ -1122,8 +1122,15 @@ function TrainingTab({
     setWorkoutCards(cards);
 
     // Names for EVERY active workout of this client, not just the gallery slice — the week
-    // strip and recent-activity cards can reference workouts filtered out above.
-    setExerciseNamesMap(await fetchExerciseNames(((wData ?? []) as any[]).map(w => w.id)));
+    // strip and recent-activity cards can reference workouts filtered out above. PLUS the
+    // workouts referenced by completed sessions (Aug 3 2026): a free session's backing
+    // workout is `status='completed'`, so the active-only fetch above never has it and its
+    // week-strip / recent-activity cards rendered a coverless blank — Vitek's "the
+    // exercises done in the free session dont appear on top of the card".
+    setExerciseNamesMap(await fetchExerciseNames(Array.from(new Set([
+      ...((wData ?? []) as any[]).map(w => w.id),
+      ...((doneSess ?? []) as any[]).map(s => s.workout_id).filter(Boolean),
+    ]))));
   }, [clientId]);
 
   const loadStripSessions = useCallback(async () => {
