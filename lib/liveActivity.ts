@@ -1,5 +1,6 @@
 import { requireOptionalNativeModule } from 'expo-modules-core';
 
+import { noteActivityToken, noteProgress, noteSessionStart, resetActivityPushState } from '@/lib/restActivityPush';
 import type { RestTimer } from '@/store/sessionStore';
 
 /**
@@ -19,7 +20,17 @@ const native = requireOptionalNativeModule<{
   updateRest(restEndsAtMs: number | null, restPaused: boolean, restPausedRemaining: number): Promise<void>;
   updateProgress(done: number, total: number, current: string | null, next: string | null): Promise<void>;
   endActivity(): Promise<void>;
+  addListener(eventName: 'onActivityPushToken', listener: (event: { token: string }) => void): { remove(): void };
 }>('LiveActivity');
+
+// The activity's APNs push token — lets the server force a repaint (the
+// rest-end red flip on a locked phone). Cached by lib/restActivityPush.ts and
+// uploaded with any pending rest-end push row.
+try {
+  native?.addListener('onActivityPushToken', (event) => {
+    if (event?.token) noteActivityToken(event.token);
+  });
+} catch {}
 
 // A fresh activity starts with empty progress — remember the last pushed values
 // so a restart (Do Mode re-entry, revive after the user cleared the card) can
@@ -28,6 +39,7 @@ let lastProgress: { done: number; total: number; current: string | null; next: s
 
 /** Start (or restart — a stale one is ended first) the session's Live Activity. */
 export function startSessionActivity(workoutName: string, startedAtMs: number): void {
+  noteSessionStart(startedAtMs);
   try {
     native?.startActivity(workoutName, startedAtMs).then(() => {
       const p = lastProgress;
@@ -52,6 +64,7 @@ export function syncRestActivity(rest: RestTimer | null): void {
 /** The count beside the name + the NOW/NEXT exercise lines on the lock card. */
 export function updateProgressActivity(done: number, total: number, current: string | null, next: string | null): void {
   lastProgress = { done, total, current, next };
+  noteProgress(done, total, current, next);
   try {
     native?.updateProgress(done, total, current, next).catch(() => {});
   } catch {}
@@ -63,6 +76,7 @@ export function updateProgressActivity(done: number, total: number, current: str
  * no-op while an activity exists, so it never flickers a healthy one.
  */
 export function reviveSessionActivity(workoutName: string, startedAtMs: number, rest: RestTimer | null): void {
+  noteSessionStart(startedAtMs);
   try {
     if (!native || native.hasActiveActivity()) return;
     native.startActivity(workoutName, startedAtMs).then(() => {
@@ -76,6 +90,7 @@ export function reviveSessionActivity(workoutName: string, startedAtMs: number, 
 /** End the activity — the session is over (FINISH or discard). */
 export function endSessionActivity(): void {
   lastProgress = null;
+  resetActivityPushState();
   try {
     native?.endActivity().catch(() => {});
   } catch {}

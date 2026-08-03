@@ -7,12 +7,15 @@ import WidgetKit
 // `modules/live-activity/ios/LiveActivityModule.swift` (the app side that starts
 // the activity). ActivityKit matches app ↔ widget by the type's NAME and Codable
 // shape, so any change here must be mirrored there byte-for-byte.
+// ⚠️ The two dates are MILLISECOND DOUBLES, not Date: the rest-end APNs push
+// re-sends this state as JSON, and Codable Dates have an ambiguous wire format
+// there — plain numbers cannot be misdecoded. Convert via sessionStart/restEnds.
 struct WorkoutActivityAttributes: ActivityAttributes {
   public struct ContentState: Codable, Hashable {
     /// The session clock counts UP from here — ticked natively by SwiftUI.
-    var sessionStartedAt: Date
+    var sessionStartedAtMs: Double
     /// Rest countdown target. nil = no rest running (and not paused).
-    var restEndsAt: Date?
+    var restEndsAtMs: Double?
     /// Paused rest: the display freezes on `restPausedRemaining` seconds
     /// (negative = frozen in overtime).
     var restPaused: Bool
@@ -23,6 +26,13 @@ struct WorkoutActivityAttributes: ActivityAttributes {
     var nextExercise: String?
   }
   var workoutName: String
+}
+
+private func sessionStart(_ state: WorkoutActivityAttributes.ContentState) -> Date {
+  Date(timeIntervalSince1970: state.sessionStartedAtMs / 1000)
+}
+private func restEnds(_ state: WorkoutActivityAttributes.ContentState) -> Date? {
+  state.restEndsAtMs.map { Date(timeIntervalSince1970: $0 / 1000) }
 }
 
 // Brand colors — ACCENT #24ac88 (island, black ground), bright accent #3ddba9
@@ -44,7 +54,7 @@ private func fmtFrozen(_ secs: Int) -> String {
 
 /// True while a rest is running or paused.
 private func isResting(_ state: WorkoutActivityAttributes.ContentState) -> Bool {
-  state.restPaused || state.restEndsAt != nil
+  state.restPaused || state.restEndsAtMs != nil
 }
 
 /// OVERTIME — evaluated at REPAINT time (⚠️ deliberately NOT `context.isStale`:
@@ -54,7 +64,7 @@ private func isResting(_ state: WorkoutActivityAttributes.ContentState) -> Bool 
 /// forces one at rest-end while alive and on foreground.
 private func isRestOver(_ state: WorkoutActivityAttributes.ContentState) -> Bool {
   if state.restPaused { return state.restPausedRemaining < 0 }
-  if let ends = state.restEndsAt { return ends <= Date() }
+  if let ends = restEnds(state) { return ends <= Date() }
   return false
 }
 
@@ -87,7 +97,7 @@ private func sizedSessionClock(_ startedAt: Date) -> some View {
 private func restClock(_ state: WorkoutActivityAttributes.ContentState) -> some View {
   if state.restPaused {
     Text(fmtFrozen(state.restPausedRemaining))
-  } else if let ends = state.restEndsAt {
+  } else if let ends = restEnds(state) {
     HStack(spacing: 0) {
       if ends <= Date() { Text("-") }
       Text(abs(ends.timeIntervalSinceNow) < 600 ? "8:88" : "88:88")
@@ -149,7 +159,7 @@ struct WorkoutLiveActivity: Widget {
               Image(systemName: "timer")
                 .font(.footnote.weight(.semibold))
                 .foregroundColor(accent)
-              sizedSessionClock(context.state.sessionStartedAt)
+              sizedSessionClock(sessionStart(context.state))
                 .font(.title3.weight(.bold))
                 .monospacedDigit()
                 .foregroundColor(accent)
@@ -200,7 +210,7 @@ struct WorkoutLiveActivity: Widget {
           // Template-sized, NOT a raw greedy timer Text — that filled the whole
           // maxWidth frame with the digits leading-aligned, leaving its slack as
           // a dead gap between the time and the island's right edge.
-          sizedSessionClock(context.state.sessionStartedAt)
+          sizedSessionClock(sessionStart(context.state))
             .font(.caption.weight(.bold))
             .monospacedDigit()
             .foregroundColor(accent)
@@ -318,7 +328,7 @@ struct LockScreenView: View {
             Image(systemName: "timer")
               .font(.subheadline.weight(.semibold))
               .foregroundColor(accentBright)
-            sizedSessionClock(state.sessionStartedAt)
+            sizedSessionClock(sessionStart(state))
               .font(.title2.weight(.bold))
               .monospacedDigit()
               .foregroundColor(accentBright)

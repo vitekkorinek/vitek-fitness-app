@@ -5,6 +5,7 @@ import { create } from 'zustand';
 
 import { loadSessionDraft } from '@/lib/sessionDraft';
 import { syncRestActivity, reviveSessionActivity } from '@/lib/liveActivity';
+import { scheduleRestEndActivityPush, cancelRestEndActivityPush } from '@/lib/restActivityPush';
 import { scheduleRestEndNotification, cancelRestEndNotification } from '@/lib/restNotifications';
 
 export type SuspendedSession = {
@@ -151,6 +152,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
     const endsAt = Date.now() + totalSecs * 1000;
     armRestVibration(endsAt);
     scheduleRestEndNotification(endsAt);
+    scheduleRestEndActivityPush(endsAt);
     const next: RestTimer = { endsAt, totalSecs, paused: false, pausedRemainingSecs: null };
     syncRestActivity(next);
     set({ restTimer: next });
@@ -160,6 +162,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
     if (!rt || rt.paused) return;
     disarmRestVibration();
     cancelRestEndNotification();
+    cancelRestEndActivityPush();
     const next: RestTimer = { ...rt, paused: true, pausedRemainingSecs: restRemainingRaw(rt) };
     syncRestActivity(next);
     set({ restTimer: next });
@@ -170,6 +173,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
     const endsAt = Date.now() + (rt.pausedRemainingSecs ?? 0) * 1000;
     armRestVibration(endsAt);
     scheduleRestEndNotification(endsAt);
+    scheduleRestEndActivityPush(endsAt);
     const next: RestTimer = { ...rt, endsAt, paused: false, pausedRemainingSecs: null };
     syncRestActivity(next);
     set({ restTimer: next });
@@ -177,6 +181,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
   stopRestTimer: () => {
     disarmRestVibration();
     cancelRestEndNotification();
+    cancelRestEndActivityPush();
     syncRestActivity(null);
     set({ restTimer: null });
   },
