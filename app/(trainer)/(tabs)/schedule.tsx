@@ -573,36 +573,15 @@ export default function ScheduleScreen() {
     setAppointments(prev => prev.map(a => a.id === appt.id ? { ...a, is_confirmed: newConfirmed } : a));
     setViewAppt(prev => prev?.id === appt.id ? { ...prev, is_confirmed: newConfirmed } : prev);
 
+    // The client's in-app tray row is written by the DB trigger
+    // `appointment_sent_notify` (Aug 2026) — never insert it from the app.
     await supabase.from('appointments').update({ is_confirmed: newConfirmed }).eq('id', appt.id);
-
-    if (newConfirmed && appt.client_id) {
-      await supabase.from('client_notifications').insert({
-        client_id:    appt.client_id,
-        type:         'appointment_confirmed',
-        title:        'Appointment confirmed',
-        body:         `Your ${APPT_TYPE_LABELS[appt.type]} on ${appt.date} at ${appt.start_time.slice(0,5)} is confirmed.`,
-        area:         'training',
-        reference_id: appt.id,
-        is_read:      false,
-      });
-    }
   }
 
-  // Send a draft appointment to the client (mark sent + notify) — from the view sheet.
+  // Send a draft appointment to the client — the DB trigger writes the tray row.
   async function handleSendAppt(appt: Appointment) {
     await supabase.from('appointments').update({ sent_to_client: true }).eq('id', appt.id);
     setAppointments(prev => prev.map(a => a.id === appt.id ? { ...a, sent_to_client: true } : a));
-    if (appt.client_id) {
-      await supabase.from('client_notifications').insert({
-        client_id:    appt.client_id,
-        type:         'appointment_planned',
-        title:        'New appointment scheduled',
-        body:         `Your ${APPT_TYPE_LABELS[appt.type]} on ${appt.date} at ${appt.start_time.slice(0,5)} has been scheduled.`,
-        area:         'training',
-        reference_id: appt.id,
-        is_read:      false,
-      });
-    }
     setViewAppt(null);
     await fetchData();
   }
@@ -1518,19 +1497,8 @@ function NewAppointmentSheet({
       } else {
         await supabase.from('appointments').insert({ id: apptId, ...payload, sent_to_client: send });
       }
-      // Notify only when sending something the client wasn't already told about
-      // (new send, or a draft being sent) — moving an already-sent appt updates their calendar silently.
-      if (send && selectedClientId && (!editing || !editing.sent_to_client)) {
-        await supabase.from('client_notifications').insert({
-          client_id:    selectedClientId,
-          type:         'appointment_planned',
-          title:        'New appointment scheduled',
-          body:         `Your ${APPT_TYPE_LABELS[apptType]} on ${dateStr} at ${timeStr.slice(0, 5)} has been scheduled.`,
-          area:         'training',
-          reference_id: apptId,
-          is_read:      false,
-        });
-      }
+      // The client's tray notification is written by the DB trigger
+      // `appointment_sent_notify` on the insert/update above (Aug 2026).
 
       await onSaved(newColorMap);
     } finally { setSaving(false); }
@@ -1679,7 +1647,7 @@ function NewAppointmentSheet({
       )}
 
       {showTimePicker && (
-        <BottomSheet onClose={() => setShowTimePicker(false)}>
+        <BottomSheet avoidKeyboard onClose={() => setShowTimePicker(false)}>
           {close => (
             <View style={{ paddingHorizontal:20, paddingBottom:8 }}>
               <Text style={pk.title}>Time</Text>

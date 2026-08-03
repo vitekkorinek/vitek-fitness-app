@@ -87,19 +87,10 @@ const makeUUID = () => 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c
   const r = Math.random() * 16 | 0; return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
 });
 
-// Appointment notifications are stored with area 'training' but surface in BOTH the kettlebell
-// and pear trays (NotificationOverlay ORs in appointment types), so the client can't miss them.
-async function notifyAppointmentPlanned(clientId: string, apptType: string, dateStr: string, timeStr: string, refId: string) {
-  await supabase.from('client_notifications').insert({
-    client_id:    clientId,
-    type:         'appointment_planned',
-    title:        'New appointment scheduled',
-    body:         `Your ${APPT_TYPE_LABELS[apptType] ?? 'session'} on ${dateStr} at ${timeStr.slice(0, 5)} has been scheduled.`,
-    area:         'training',
-    reference_id: refId,
-    is_read:      false,
-  });
-}
+// The client's in-app tray row (kettlebell/pear overlay) is written by the DB
+// trigger `appointment_sent_notify` whenever sent_to_client flips true (Aug
+// 2026) — never insert it from the app; the phone-side write could be lost to
+// a network blip with no error.
 
 type ApptType = 'pt_session' | 'nutritional_advising';
 
@@ -608,10 +599,9 @@ export default function PlanWeekScreen() {
     await load();
   }
 
-  // Send a single draft appointment to the client (marks it sent + fires the notification).
+  // Send a single draft appointment to the client — the DB trigger writes the tray row.
   async function sendAppt(a: Appointment) {
     await supabase.from('appointments').update({ sent_to_client: true }).eq('id', a.id);
-    if (a.client_id) await notifyAppointmentPlanned(a.client_id, a.type, a.date, a.start_time, a.id);
     setApptAction(null);
     await load();
   }
@@ -625,7 +615,6 @@ export default function PlanWeekScreen() {
     try {
       for (const a of drafts) {
         await supabase.from('appointments').update({ sent_to_client: true }).eq('id', a.id);
-        if (a.client_id) await notifyAppointmentPlanned(a.client_id, a.type, a.date, a.start_time, a.id);
       }
       await load();
     } finally { setSendingAll(false); }
@@ -1547,10 +1536,7 @@ function NewAppointmentSheet({
           sent_to_client: send,
         });
       }
-      // Notify only when sending something the client wasn't already told about.
-      if (send && selectedClientId && (!editing || !editing.sent_to_client)) {
-        await notifyAppointmentPlanned(selectedClientId, type, dateStr, timeStr, apptId);
-      }
+      // The tray notification is written by the DB trigger on the write above.
       await onSaved(newColorMap);
     } finally { setSaving(false); }
   }
@@ -1700,7 +1686,7 @@ function NewAppointmentSheet({
       )}
 
       {showTimePicker && (
-        <BottomSheet onClose={() => setShowTimePicker(false)}>
+        <BottomSheet avoidKeyboard onClose={() => setShowTimePicker(false)}>
           {close => (
           <View style={{ paddingHorizontal:20 }}>
             <Text style={m.title}>Time</Text>
