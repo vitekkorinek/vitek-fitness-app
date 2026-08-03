@@ -1710,6 +1710,7 @@ function TrainingTab({
             <ScheduledSessionMenu
               workoutName={scheduledMenu.workoutName ?? 'Session'}
               status={scheduledMenu.status}
+              hasWorkout={!!scheduledMenu.workoutId}
               onViewDetails={() => { const s = scheduledMenu; setScheduledMenu(null); openSessionDetailsSheet(s); }}
               onSeeHowItWent={() => {
                 const s = scheduledMenu;
@@ -1730,7 +1731,11 @@ function TrainingTab({
               onEditWorkout={() => {
                 const wid = scheduledMenu.workoutId;
                 setScheduledMenu(null);
-                if (wid) router.push(`/(trainer)/workout-builder?clientId=${clientId}&workoutId=${wid}` as any);
+                // ⚠️ `editWorkoutId`, not `workoutId` — the builder has no `workoutId`
+                // param, so the old name silently opened an EMPTY "Build Workout" screen
+                // (found Aug 3 2026 when this row was extended to completed sessions).
+                // No `scheduleDate`: the session row already exists, this is a pure edit.
+                if (wid) router.push(`/(trainer)/workout-builder?clientId=${clientId}&editWorkoutId=${wid}` as any);
               }}
               onMove={() => {
                 const [y, m] = scheduledMenu.date.split('-').map(Number);
@@ -2491,6 +2496,7 @@ function WeekStripCard({
 function ScheduledSessionMenu({
   workoutName,
   status,
+  hasWorkout,
   onViewDetails,
   onSeeHowItWent,
   onEditWorkout,
@@ -2499,10 +2505,14 @@ function ScheduledSessionMenu({
   onClose,
 }: {
   workoutName: string;
-  // 'in_progress' shows the same rows as a completed session — notably NOT "Edit
-  // workout", which is gated to 'scheduled': editing the program under a client who
+  // "Edit workout" shows for scheduled AND completed sessions (Aug 3 2026, Vitek:
+  // editing should work "also from the week strip, for any workout" — completed
+  // free sessions included, whose backing workout has no other reachable ⋯ menu).
+  // 'in_progress' alone stays WITHOUT it: editing the program under a client who
   // is mid-session would change the workout beneath them.
   status: 'scheduled' | 'completed' | 'in_progress';
+  /** False for pre-July-30 free sessions with no backing workout — nothing to edit. */
+  hasWorkout: boolean;
   onViewDetails: () => void;
   onSeeHowItWent: () => void;
   onEditWorkout: () => void;
@@ -2537,7 +2547,7 @@ function ScheduledSessionMenu({
               <View style={menuStyles.optionDivider} />
             </>
           )}
-          {status === 'scheduled' && (
+          {status !== 'in_progress' && hasWorkout && (
             <>
               <TouchableOpacity style={menuStyles.option} onPress={() => close(onEditWorkout)} activeOpacity={0.7}>
                 <SymbolView name="pencil" size={16} tintColor={TEXT} />
