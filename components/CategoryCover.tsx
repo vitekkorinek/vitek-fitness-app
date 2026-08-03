@@ -166,6 +166,22 @@ const CONFIG: Record<string, CatCfg> = {
 // Legacy categories fall back to their replacement's look.
 const LEGACY: Record<string, string> = { 'Legs': 'Lower Body', 'Recovery': 'Mobility' };
 
+// UNCATEGORISED workouts get a figure too — a PLAIN one: the whole body at the quiet
+// ghost level with nothing lit (Vitek, Aug 3 2026, on the free-session card: "we should
+// have a silhouette there, i think plain one since no category is assigned"). Framed like
+// Full Body — zoomed out so the figure reads head-to-calves, centred. Used whenever
+// `category` is NULL/empty; free sessions are the main producer of such workouts.
+// ⚠️ Deliberately NOT surfaced through `categoryHasCover` — that answers "does this
+// category string have a cover config" and gates legacy branches (the old scroll-away
+// header's prototype-photo path among them) that must not flip for null. Callers that
+// want the plain figure render <CategoryCover> for a null category directly
+// (WorkoutPaperCover, the Do Mode banners); everyone else is untouched.
+const NEUTRAL_CFG: CatCfg = {
+  grad: ['#2a5448', '#1f3f35', '#1a3832'], soft: ['#4c7a6a', '#395d50', '#294439'], muted: ['#2f3a35', '#242c28', '#191f1c'],
+  paperCrop: { zoom: 1.9, yFocus: 0.40, xAnchor: 0.50 },
+  body: { side: 'front', slugs: [], yFocus: 0.40, zoom: 1.3 },
+};
+
 // Every slug the front + back body assets define. Used only by `paper`: passing an
 // explicit per-part `styles.fill` for ALL of them is the one way to guarantee the figure's
 // colour, because the library resolves fills as
@@ -233,7 +249,9 @@ export default function CategoryCover({
   style?: ViewStyle;
 }) {
   const [box, setBox] = useState({ w: 0, h: 0 });
-  const cfg = resolve(category);
+  // No category at all → the plain neutral figure. An UNKNOWN category string (a
+  // stretching category, a typo) still resolves to nothing and renders wash-only.
+  const cfg = resolve(category) ?? (category ? undefined : NEUTRAL_CFG);
   const isBrandBright = variant === 'brandBright';
   const isBrand = variant === 'brand' || isBrandBright;
   const isInkDeep = variant === 'inkDeep';

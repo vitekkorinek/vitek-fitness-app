@@ -77,16 +77,23 @@ private func isRestOver(_ state: WorkoutActivityAttributes.ContentState) -> Bool
 /// painted in its overlay — offered exactly the template's width. A stale
 /// template (crossing 9:59→10:00 between repaints) briefly scales the digits
 /// down instead of overflowing; the next repaint recomputes it.
+/// Session digits are total MINUTES, never hours ("90:23", not "1:30:23") —
+/// Vitek's call (Aug 3): gym sessions are quoted in minutes (Quick 40 /
+/// Standard 60 / Extended 75), and it keeps the tiny minimal slot narrow.
+/// `Text(timerInterval:countsDown:false, showsHours:false)` ticks natively
+/// exactly like `style: .timer`. ⚠️ The REST clock must stay `style: .timer` —
+/// the timerInterval variant clamps at the interval's end, which would kill
+/// the free overtime count-up.
 @ViewBuilder
-private func sizedSessionClock(_ startedAt: Date) -> some View {
+private func sizedSessionClock(_ startedAt: Date, digitScaleFloor: CGFloat = 0.7) -> some View {
   let elapsed = Date().timeIntervalSince(startedAt)
-  Text(elapsed < 600 ? "8:88" : elapsed < 3600 ? "88:88" : "8:88:88")
+  Text(elapsed < 600 ? "8:88" : elapsed < 6000 ? "88:88" : "888:88")
     .hidden()
     .overlay {
-      Text(startedAt, style: .timer)
+      Text(timerInterval: startedAt...Date.distantFuture, countsDown: false, showsHours: false)
         .multilineTextAlignment(.trailing)
         .lineLimit(1)
-        .minimumScaleFactor(0.7)
+        .minimumScaleFactor(digitScaleFloor)
     }
 }
 
@@ -218,12 +225,24 @@ struct WorkoutLiveActivity: Widget {
             .minimumScaleFactor(0.7)
         }
       } minimal: {
+        // Music playing demotes us to this one tiny slot. TIME ONLY — glyph +
+        // time was device-tested (build 43) and the digits truncated to "0:…";
+        // the slot is narrower than the icon leaves room for. The color says
+        // which clock it is: rest = white (red in overtime), session = green.
         if isResting(context.state) {
-          Image(systemName: "hourglass")
-            .foregroundColor(isRestOver(context.state) ? restOverRed : accent)
+          restClock(context.state)
+            .font(.caption2.weight(.bold))
+            .monospacedDigit()
+            .foregroundColor(isRestOver(context.state) ? restOverRed : .white)
+            .frame(maxWidth: 44)
+            .minimumScaleFactor(0.55)
         } else {
-          Image(systemName: "timer")
+          sizedSessionClock(sessionStart(context.state), digitScaleFloor: 0.55)
+            .font(.caption2.weight(.bold))
+            .monospacedDigit()
             .foregroundColor(accent)
+            .frame(maxWidth: 44)
+            .minimumScaleFactor(0.55)
         }
       }
       .keylineTint(accent)

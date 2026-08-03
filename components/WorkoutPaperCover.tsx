@@ -88,9 +88,11 @@ export default function WorkoutPaperCover({
   const allGreen = variant === 'green';
   const catColors = category ? CATEGORY_COLORS[category as WorkoutCategory] : null;
   const names = (exerciseNames ?? (workoutId ? ctxNames?.get(workoutId) : null) ?? []).filter(Boolean);
-  // Only categories with a CategoryCover config draw a silhouette — an uncategorised
-  // workout has no watermark, so its text can use the full width.
-  const hasWatermark = categoryHasCover(category);
+  // Categories with a CategoryCover config draw their silhouette; a workout with NO
+  // category draws the plain neutral figure (nothing lit — CategoryCover's NEUTRAL_CFG,
+  // added Aug 3 2026 for free-session cards). Only an unknown-but-set category (the
+  // stretching categories) stays figure-less, with the text using the full width.
+  const hasWatermark = categoryHasCover(category) || !category;
   const isMini = size !== 'full';
   // Right-hand clearance so the list doesn't run into the silhouette.
   const baseInset = !hasWatermark ? 0
