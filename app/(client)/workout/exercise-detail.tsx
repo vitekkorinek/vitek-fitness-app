@@ -65,6 +65,7 @@ import {
 } from '@/lib/doModeBridge';
 import en from '@/i18n/en';
 import { setKey, setLabel, buildSetLabels, nextSetNumber } from '@/lib/warmupSets';
+import { parseWeightInput } from '@/lib/weightInput';
 import { usesMachineBrand } from '@/lib/exerciseFilters';
 
 // ─── Constants ───────────────────────────────────────────────────────────────
@@ -1308,13 +1309,13 @@ export default function ExerciseDetailScreen() {
                             autoFocus
                             selectTextOnFocus
                             onBlur={() => {
-                              const val = parseFloat(customBarText);
-                              if (!isNaN(val) && val > 0) setBarAndNotify(val);
+                              const val = parseWeightInput(customBarText);
+                              if (val != null && val > 0) setBarAndNotify(val);
                               setShowCustomBar(false);
                             }}
                             onSubmitEditing={() => {
-                              const val = parseFloat(customBarText);
-                              if (!isNaN(val) && val > 0) setBarAndNotify(val);
+                              const val = parseWeightInput(customBarText);
+                              if (val != null && val > 0) setBarAndNotify(val);
                               setShowCustomBar(false);
                             }}
                           />
@@ -1407,7 +1408,6 @@ export default function ExerciseDetailScreen() {
                 <View style={{ width: 30 }} />
                 <Text style={[styles.setColLabel, { flex: 1.2, textAlign: 'center' }]}>KG</Text>
                 <Text style={[styles.setColLabel, { flex: 1, textAlign: 'center', paddingLeft: 6 }]}>REPS</Text>
-                <Text style={[styles.setColLabel, { flex: 1.2, textAlign: 'center' }]}>TOTAL</Text>
                 <View style={{ width: 76 }} />
               </View>
               <View style={styles.colHeaderDivider} />
@@ -2115,9 +2115,15 @@ function DetailSetRow({
   const repsTrendColor = !isPeeking && set.prefillTrendReps === 'up' ? '#24ac88'
     : !isPeeking && set.prefillTrendReps === 'down' ? '#e05555' : undefined;
 
-  const totalStr = isPeeking
+  // Total only exists for bar-type exercises now (Aug 2026) — a small "= total"
+  // under the kg value; machines show nothing, and the dumbbell/kettlebell ×2
+  // was wrong for single-arm work. Same rule as the Do Mode set row.
+  const eqLowerRow = (equipment ?? '').toLowerCase();
+  const isBarTypeRow = eqLowerRow.includes('barbell') || eqLowerRow === 'z bar';
+  const totalStr = !isBarTypeRow ? '—' : (isPeeking
     ? (set.firstSessionWeightKg != null ? calcTotal(set.firstSessionWeightKg, equipment, barbellWeightKg) : '—')
-    : calcTotal(parseFloat(set.weightKg) || null, equipment, barbellWeightKg);
+    : calcTotal(parseWeightInput(set.weightKg), equipment, barbellWeightKg));
+  const showBarTotal = isBarTypeRow && totalStr !== '—';
 
   const { Animated } = require('react-native');
 
@@ -2125,7 +2131,7 @@ function DetailSetRow({
     <View style={[styles.inlineSetRow, set.isDropset && styles.inlineDropsetRow, set.isRemoved && styles.inlineSetRemoved]}>
       <View style={styles.setNumCol}>
         {set.isDropset
-          ? <Text style={styles.dropsetArrow}>↓</Text>
+          ? <Text style={styles.dropsetArrow}>{set.isWarmup ? '↑' : '↓'}</Text>
           : (
             <TouchableOpacity
               onPressIn={handleSetNumPressIn}
@@ -2143,18 +2149,23 @@ function DetailSetRow({
         }
       </View>
 
-      <TextInput
-        style={[styles.kgInput, isPeeking && styles.inputPeeking, weightTrendColor ? { color: weightTrendColor } : undefined]}
-        value={displayKg}
-        onChangeText={isPeeking ? undefined : onChangeWeight}
-        onBlur={() => { if (!isPeeking) onBlurWeight(set.weightKg); }}
-        onFocus={isPeeking ? undefined : onFocus}
-        placeholder={set.targetWeightKg != null ? String(set.targetWeightKg) : '—'}
-        placeholderTextColor={isPeeking ? '#c8a800' : '#bbb'}
-        keyboardType="decimal-pad"
-        editable={!set.isRemoved && !isPeeking}
-        selectTextOnFocus
-      />
+      <View style={styles.kgCol}>
+        <TextInput
+          style={[styles.kgInput, styles.kgInputInCol, isPeeking && styles.inputPeeking, weightTrendColor ? { color: weightTrendColor } : undefined]}
+          value={displayKg}
+          onChangeText={isPeeking ? undefined : onChangeWeight}
+          onBlur={() => { if (!isPeeking) onBlurWeight(set.weightKg); }}
+          onFocus={isPeeking ? undefined : onFocus}
+          placeholder={set.targetWeightKg != null ? String(set.targetWeightKg) : '—'}
+          placeholderTextColor={isPeeking ? '#c8a800' : '#bbb'}
+          keyboardType="decimal-pad"
+          editable={!set.isRemoved && !isPeeking}
+          selectTextOnFocus
+        />
+        {showBarTotal && (
+          <Text style={[styles.kgTotalHint, isPeeking && styles.kgTotalHintPeeking]}>= {totalStr} kg</Text>
+        )}
+      </View>
 
       <TextInput
         style={[styles.repsInput, isPeeking && styles.inputPeeking, repsTrendColor ? { color: repsTrendColor } : undefined]}
@@ -2168,10 +2179,6 @@ function DetailSetRow({
         editable={!set.isRemoved && !isPeeking}
         selectTextOnFocus
       />
-
-      <View style={styles.totalDisplay}>
-        <Text style={[styles.totalText, isPeeking && styles.totalTextPeeking]}>{totalStr}</Text>
-      </View>
 
       <TouchableOpacity onPress={onSetDone} style={styles.setIconBtn} activeOpacity={0.7}>
         <View style={[styles.setDoneCheck, set.isDone && styles.setDoneCheckActive]}>
@@ -2756,7 +2763,7 @@ function SetHistoryModal({ workoutExerciseId, highlightSetNum, onClose }: {
                       ]}
                     >
                       <Text style={[setHistStyles.setNumText, s.isWarmup && setHistStyles.setNumTextWarmup]}>
-                        {s.isDropset ? '↓' : setLabel(s.setNumber, s.isWarmup)}
+                        {s.isDropset ? (s.isWarmup ? '↑' : '↓') : setLabel(s.setNumber, s.isWarmup)}
                       </Text>
                       <Text style={setHistStyles.setDataText}>
                         {s.weightKg != null ? `${s.weightKg} kg` : '—'}
@@ -2965,7 +2972,6 @@ const styles = StyleSheet.create({
   setNumWarmup: { color: ACCENT },
   setNumPeeking: { color: '#c8a800' },
   inputPeeking: { backgroundColor: '#fffbe6', color: '#a07800' },
-  totalTextPeeking: { color: '#c8a800' },
   dropsetArrow: { fontSize: 15, color: ACCENT, fontWeight: '700' },
   kgInput: {
     flex: 1.2, textAlign: 'center', fontSize: 16, fontWeight: '700',
@@ -2977,8 +2983,12 @@ const styles = StyleSheet.create({
     color: TEXT, backgroundColor: '#f5f5f3', borderRadius: 8,
     paddingVertical: 8, paddingHorizontal: 4,
   },
-  totalDisplay: { flex: 1.2, alignItems: 'center', justifyContent: 'center' },
-  totalText: { fontSize: 14, fontWeight: '500', color: MUTED },
+  // Bar-type only (Aug 2026) — the total moved from its own column to a small
+  // line under the kg value; the column's width went to the inputs.
+  kgCol: { flex: 1.2 },
+  kgInputInCol: { flex: 0, alignSelf: 'stretch' },
+  kgTotalHint: { fontSize: 10, fontWeight: '600', color: '#a3a39e', textAlign: 'center', marginTop: 2 },
+  kgTotalHintPeeking: { color: '#c8a800' },
   setIconBtn: { width: 34, alignItems: 'center', justifyContent: 'center' },
   setNoteIcon: { width: 17, height: 17, borderRadius: 9, alignItems: 'center', justifyContent: 'center' },
   setNoteIconActive: { backgroundColor: ACCENT },

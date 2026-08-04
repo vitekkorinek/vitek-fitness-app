@@ -126,6 +126,7 @@ import { useAuth } from '@/context/AuthContext';
 import type { Workout } from '@/types/database';
 import en from '@/i18n/en';
 import { setKey, setLabel, buildSetLabels, nextSetNumber } from '@/lib/warmupSets';
+import { parseWeightInput } from '@/lib/weightInput';
 import MuscleThumb, { MusclePopup } from '@/components/MuscleThumb';
 import EquipmentPopup, { EquipmentIcon } from '@/components/EquipmentPopup';
 import CategoryCover, { categoryHasCover } from '@/components/CategoryCover';
@@ -2379,19 +2380,56 @@ export default function TrainerWorkoutSessionScreen() {
     }));
   };
 
-  const addDropset = (exIdx: number) => {
+  // Chains a set onto the row whose + was tapped (Aug 2026 — the + moved into the
+  // rows). On a working row this is the classic dropset; on a WARM-UP row the same
+  // mechanism is the "ramp set" (20kg×8 → straight into 40×4 → 50×4, no rest):
+  // isWarmup is inherited from the chain's parent, so a ramp set stays a warm-up
+  // in every query (progress graph exclusion, history) and only the display chains
+  // it — its ↑ arrow vs the dropset's ↓ is the one visual difference.
+  const addDropset = (exIdx: number, fromSetLocalId: string) => {
     handleEditBeforeStart();
     setExercises(prev => prev.map((ex, i) => {
       if (i !== exIdx) return ex;
-      const lastRegular = [...ex.sets].reverse().find(s => !s.isDropset && !s.isRemoved);
-      const parentId = lastRegular?.localId ?? null;
-      const dropset: SessionSet = { localId: uid(), workoutSetId: null, setNumber: lastRegular?.setNumber ?? 1, targetReps: null, targetWeightKg: null, firstSessionWeightKg: null, firstSessionReps: null, repsCompleted: '', weightKg: '', isRemoved: false, isWarmup: false, isDropset: true, dropsetParentLocalId: parentId, trainerNotes: [], clientNotes: [], isAddedDuringSession: true, isDone: false, prefillTrendWeight: null, prefillTrendReps: null };
+      const from = ex.sets.find(s => s.localId === fromSetLocalId);
+      if (!from) return ex;
+      const parentId = from.isDropset ? from.dropsetParentLocalId : from.localId;
+      const parent = ex.sets.find(s => s.localId === parentId) ?? from;
+      const dropset: SessionSet = { localId: uid(), workoutSetId: null, setNumber: parent.setNumber, targetReps: null, targetWeightKg: null, firstSessionWeightKg: null, firstSessionReps: null, repsCompleted: '', weightKg: '', isRemoved: false, isWarmup: !!parent.isWarmup, isDropset: true, dropsetParentLocalId: parentId, trainerNotes: [], clientNotes: [], isAddedDuringSession: true, isDone: false, prefillTrendWeight: null, prefillTrendReps: null };
       let idx = -1;
       ex.sets.forEach((s, i2) => { if (s.localId === parentId || (s.isDropset && s.dropsetParentLocalId === parentId)) idx = i2; });
       const newSets = [...ex.sets];
       newSets.splice(idx + 1, 0, dropset);
       return { ...ex, isDone: false, sets: newSets };
     }));
+  };
+
+  // "Make this a warm-up set" — offered only on the FIRST working row, so Vitek can
+  // convert top-down: set 1 becomes W1, the next row is suddenly set 1 and offers it
+  // again (his spec, Aug 2026). The set keeps its position (it already sits right
+  // after the warm-up block) and takes a fresh number WITHIN the warm-up block —
+  // setNumber is an identity, so the row's old working-set history stays where it
+  // was instead of shifting onto a neighbour (lib/warmupSets.ts rule). Attached
+  // dropsets follow it and become a ramp chain. For a set that exists in the
+  // program, the workout_sets row is updated immediately (fire-and-forget, like
+  // replace/reorder) — the existing "Access workout_sets" policy already covers
+  // the client whose workout it is, so this persists from both sides.
+  const makeSetWarmup = (exIdx: number, setLocalId: string) => {
+    handleEditBeforeStart();
+    const ex = exercisesRef.current[exIdx];
+    const target = ex?.sets.find(s => s.localId === setLocalId);
+    if (!ex || !target || target.isWarmup || target.isDropset) return;
+    const newNumber = nextSetNumber(ex.sets, true);
+    const chainIds = new Set([setLocalId, ...ex.sets.filter(s => s.isDropset && s.dropsetParentLocalId === setLocalId).map(s => s.localId)]);
+    setExercises(prev => prev.map((e, i) => i !== exIdx ? e : ({
+      ...e,
+      sets: e.sets.map(s => chainIds.has(s.localId) ? { ...s, isWarmup: true, setNumber: newNumber } : s),
+    })));
+    if (target.workoutSetId) {
+      supabase.from('workout_sets')
+        .update({ is_warmup: true, set_number: newNumber })
+        .eq('id', target.workoutSetId)
+        .then(({ error }) => { if (error) console.log('makeSetWarmup persist failed:', error.message); });
+    }
   };
 
   const markDone = (exIdx: number) => {
@@ -3386,7 +3424,7 @@ export default function TrainerWorkoutSessionScreen() {
           sets: ex.sets.filter(sx => !sx.isRemoved).map(sx => ({
             set_number: sx.setNumber,
             target_reps: sx.targetReps ?? null,
-            target_weight_kg: sx.weightKg ? parseFloat(sx.weightKg) : null,
+            target_weight_kg: parseWeightInput(sx.weightKg),
             is_warmup: sx.isWarmup,
           })),
         }));
@@ -3407,7 +3445,7 @@ export default function TrainerWorkoutSessionScreen() {
             .map(sx => ({
               set_number: sx.setNumber,
               target_reps: sx.targetReps ?? null,
-              target_weight_kg: sx.weightKg ? parseFloat(sx.weightKg) : null,
+              target_weight_kg: parseWeightInput(sx.weightKg),
               is_warmup: sx.isWarmup,
             })),
         }))
@@ -3446,7 +3484,7 @@ export default function TrainerWorkoutSessionScreen() {
             weIsLocal: addedLocalIds.has(ex.workoutExerciseId),
             set_number: sx.setNumber,
             reps_completed: sx.repsCompleted ? parseInt(sx.repsCompleted, 10) : null,
-            weight_kg: sx.weightKg ? parseFloat(sx.weightKg) : null,
+            weight_kg: parseWeightInput(sx.weightKg),
             barbell_weight_used_kg: barbellKgUsed,
             machine_brand: machineBrandUsed,
             is_removed: sx.isRemoved,
@@ -4323,7 +4361,8 @@ export default function TrainerWorkoutSessionScreen() {
                                   onUpdateSet={(setLocalId, field, value) => updateSet(exIdx, setLocalId, field, value)}
                                   onAddRegularSet={() => addRegularSet(exIdx)}
                                   onAddWarmupSet={() => addWarmupSet(exIdx)}
-                                  onAddDropset={() => addDropset(exIdx)}
+                                  onAddDropset={(setLocalId) => addDropset(exIdx, setLocalId)}
+                                  onMakeWarmup={(setLocalId) => makeSetWarmup(exIdx, setLocalId)}
                                   onOpenInfo={() => setInfoModalExIdx(exIdx)}
                                   onOpenSetNote={setLocalId => setSetNoteModal({ exIdx, setLocalId })}
                                   onAddClientNote={text => addClientNote(exIdx, text)}
@@ -4396,7 +4435,8 @@ export default function TrainerWorkoutSessionScreen() {
                           onUpdateSet={(setLocalId, field, value) => updateSet(exIdx, setLocalId, field, value)}
                           onAddRegularSet={() => addRegularSet(exIdx)}
                           onAddWarmupSet={() => addWarmupSet(exIdx)}
-                          onAddDropset={() => addDropset(exIdx)}
+                          onAddDropset={(setLocalId) => addDropset(exIdx, setLocalId)}
+                          onMakeWarmup={(setLocalId) => makeSetWarmup(exIdx, setLocalId)}
                           onOpenInfo={() => setInfoModalExIdx(exIdx)}
                           onOpenSetNote={setLocalId => setSetNoteModal({ exIdx, setLocalId })}
                           onAddClientNote={text => addClientNote(exIdx, text)}
@@ -5271,6 +5311,7 @@ function ExerciseCard({
   onAddRegularSet,
   onAddWarmupSet,
   onAddDropset,
+  onMakeWarmup,
   onOpenInfo,
   onOpenSetNote,
   onAddClientNote,
@@ -5336,7 +5377,8 @@ function ExerciseCard({
   onUpdateSet: (setLocalId: string, field: 'repsCompleted' | 'weightKg', value: string) => void;
   onAddRegularSet: () => void;
   onAddWarmupSet: () => void;
-  onAddDropset: () => void;
+  onAddDropset: (fromSetLocalId: string) => void;
+  onMakeWarmup: (setLocalId: string) => void;
   onOpenInfo: () => void;
   onOpenSetNote: (setLocalId: string) => void;
   onAddClientNote: (text: string) => void;
@@ -5358,7 +5400,9 @@ function ExerciseCard({
 }) {
   const swipeableRef = useRef<Swipeable>(null);
   const closingExternallyRef = useRef(false);
-  const [addSetMenuOpen, setAddSetMenuOpen] = useState(false);
+  // Which set row's + menu is open (Aug 2026 — the add-set menu moved from the
+  // toolbar into the rows; the toolbar + became the camera).
+  const [rowMenuSetId, setRowMenuSetId] = useState<string | null>(null);
   // July 31 2026 redesign: the muscle popup opens from the meta-row muscle text
   // (the collapsed silhouette thumb is gone when the exercise has a photo).
   // Aug 1 2026: the bar/brand picker behind the equipment chip is a centered
@@ -5535,7 +5579,10 @@ function ExerciseCard({
     <View>
     <Swipeable
       ref={swipeableRef}
-      enabled={!isEditMode && !readOnly}
+      // Collapsed cards only (Aug 2026, Vitek's spec) — when the card is open the
+      // ROWS own the horizontal swipe (swipe-left deletes a set), so the card-level
+      // done/Replace/Add-below reveal would fight it. Collapse first, then swipe.
+      enabled={!isEditMode && !readOnly && !isExpanded}
       renderRightActions={renderRightActions}
       renderLeftActions={renderLeftActions}
       onSwipeableOpen={handleSwipeableOpen}
@@ -5739,36 +5786,36 @@ function ExerciseCard({
 
             {/* Column headers — SETS folded into the same line (July 31 2026; the
                 standalone "Sets" label row is gone, one line instead of two) */}
+            {/* TOTAL column removed Aug 2026 (Vitek): it only ever mattered for
+                barbell exercises (now a small "= total" under the kg value), was
+                noise for machines, and the ×2 was plain wrong for single-arm
+                dumbbell/kettlebell work. The freed width goes to the inputs. */}
             <View style={styles.setColHeaderRow}>
               <Text style={[styles.setColLabel, { width: 30, textAlign: 'center' }]}>SETS</Text>
               <Text style={[styles.setColLabel, { flex: 1.2, textAlign: 'center' }]}>KG</Text>
               <Text style={[styles.setColLabel, { flex: 1, textAlign: 'center', paddingLeft: 6 }]}>REPS</Text>
-              <Text style={[styles.setColLabel, { flex: 1.2, textAlign: 'center' }]}>TOTAL</Text>
               <View style={{ width: 76 }} />
             </View>
 
             {(() => {
-              let dividerInserted = false;
-              const hasAnyOriginalSets = exercise.sets.some(s => !s.isAddedDuringSession && !s.isRemoved);
               // What the rows are CALLED is their position, not their stored
               // setNumber — those differ once a set has been deleted. See
-              // buildSetLabels.
+              // buildSetLabels. (The dashed added-sets divider is gone — Vitek,
+              // Aug 4 device review: not needed.)
               const setLabels = buildSetLabels(exercise.sets);
               return exercise.sets.map((s, setIdx) => {
-                const showDivider = !dividerInserted && sessionCount > 0 && s.isAddedDuringSession && !s.isRemoved && hasAnyOriginalSets;
-                if (showDivider) dividerInserted = true;
                 return (
                   <View key={s.localId}>
-                    {showDivider && <View style={styles.addedSetsDivider} />}
                     <InlineSetRow
                       set={s}
                       displayLabel={setLabels[setIdx]}
                       onChangeReps={v => onUpdateSet(s.localId, 'repsCompleted', v)}
                       onChangeWeight={v => onUpdateSet(s.localId, 'weightKg', v)}
                       onNotePress={() => onOpenSetNote(s.localId)}
-                      onRemoveSet={() => onRemoveSet(s.localId)}
+                      onRemoveSet={() => { setRowMenuSetId(null); onRemoveSet(s.localId); }}
                       onSetDone={() => onSetDone(s.localId)}
                       onSetFocus={() => onSetFocus(s.localId)}
+                      onPlusPress={() => setRowMenuSetId(id => (id === s.localId ? null : s.localId))}
                       equipment={exercise.equipment}
                       barWeightKg={barWeightKg}
                       targetBarbellWeightKg={exercise.firstSessionBarbellWeightKg}
@@ -5777,45 +5824,86 @@ function ExerciseCard({
                       onPeekEnd={() => setPeekingSetId(null)}
                       readOnly={readOnly}
                     />
+                    {/* Row + menu (Aug 2026) — contextual by the row's KIND: a
+                        warm-up row only makes warm-up-type sets (Vitek's spec),
+                        a working row makes working-type ones; the chained adds
+                        (dropset / ramp) attach to THIS row's chain. The first
+                        working row also carries the top-down converter. */}
+                    {rowMenuSetId === s.localId && !readOnly && (() => {
+                      const closeMenu = () => setRowMenuSetId(null);
+                      const firstWorkingId = exercise.sets.find(x => !x.isWarmup && !x.isDropset)?.localId ?? null;
+                      const isFirstWorking = !s.isWarmup && !s.isDropset && s.localId === firstWorkingId;
+                      const hasWarmups = exercise.sets.some(x => x.isWarmup);
+                      return (
+                        <View style={styles.addSetMenu}>
+                          <TouchableOpacity style={styles.addSetMenuClose} onPress={closeMenu} hitSlop={10} activeOpacity={0.6}>
+                            <SymbolView name="xmark" size={12} tintColor="#aaa" />
+                          </TouchableOpacity>
+                          {s.isWarmup ? (
+                            <>
+                              <TouchableOpacity style={styles.addSetMenuBtn} onPress={() => { onAddWarmupSet(); closeMenu(); }} activeOpacity={0.7}>
+                                <SymbolView name="flame" size={16} tintColor={ACCENT} />
+                                <Text style={styles.addSetMenuText}>{en.doMode.addWarmupSet}</Text>
+                              </TouchableOpacity>
+                              <View style={styles.addSetMenuDiv} />
+                              <TouchableOpacity style={styles.addSetMenuBtn} onPress={() => { onAddDropset(s.localId); closeMenu(); }} activeOpacity={0.7}>
+                                <SymbolView name="arrow.up.circle" size={16} tintColor={ACCENT} />
+                                <Text style={styles.addSetMenuText}>{en.doMode.addRampSet}</Text>
+                              </TouchableOpacity>
+                            </>
+                          ) : (
+                            <>
+                              <TouchableOpacity style={styles.addSetMenuBtn} onPress={() => { onAddRegularSet(); closeMenu(); }} activeOpacity={0.7}>
+                                <SymbolView name="plus.circle" size={16} tintColor={ACCENT} />
+                                <Text style={styles.addSetMenuText}>{en.doMode.addSet}</Text>
+                              </TouchableOpacity>
+                              <View style={styles.addSetMenuDiv} />
+                              <TouchableOpacity style={styles.addSetMenuBtn} onPress={() => { onAddDropset(s.localId); closeMenu(); }} activeOpacity={0.7}>
+                                <SymbolView name="arrow.down.circle" size={16} tintColor={ACCENT} />
+                                <Text style={styles.addSetMenuText}>{en.doMode.addDropset}</Text>
+                              </TouchableOpacity>
+                              {isFirstWorking && !hasWarmups && (
+                                <>
+                                  <View style={styles.addSetMenuDiv} />
+                                  <TouchableOpacity style={styles.addSetMenuBtn} onPress={() => { onAddWarmupSet(); closeMenu(); }} activeOpacity={0.7}>
+                                    <SymbolView name="flame" size={16} tintColor={ACCENT} />
+                                    <Text style={styles.addSetMenuText}>{en.doMode.addWarmupSet}</Text>
+                                  </TouchableOpacity>
+                                </>
+                              )}
+                              {isFirstWorking && !s.isRemoved && (
+                                <>
+                                  <View style={styles.addSetMenuDiv} />
+                                  <TouchableOpacity style={styles.addSetMenuBtn} onPress={() => { onMakeWarmup(s.localId); closeMenu(); }} activeOpacity={0.7}>
+                                    <SymbolView name="flame.circle" size={16} tintColor={ACCENT} />
+                                    <Text style={styles.addSetMenuText}>{en.doMode.makeWarmupSet}</Text>
+                                  </TouchableOpacity>
+                                </>
+                              )}
+                            </>
+                          )}
+                        </View>
+                      );
+                    })()}
                   </View>
                 );
               });
             })()}
 
-            {/* Toolbar: hidden in full read-only view; shown in preview with + dimmed
-                so Info stays usable before the session starts. (Play video left the
-                toolbar July 31 2026 — the card's photo thumb opens the media now;
-                the camera folded into the + menu as "Add photo".) */}
-            {(!readOnly || previewMode) && (addSetMenuOpen && !previewMode ? (
-              <View style={styles.addSetMenu}>
-                <TouchableOpacity style={styles.addSetMenuClose} onPress={() => setAddSetMenuOpen(false)} hitSlop={10} activeOpacity={0.6}>
-                  <SymbolView name="xmark" size={12} tintColor="#aaa" />
-                </TouchableOpacity>
-                <TouchableOpacity style={styles.addSetMenuBtn} onPress={() => { onAddRegularSet(); setAddSetMenuOpen(false); }} activeOpacity={0.7}>
-                  <SymbolView name="plus.circle" size={16} tintColor={ACCENT} />
-                  <Text style={styles.addSetMenuText}>{en.doMode.addSet}</Text>
-                </TouchableOpacity>
-                <View style={styles.addSetMenuDiv} />
-                {/* Goes to the top of the card as W (or under an existing warm-up). */}
-                <TouchableOpacity style={styles.addSetMenuBtn} onPress={() => { onAddWarmupSet(); setAddSetMenuOpen(false); }} activeOpacity={0.7}>
-                  <SymbolView name="flame" size={16} tintColor={ACCENT} />
-                  <Text style={styles.addSetMenuText}>{en.doMode.addWarmupSet}</Text>
-                </TouchableOpacity>
-                <View style={styles.addSetMenuDiv} />
-                <TouchableOpacity style={styles.addSetMenuBtn} onPress={() => { onAddDropset(); setAddSetMenuOpen(false); }} activeOpacity={0.7}>
-                  <SymbolView name="arrow.down.circle" size={16} tintColor={ACCENT} />
-                  <Text style={styles.addSetMenuText}>{en.doMode.addDropset}</Text>
-                </TouchableOpacity>
-                <View style={styles.addSetMenuDiv} />
-                <TouchableOpacity style={styles.addSetMenuBtn} onPress={() => { onCameraPress(); setAddSetMenuOpen(false); }} activeOpacity={0.7}>
-                  <SymbolView name="camera" size={16} tintColor={ACCENT} />
-                  <Text style={styles.addSetMenuText}>{en.doMode.addPhoto}</Text>
-                </TouchableOpacity>
-              </View>
-            ) : (
-              /* One row (July 31 2026): Info (solid = look at something) · Rest
-                 timer (the wide one — it's what you reach for mid-set) · + (dashed
-                 = adds something: set, warm-up, dropset, photo). */
+            {exercise.sets.length === 0 && !readOnly && (
+              <TouchableOpacity style={styles.addSetMenuBtn} onPress={onAddRegularSet} activeOpacity={0.7}>
+                <SymbolView name="plus.circle" size={16} tintColor={ACCENT} />
+                <Text style={styles.addSetMenuText}>{en.doMode.addSet}</Text>
+              </TouchableOpacity>
+            )}
+
+            {/* Toolbar: hidden in full read-only view; shown in preview with the
+                camera dimmed so Info stays usable before the session starts.
+                One row (Aug 2026): Info (solid = look at something) · Rest timer
+                (the wide one — it's what you reach for mid-set) · camera (dashed
+                = adds something: a session photo). The old + menu moved into the
+                set rows — each row's + adds sets of that row's kind. */}
+            {(!readOnly || previewMode) && (
               <View style={styles.iconToolbar}>
                 <TouchableOpacity style={[styles.iconBtn, !readOnly && styles.iconBtnSquare]} onPress={onOpenInfo} activeOpacity={0.7}>
                   <SymbolView name="info.circle" size={17} tintColor={ACCENT} style={{ width: 20, height: 20 }} />
@@ -5826,11 +5914,11 @@ function ExerciseCard({
                     <Text style={styles.restTimerBtnText}>{en.doMode.restTimer}</Text>
                   </TouchableOpacity>
                 )}
-                <DashedBtnWrapper style={[styles.iconBtn, !readOnly && styles.iconBtnSquare, previewMode && styles.iconBtnDim]} onPress={() => setAddSetMenuOpen(true)} disabled={previewMode} activeOpacity={0.7}>
-                  <SymbolView name="plus" size={17} tintColor={ACCENT} style={{ width: 20, height: 20 }} />
+                <DashedBtnWrapper style={[styles.iconBtn, !readOnly && styles.iconBtnSquare, previewMode && styles.iconBtnDim]} onPress={onCameraPress} disabled={previewMode} activeOpacity={0.7}>
+                  <SymbolView name="camera" size={17} tintColor={ACCENT} style={{ width: 20, height: 20 }} />
                 </DashedBtnWrapper>
               </View>
-            ))}
+            )}
 
             {/* Session photo thumbnails */}
             {photoUrls.length > 0 && (
@@ -6026,6 +6114,7 @@ function InlineSetRow({
   onRemoveSet,
   onSetDone,
   onSetFocus,
+  onPlusPress,
   equipment,
   barWeightKg,
   targetBarbellWeightKg,
@@ -6043,6 +6132,7 @@ function InlineSetRow({
   onRemoveSet: () => void;
   onSetDone: () => void;
   onSetFocus: () => void;
+  onPlusPress: () => void;
   equipment: string | null;
   barWeightKg: number;
   targetBarbellWeightKg: number | null;
@@ -6051,6 +6141,7 @@ function InlineSetRow({
   onPeekEnd: () => void;
   readOnly?: boolean;
 }) {
+  const rowSwipeRef = useRef<Swipeable>(null);
   const hasSetNotes = set.trainerNotes.some(n => !n.isDeleted) || set.clientNotes.some(n => !n.isDeleted);
   const peekTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const peekedThisTouchRef = useRef(false);
@@ -6098,14 +6189,44 @@ function InlineSetRow({
   const repsTrendColor = !isPeeking && set.prefillTrendReps === 'up' ? '#24ac88'
     : !isPeeking && set.prefillTrendReps === 'down' ? '#e05555' : undefined;
 
+  // Total only exists for bar-type exercises now (Aug 2026, Vitek): plates × 2 +
+  // the bar, shown as a small "= total" under the kg value. Machines never needed
+  // one, and the dumbbell/kettlebell ×2 was plain wrong for single-arm work.
+  const eqLowerRow = (equipment ?? '').toLowerCase();
+  const isBarTypeRow = eqLowerRow.includes('barbell') || eqLowerRow === 'z bar';
   const totalKg = isPeeking
     ? set.firstSessionWeightKg
-    : (parseFloat(set.weightKg) || null);
+    : parseWeightInput(set.weightKg);
   const effectiveBarWeightKg = isPeeking && targetBarbellWeightKg != null ? targetBarbellWeightKg : barWeightKg;
-  const totalStr = calcTotal(totalKg, equipment, effectiveBarWeightKg);
+  const totalStr = isBarTypeRow ? calcTotal(totalKg, equipment, effectiveBarWeightKg) : '—';
+  const showBarTotal = isBarTypeRow && totalStr !== '—';
+
+  // Swipe left = remove the set (restore with a second swipe) — replaced the ✕
+  // column Aug 2026. The action is the same isRemoved toggle the ✕ ran.
+  const renderRowDelete = () => (
+    <View style={[styles.setRowSwipeAction, set.isRemoved && styles.setRowSwipeActionRestore]}>
+      <SymbolView name={set.isRemoved ? 'arrow.uturn.left' : 'trash'} size={15} tintColor="#fff" style={{ width: 18, height: 18 }} />
+    </View>
+  );
 
   return (
-    <View style={[styles.inlineSetRow, set.isDropset && styles.inlineDropsetRow, set.isRemoved && styles.inlineSetRemoved]}>
+    <Swipeable
+      ref={rowSwipeRef}
+      enabled={!readOnly && !isPeeking}
+      renderRightActions={renderRowDelete}
+      onSwipeableOpen={(direction) => {
+        if (direction !== 'right') return;
+        onRemoveSet();
+        rowSwipeRef.current?.close();
+      }}
+      friction={2}
+      rightThreshold={40}
+      overshootRight={false}
+    >
+      {/* Opaque surface so the removed row's 0.3 opacity doesn't let the swipe
+          action show through mid-drag. */}
+      <View style={styles.setRowSurface}>
+      <View style={[styles.inlineSetRow, isBarTypeRow && styles.inlineSetRowBar, set.isDropset && styles.inlineDropsetRow, set.isRemoved && styles.inlineSetRemoved]}>
       <TouchableOpacity
         style={styles.setNumCol}
         onPress={handleSetNumPress}
@@ -6116,7 +6237,9 @@ function InlineSetRow({
         disabled={set.isDropset}
       >
         {set.isDropset
-          ? <Text style={styles.dropsetArrow}>↓</Text>
+          // ↓ = dropset (weight goes down) · ↑ = ramp set, its warm-up twin
+          // (weight goes up, straight after the previous warm-up).
+          ? <Text style={styles.dropsetArrow}>{set.isWarmup ? '↑' : '↓'}</Text>
           : (
             <View>
               <Text style={[styles.setNum, set.isWarmup && styles.setNumWarmup, isPeeking && styles.setNumPeeking]}>
@@ -6128,17 +6251,22 @@ function InlineSetRow({
         }
       </TouchableOpacity>
 
-      <TextInput
-        style={[styles.kgInput, isPeeking && styles.inputPeeking, weightTrendColor ? { color: weightTrendColor } : undefined]}
-        value={displayWeight}
-        onChangeText={onChangeWeight}
-        onFocus={isPeeking ? undefined : onSetFocus}
-        placeholder={set.targetWeightKg != null ? String(set.targetWeightKg) : '—'}
-        placeholderTextColor="#bbb"
-        keyboardType="decimal-pad"
-        editable={!set.isRemoved && !isPeeking && !readOnly}
-        selectTextOnFocus
-      />
+      <View style={styles.kgCol}>
+        <TextInput
+          style={[styles.kgInput, styles.kgInputInCol, isPeeking && styles.inputPeeking, weightTrendColor ? { color: weightTrendColor } : undefined]}
+          value={displayWeight}
+          onChangeText={onChangeWeight}
+          onFocus={isPeeking ? undefined : onSetFocus}
+          placeholder={set.targetWeightKg != null ? String(set.targetWeightKg) : '—'}
+          placeholderTextColor="#bbb"
+          keyboardType="decimal-pad"
+          editable={!set.isRemoved && !isPeeking && !readOnly}
+          selectTextOnFocus
+        />
+        {showBarTotal && (
+          <Text style={[styles.kgTotalHint, isPeeking && styles.kgTotalHintPeeking]}>= {totalStr} kg</Text>
+        )}
+      </View>
 
       <TextInput
         style={[styles.repsInput, isPeeking && styles.inputPeeking, repsTrendColor ? { color: repsTrendColor } : undefined]}
@@ -6152,12 +6280,8 @@ function InlineSetRow({
         selectTextOnFocus
       />
 
-      <View style={styles.totalDisplay}>
-        <Text style={[styles.totalText, isPeeking && styles.totalTextPeeking]}>{totalStr}</Text>
-      </View>
-
-      {/* Set-done + remove are logging actions — in read-only view keep the two columns as
-          empty spacers so the inputs stay aligned with the KG/REPS/TOTAL header above. */}
+      {/* Set-done + row-add are logging actions — in read-only view keep the two
+          columns as empty spacers so the inputs stay aligned with the header. */}
       {readOnly ? (
         <>
           <View style={styles.setIconBtn} />
@@ -6171,12 +6295,14 @@ function InlineSetRow({
             </View>
           </TouchableOpacity>
 
-          <TouchableOpacity onPress={onRemoveSet} style={styles.setIconBtn}>
-            <Text style={[styles.setRemoveX, set.isRemoved && styles.setRemoveXActive]}>✕</Text>
+          <TouchableOpacity onPress={onPlusPress} style={styles.setIconBtn} hitSlop={6} activeOpacity={0.6}>
+            <SymbolView name="plus" size={15} tintColor="#a3a39e" style={{ width: 18, height: 18 }} />
           </TouchableOpacity>
         </>
       )}
-    </View>
+      </View>
+      </View>
+    </Swipeable>
   );
 }
 
@@ -7053,7 +7179,7 @@ function SetHistoryModal({ workoutExerciseId, highlightSetNum, onClose }: {
                       ]}
                     >
                       <Text style={[setHistStyles.setNumText, s.isWarmup && setHistStyles.setNumTextWarmup]}>
-                        {s.isDropset ? '↓' : setLabel(s.setNumber, s.isWarmup)}
+                        {s.isDropset ? (s.isWarmup ? '↑' : '↓') : setLabel(s.setNumber, s.isWarmup)}
                       </Text>
                       <Text style={setHistStyles.setDataText}>
                         {s.weightKg != null ? `${s.weightKg} kg` : '—'}
@@ -8263,7 +8389,7 @@ const styles = StyleSheet.create({
   setColLabel: { fontSize: 9, fontWeight: '800', color: '#a3a39e', letterSpacing: 0.8 },
 
   inlineSetRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 7, gap: 8 },
-  inlineDropsetRow: { paddingLeft: 24, backgroundColor: '#fafaf8' },
+  inlineDropsetRow: { paddingLeft: 24 },
   inlineSetRemoved: { opacity: 0.3 },
   setNumCol: { width: 30, alignItems: 'center', justifyContent: 'center' },
   setNum: { fontSize: 15, fontWeight: '700', color: '#999' },
@@ -8275,9 +8401,22 @@ const styles = StyleSheet.create({
   dropsetArrow: { fontSize: 15, color: ACCENT, fontWeight: '700' },
   kgInput: { flex: 1.2, textAlign: 'center', fontSize: 16, fontWeight: '700', color: TEXT, backgroundColor: '#f0f0ee', borderRadius: 8, paddingVertical: 7, paddingHorizontal: 4 },
   repsInput: { flex: 1, textAlign: 'center', fontSize: 15, fontWeight: '500', color: TEXT, backgroundColor: '#f5f5f3', borderRadius: 8, paddingVertical: 7, paddingHorizontal: 4 },
-  totalDisplay: { flex: 1.2, alignItems: 'center', justifyContent: 'center' },
-  totalText: { fontSize: 14, fontWeight: '500', color: MUTED },
-  totalTextPeeking: { color: '#b87d00', fontWeight: '700' },
+  // Bar-type only (Aug 2026) — the total moved from its own column to a small
+  // line under the kg value; the column's width went to the inputs.
+  kgCol: { flex: 1.2 },
+  kgInputInCol: { flex: 0, alignSelf: 'stretch' },
+  // Absolute so the hint never lifts the kg input off the row's centerline
+  // (Vitek's device call, Aug 4) — the bar rows reserve its room via
+  // inlineSetRowBar's paddingBottom instead, uniformly, so nothing jumps
+  // while typing.
+  kgTotalHint: { position: 'absolute', top: '100%', left: 0, right: 0, marginTop: 2, fontSize: 10, fontWeight: '600', color: '#a3a39e', textAlign: 'center' },
+  inlineSetRowBar: { paddingBottom: 21 },
+  kgTotalHintPeeking: { color: '#b87d00' },
+  // Row swipe-left reveal (replaced the ✕ column Aug 2026): red = remove,
+  // ACCENT = restore an already-removed set.
+  setRowSurface: { backgroundColor: '#fff' },
+  setRowSwipeAction: { width: 64, backgroundColor: '#e85d4a', alignItems: 'center', justifyContent: 'center' },
+  setRowSwipeActionRestore: { backgroundColor: ACCENT },
   inputPeeking: { backgroundColor: '#fff8e8', color: '#8a5e00' },
   setIconBtn: { width: 34, alignItems: 'center', justifyContent: 'center' },
   setNoteIcon: { width: 17, height: 17, borderRadius: 9, alignItems: 'center', justifyContent: 'center' },
@@ -8286,13 +8425,9 @@ const styles = StyleSheet.create({
   setNoteIconText: { fontSize: 11, fontWeight: '700', fontStyle: 'italic', lineHeight: 13 },
   setNoteIconTextActive: { color: '#fff' },
   setNoteIconTextInactive: { color: '#888' },
-  setRemoveX: { fontSize: 13, color: '#ccc', fontWeight: '500' },
-  setRemoveXActive: { color: ACCENT },
   setDoneCheck: { width: 18, height: 18, borderRadius: 9, borderWidth: 1.5, borderColor: '#ccc', alignItems: 'center', justifyContent: 'center' },
   setDoneCheckActive: { backgroundColor: ACCENT, borderColor: ACCENT },
   setDoneCheckMark: { fontSize: 10, fontWeight: '800', color: '#fff', lineHeight: 12 },
-
-  addedSetsDivider: { height: 1, marginHorizontal: 12, marginVertical: 4, borderStyle: 'dashed', borderTopWidth: 1, borderColor: '#ccc' },
 
   iconToolbar: { flexDirection: 'row', gap: 8, marginHorizontal: 12, marginVertical: 6 },
   // minWidth:0 — a flex item's min-width defaults to its content size, and an

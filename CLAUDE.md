@@ -10,7 +10,7 @@ The rules below cover scope, permissions, the DB/data layer, the app-wide design
 
 | File | Read it before touching |
 |---|---|
-| **CLAUDE-domode.md** | Do Mode (both `workout/[workoutId]` files) + Exercise Detail (§5, §7) |
+| **CLAUDE-domode.md** | Do Mode (both `workout/[workoutId]` files) (§5, §7). ⚠️ The two `exercise-detail.tsx` files are INACTIVE legacy code (Aug 2026) — kept for a possible return, never ported to |
 | **CLAUDE-screens.md** | per-screen layout: tab bars/headers, profile layout, week strips, gauge, Appointments, Past Sessions, suspended-session indicators, Finance, Packages, Account, Invoice, Auth (§2 per-screen parts + §11, §12, §14, §15, §16) |
 | **CLAUDE-nutrition.md** | any nutrition screen |
 | **CLAUDE-schedule.md** | trainer Schedule tab, client Availability, Plan Week (§9, §10) |

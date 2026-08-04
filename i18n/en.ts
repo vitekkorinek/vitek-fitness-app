@@ -548,6 +548,13 @@ const en = {
     addSet: 'Add Set',
     addWarmupSet: 'Add Warm-up Set',
     addDropset: 'Add Dropset',
+    // A ramp set is the warm-up twin of a dropset: straight into the next
+    // (heavier) warm-up with no rest — 20kg×8 → 40×4 → 50×4. Chained under its
+    // parent warm-up with an ↑ where the dropset shows ↓.
+    addRampSet: 'Add Ramp Set',
+    // Offered on the FIRST working row only — converting top-down: set 1 → W,
+    // the next row becomes set 1 and offers it next.
+    makeWarmupSet: 'Make this a warm-up set',
     // The set-number column for a warm-up. Kept short on purpose — the column is
     // ~24pt wide and sits beside the kg/reps values.
     warmupLabel: 'W',

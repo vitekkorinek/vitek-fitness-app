@@ -288,9 +288,12 @@ async function loadPerformed(
     const cur = byWe.get(weId) ?? { name, equipment: equip, sets: [], done: false, maxWeight: 0 };
     let label: string;
     if (isDrop) {
-      const n = (dropCounters.get(weId) ?? 0) + 1;
-      dropCounters.set(weId, n);
-      label = `Drop ${n}`;
+      // A warm-up chained set is a "ramp" (weight up, no rest — Aug 2026), the
+      // working-set twin stays "Drop". Counted separately per exercise.
+      const ck = `${weId}:${isWarm ? 'r' : 'd'}`;
+      const n = (dropCounters.get(ck) ?? 0) + 1;
+      dropCounters.set(ck, n);
+      label = isWarm ? `Ramp ${n}` : `Drop ${n}`;
     } else if (isWarm) {
       label = en.doMode.warmupSetLabel(l.set_number);
     } else {

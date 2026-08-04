@@ -31,6 +31,7 @@ import { BottomSheet } from '@/components/BottomSheet';
 import { SessionResumeChip } from '@/components/SessionResumeChip';
 import GlassPanel from '@/components/GlassPanel';
 import { CATEGORY_OPTIONS, CATEGORY_COLORS, STRETCHING_CATEGORIES, STRETCHING_CATEGORY_TO_STRETCH_TYPE } from '@/lib/workoutCategories';
+import { parseWeightInput } from '@/lib/weightInput';
 import { setKey, compareSets, buildSetLabels } from '@/lib/warmupSets';
 import en from '@/i18n/en';
 import type { WorkoutCategory } from '@/lib/workoutCategories';
@@ -980,7 +981,7 @@ export default function WorkoutBuilderScreen() {
             template_exercise_id: (teRows as any[])[i].id,
             set_number: s.set_number,
             target_reps: parseInt(s.target_reps) || null,
-            target_weight_kg: parseFloat(s.target_weight_kg) || null,
+            target_weight_kg: parseWeightInput(s.target_weight_kg),
             rest_seconds: parseInt(s.rest_seconds) || null,
             is_warmup: s.is_warmup,
           }))
@@ -1094,7 +1095,7 @@ export default function WorkoutBuilderScreen() {
         // Replace all workout_sets (safe — session_logs are not FK'd to workout_sets)
         if (finalIds.size > 0) await supabase.from('workout_sets').delete().in('workout_exercise_id', [...finalIds]);
         const allSets = items.flatMap((item, i) =>
-          item.sets.map(s => ({ workout_exercise_id: finalWeId[i], set_number: s.set_number, target_reps: parseInt(s.target_reps) || null, target_weight_kg: parseFloat(s.target_weight_kg) || null, rest_seconds: parseInt(s.rest_seconds) || null, is_warmup: s.is_warmup }))
+          item.sets.map(s => ({ workout_exercise_id: finalWeId[i], set_number: s.set_number, target_reps: parseInt(s.target_reps) || null, target_weight_kg: parseWeightInput(s.target_weight_kg), rest_seconds: parseInt(s.rest_seconds) || null, is_warmup: s.is_warmup }))
         );
         if (allSets.length > 0) {
           const { error: setsErr } = await supabase.from('workout_sets').insert(allSets);
@@ -1119,7 +1120,7 @@ export default function WorkoutBuilderScreen() {
         if (weErr || !weRows) throw weErr ?? new Error('WorkoutExercise insert failed');
 
         const allSets = items.flatMap((item, i) =>
-          item.sets.map(s => ({ workout_exercise_id: (weRows as any[])[i].id, set_number: s.set_number, target_reps: parseInt(s.target_reps) || null, target_weight_kg: parseFloat(s.target_weight_kg) || null, rest_seconds: parseInt(s.rest_seconds) || null, is_warmup: s.is_warmup }))
+          item.sets.map(s => ({ workout_exercise_id: (weRows as any[])[i].id, set_number: s.set_number, target_reps: parseInt(s.target_reps) || null, target_weight_kg: parseWeightInput(s.target_weight_kg), rest_seconds: parseInt(s.rest_seconds) || null, is_warmup: s.is_warmup }))
         );
         if (allSets.length > 0) {
           const { error: setsErr } = await supabase.from('workout_sets').insert(allSets);
