@@ -1,6 +1,7 @@
 import {
   ActivityIndicator,
   Animated,
+  Dimensions,
   Image,
   InputAccessoryView,
   KeyboardAvoidingView,
@@ -187,10 +188,14 @@ interface FavouriteDay {
   created_at: string;
 }
 
-// ─── HubBadge (round landing badge — 4 tinted satellites + the filled center) ──
+// ─── HubOrb (round landing badge that springs out of the center heart) ────────
+// The orbit is a fixed pentagon around the heart, so each orb is absolutely
+// positioned and its fly-in delta is simply the negated orbit offset — the
+// collapsed orb sits AT the heart (scale 0.15, opacity 0); `anim` 0→1 flies
+// it out to its orbit spot.
 
-function HubBadge({
-  title, sub, circleColor, iconColor, symbolName, onPress, center,
+function HubOrb({
+  title, sub, circleColor, iconColor, symbolName, onPress, anim, delta, open, left, top, width,
 }: {
   title: string;
   sub: string;
@@ -198,35 +203,62 @@ function HubBadge({
   iconColor: string;
   symbolName: any;
   onPress: () => void;
-  center?: boolean;
+  anim: Animated.Value;
+  delta: { dx: number; dy: number };
+  open: boolean;
+  left: number;
+  top: number;
+  width?: number;
 }) {
   const scale = useRef(new Animated.Value(1)).current;
   const onPressIn  = () => Animated.spring(scale, { toValue: 0.94, useNativeDriver: true, speed: 30 }).start();
   const onPressOut = () => Animated.spring(scale, { toValue: 1,    useNativeDriver: true, speed: 20 }).start();
 
   return (
-    <Animated.View style={{ transform: [{ scale }] }}>
-      <Pressable onPress={onPress} onPressIn={onPressIn} onPressOut={onPressOut} style={[hub.item, center && hub.itemCenter]}>
-        <View style={[hub.circle, center && hub.circleCenter, { backgroundColor: circleColor }]}>
-          <SymbolView name={symbolName} size={center ? 42 : 38} tintColor={iconColor} />
-        </View>
-        <Text style={hub.label} numberOfLines={1}>{title}</Text>
-        <Text style={hub.count} numberOfLines={1}>{sub}</Text>
-      </Pressable>
+    <Animated.View
+      pointerEvents={open ? 'auto' : 'none'}
+      style={{
+        position: 'absolute',
+        left,
+        top,
+        opacity: anim,
+        transform: [
+          { translateX: anim.interpolate({ inputRange: [0, 1], outputRange: [delta.dx, 0] }) },
+          { translateY: anim.interpolate({ inputRange: [0, 1], outputRange: [delta.dy, 0] }) },
+          { scale: anim.interpolate({ inputRange: [0, 1], outputRange: [0.15, 1] }) },
+        ],
+      }}
+    >
+      <Animated.View style={{ transform: [{ scale }] }}>
+        <Pressable onPress={onPress} onPressIn={onPressIn} onPressOut={onPressOut} style={[hub.item, width != null && { width }]}>
+          <View style={[hub.circle, { backgroundColor: circleColor }]}>
+            <SymbolView name={symbolName} size={35} tintColor={iconColor} />
+          </View>
+          <Text style={hub.label} numberOfLines={1}>{title}</Text>
+          <Text style={hub.count} numberOfLines={1}>{sub}</Text>
+        </Pressable>
+      </Animated.View>
     </Animated.View>
   );
 }
 
 const hub = StyleSheet.create({
-  row:    { flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 24 },
-  center: { alignItems: 'center' },
   item:   { alignItems: 'center', width: 124 },
-  itemCenter: { width: 250 },
-  circle: { width: 96, height: 96, borderRadius: 48, alignItems: 'center', justifyContent: 'center' },
-  circleCenter: { width: 106, height: 106, borderRadius: 53 },
+  circle: { width: 88, height: 88, borderRadius: 44, alignItems: 'center', justifyContent: 'center' },
   label:  { fontSize: 14, fontWeight: '600', color: TEXT, marginTop: 9 },
   count:  { fontSize: 12, color: MUTED, marginTop: 1 },
+  heartBtn:   { width: 116, height: 116, alignItems: 'center', justifyContent: 'center' },
+  heartLayer: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, alignItems: 'center', justifyContent: 'center' },
+  hint: { position: 'absolute', left: 0, right: 0, fontSize: 12, color: MUTED, textAlign: 'center' },
 });
+
+const ORB_KEYS = ['reco', 'recipes', 'meals', 'foods', 'days'] as const;
+type OrbKey = typeof ORB_KEYS[number];
+
+// One brand colour for every orb — the colourful macro/micro pips own the
+// "colourful circles" language in the Food Log; navigation stays green.
+const ORB_BG   = '#e9efec';
+const ORB_ICON = HEADER;
 
 // ─── RecipeCard ───────────────────────────────────────────────────────────────
 
@@ -354,6 +386,56 @@ export default function FavouritesScreen() {
   useEffect(() => {
     if (isInsertMode && tabParam === 'days') setView('days');
   }, [isInsertMode, tabParam]);
+
+  // ── Hub heart: tap-to-expand orbit ──
+  const [hubOpen, setHubOpen] = useState(false);
+  const heartAnim = useRef(new Animated.Value(0)).current;
+  const orbAnims  = useRef(ORB_KEYS.map(() => new Animated.Value(0))).current;
+
+  // Fixed pentagon orbit around a dead-center heart. Offsets are circle-center
+  // relative to the heart center; the fly-in delta is just the negated offset.
+  const hubW  = Dimensions.get('window').width - 32;
+  const hubCy = 240;
+  const hubOrbit: Record<OrbKey, { x: number; y: number; w: number }> = useMemo(() => {
+    const sideX = Math.min(118, hubW / 2 - 62);
+    return {
+      reco:    { x: 0,      y: -178, w: 190 },
+      recipes: { x: -sideX, y: -52,  w: 124 },
+      meals:   { x: sideX,  y: -52,  w: 124 },
+      foods:   { x: -78,    y: 100,  w: 124 },
+      days:    { x: 78,     y: 100,  w: 124 },
+    };
+  }, [hubW]);
+  const orbPlacement = (k: OrbKey) => {
+    const o = hubOrbit[k];
+    return {
+      left: hubW / 2 + o.x - o.w / 2,
+      top: hubCy + o.y - 44,
+      width: o.w,
+      delta: { dx: -o.x, dy: -o.y },
+    };
+  };
+
+  const toggleHub = () => {
+    const to = hubOpen ? 0 : 1;
+    setHubOpen(!hubOpen);
+    Animated.spring(heartAnim, { toValue: to, useNativeDriver: true, speed: 20, bounciness: 6 }).start();
+    const springs = orbAnims.map(a =>
+      Animated.spring(a, { toValue: to, useNativeDriver: true, speed: 14, bounciness: 9 })
+    );
+    Animated.stagger(45, to === 1 ? springs : [...springs].reverse()).start();
+  };
+
+  // Leaving the tab collapses the hub, so every fresh visit starts at the heart.
+  useFocusEffect(
+    useCallback(() => {
+      return () => {
+        setHubOpen(false);
+        heartAnim.setValue(0);
+        orbAnims.forEach(a => a.setValue(0));
+      };
+    }, [])
+  );
 
   // Recipes
   const [recipeQuery, setRecipeQuery]     = useState('');
@@ -715,59 +797,102 @@ export default function FavouritesScreen() {
     <View style={s.root}>
       <StatusBar barStyle="dark-content" />
 
-      {/* ── Landing: hub — trainer Recommendations center, 4 folders orbiting ── */}
+      {/* ── Landing: heart hub — tap the heart, the 5 folders spring into orbit ── */}
       {view === 'landing' && (
         <ScrollView
           contentInsetAdjustmentBehavior="never"
           contentContainerStyle={[s.landingContent, { paddingTop: headerH + 16, paddingBottom: tabBarH + 16 }]}
           showsVerticalScrollIndicator={false}
         >
-          <View style={hub.row}>
-            <HubBadge
-              title="Recipes"
-              sub={recipesLoading ? '—' : `${recipes.length} ${recipes.length === 1 ? 'recipe' : 'recipes'}`}
-              circleColor="#f7ecd9"
-              iconColor="#b06614"
-              symbolName="book.closed.fill"
-              onPress={() => setView('recipes')}
-            />
-            <HubBadge
-              title="Meals"
-              sub={mealsLoading ? '—' : `${meals.length} ${meals.length === 1 ? 'meal' : 'meals'}`}
-              circleColor="#e9edf8"
-              iconColor="#33499a"
-              symbolName="fork.knife"
-              onPress={() => setView('meals')}
-            />
-          </View>
-          <View style={hub.center}>
-            <HubBadge
-              center
+          <View style={{ height: 460 }}>
+            <HubOrb
               title="Recommendations"
               sub={recommLoading ? '—' : `${recommendations.length} ${recommendations.length === 1 ? 'item' : 'items'} · from your trainer`}
-              circleColor={HEADER}
-              iconColor="#fff"
+              circleColor={ORB_BG}
+              iconColor={ORB_ICON}
               symbolName="pills.fill"
               onPress={() => setView('recommendations')}
+              anim={orbAnims[0]}
+              open={hubOpen}
+              {...orbPlacement('reco')}
             />
-          </View>
-          <View style={hub.row}>
-            <HubBadge
+            <HubOrb
+              title="Recipes"
+              sub={recipesLoading ? '—' : `${recipes.length} ${recipes.length === 1 ? 'recipe' : 'recipes'}`}
+              circleColor={ORB_BG}
+              iconColor={ORB_ICON}
+              symbolName="book.closed.fill"
+              onPress={() => setView('recipes')}
+              anim={orbAnims[1]}
+              open={hubOpen}
+              {...orbPlacement('recipes')}
+            />
+            <HubOrb
+              title="Meals"
+              sub={mealsLoading ? '—' : `${meals.length} ${meals.length === 1 ? 'meal' : 'meals'}`}
+              circleColor={ORB_BG}
+              iconColor={ORB_ICON}
+              symbolName="fork.knife"
+              onPress={() => setView('meals')}
+              anim={orbAnims[2]}
+              open={hubOpen}
+              {...orbPlacement('meals')}
+            />
+            <HubOrb
               title="Foods"
               sub={favFoodsLoading ? '—' : `${favFoods.length} ${favFoods.length === 1 ? 'food' : 'foods'}`}
-              circleColor="#e2f0f2"
-              iconColor="#16697a"
+              circleColor={ORB_BG}
+              iconColor={ORB_ICON}
               symbolName="carrot.fill"
               onPress={() => setView('foods')}
+              anim={orbAnims[3]}
+              open={hubOpen}
+              {...orbPlacement('foods')}
             />
-            <HubBadge
+            <HubOrb
               title="Days"
               sub={daysLoading ? '—' : `${days.length} ${days.length === 1 ? 'day' : 'days'}`}
-              circleColor="#f5e7f0"
-              iconColor="#88376c"
+              circleColor={ORB_BG}
+              iconColor={ORB_ICON}
               symbolName="calendar"
               onPress={() => setView('days')}
+              anim={orbAnims[4]}
+              open={hubOpen}
+              {...orbPlacement('days')}
             />
+            <Pressable
+              onPress={toggleHub}
+              hitSlop={12}
+              style={[hub.heartBtn, { position: 'absolute', left: hubW / 2 - 58, top: hubCy - 58 }]}
+            >
+              <Animated.View
+                style={[hub.heartLayer, {
+                  opacity: heartAnim.interpolate({ inputRange: [0, 1], outputRange: [1, 0] }),
+                  transform: [{ scale: heartAnim.interpolate({ inputRange: [0, 1], outputRange: [1, 0.92] }) }],
+                }]}
+              >
+                <SymbolView name="heart.fill" size={80} tintColor={ACCENT} />
+              </Animated.View>
+              <Animated.View
+                style={[hub.heartLayer, {
+                  opacity: heartAnim,
+                  transform: [{ scale: heartAnim.interpolate({ inputRange: [0, 1], outputRange: [0.92, 1] }) }],
+                }]}
+              >
+                <SymbolView name="heart.fill" size={80} tintColor={ORB_BG} />
+                <View style={hub.heartLayer}>
+                  <SymbolView name="heart" size={80} tintColor={HEADER} weight="light" />
+                </View>
+              </Animated.View>
+            </Pressable>
+            <Animated.Text
+              style={[hub.hint, {
+                top: hubCy + 58,
+                opacity: heartAnim.interpolate({ inputRange: [0, 1], outputRange: [1, 0] }),
+              }]}
+            >
+              Tap the heart
+            </Animated.Text>
           </View>
         </ScrollView>
       )}
