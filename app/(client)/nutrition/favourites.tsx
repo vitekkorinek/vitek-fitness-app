@@ -249,7 +249,6 @@ const hub = StyleSheet.create({
   count:  { fontSize: 12, color: MUTED, marginTop: 1 },
   heartBtn:   { width: 116, height: 116, alignItems: 'center', justifyContent: 'center' },
   heartLayer: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, alignItems: 'center', justifyContent: 'center' },
-  hint: { position: 'absolute', left: 0, right: 0, fontSize: 12, color: MUTED, textAlign: 'center' },
 });
 
 const ORB_KEYS = ['reco', 'recipes', 'meals', 'foods', 'days'] as const;
@@ -387,7 +386,7 @@ export default function FavouritesScreen() {
     if (isInsertMode && tabParam === 'days') setView('days');
   }, [isInsertMode, tabParam]);
 
-  // ── Hub heart: tap-to-expand orbit ──
+  // ── Hub heart: auto-bloom orbit (heart tap collapses/re-expands) ──
   const [hubOpen, setHubOpen] = useState(false);
   const heartAnim = useRef(new Animated.Value(0)).current;
   const orbAnims  = useRef(ORB_KEYS.map(() => new Animated.Value(0))).current;
@@ -416,25 +415,30 @@ export default function FavouritesScreen() {
     };
   };
 
-  const toggleHub = () => {
-    const to = hubOpen ? 0 : 1;
-    setHubOpen(!hubOpen);
+  const animateHub = useCallback((to: 0 | 1) => {
+    setHubOpen(to === 1);
     Animated.spring(heartAnim, { toValue: to, useNativeDriver: true, speed: 20, bounciness: 6 }).start();
     const springs = orbAnims.map(a =>
       Animated.spring(a, { toValue: to, useNativeDriver: true, speed: 14, bounciness: 9 })
     );
     Animated.stagger(45, to === 1 ? springs : [...springs].reverse()).start();
-  };
+  }, [heartAnim, orbAnims]);
 
-  // Leaving the tab collapses the hub, so every fresh visit starts at the heart.
+  const toggleHub = () => animateHub(hubOpen ? 0 : 1);
+
+  // Auto-bloom: the orbit opens on its own when the tab lands — the heart tap
+  // only collapses/re-expands it. Blur resets to the lone heart so the next
+  // visit blooms again.
   useFocusEffect(
     useCallback(() => {
+      const t = setTimeout(() => animateHub(1), 180);
       return () => {
+        clearTimeout(t);
         setHubOpen(false);
         heartAnim.setValue(0);
         orbAnims.forEach(a => a.setValue(0));
       };
-    }, [])
+    }, [animateHub])
   );
 
   // Recipes
@@ -797,7 +801,7 @@ export default function FavouritesScreen() {
     <View style={s.root}>
       <StatusBar barStyle="dark-content" />
 
-      {/* ── Landing: heart hub — tap the heart, the 5 folders spring into orbit ── */}
+      {/* ── Landing: heart hub — the 5 folders bloom into orbit on landing; the heart toggles ── */}
       {view === 'landing' && (
         <ScrollView
           contentInsetAdjustmentBehavior="never"
@@ -885,14 +889,6 @@ export default function FavouritesScreen() {
                 </View>
               </Animated.View>
             </Pressable>
-            <Animated.Text
-              style={[hub.hint, {
-                top: hubCy + 58,
-                opacity: heartAnim.interpolate({ inputRange: [0, 1], outputRange: [1, 0] }),
-              }]}
-            >
-              Tap the heart
-            </Animated.Text>
           </View>
         </ScrollView>
       )}
