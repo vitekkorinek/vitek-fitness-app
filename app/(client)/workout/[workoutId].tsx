@@ -6203,9 +6203,15 @@ function InlineSetRow({
 
   // Swipe left = remove the set (restore with a second swipe) — replaced the ✕
   // column Aug 2026. The action is the same isRemoved toggle the ✕ ran.
+  // A floating round button (Reminders-style), not a full-height slab — Vitek,
+  // Aug 4 device review: "everything is round in the app". On bar-type rows the
+  // container compensates for inlineSetRowBar's extra paddingBottom so the
+  // circle centers on the input line, not the taller row box.
   const renderRowDelete = () => (
-    <View style={[styles.setRowSwipeAction, set.isRemoved && styles.setRowSwipeActionRestore]}>
-      <SymbolView name={set.isRemoved ? 'arrow.uturn.left' : 'trash'} size={15} tintColor="#fff" style={{ width: 18, height: 18 }} />
+    <View style={[styles.setRowSwipeAction, isBarTypeRow && styles.setRowSwipeActionBar]}>
+      <View style={[styles.setRowSwipeBtn, set.isRemoved && styles.setRowSwipeBtnRestore]}>
+        <SymbolView name={set.isRemoved ? 'arrow.uturn.left' : 'trash'} size={15} tintColor="#fff" style={{ width: 18, height: 18 }} />
+      </View>
     </View>
   );
 
@@ -8415,8 +8421,10 @@ const styles = StyleSheet.create({
   // Row swipe-left reveal (replaced the ✕ column Aug 2026): red = remove,
   // ACCENT = restore an already-removed set.
   setRowSurface: { backgroundColor: '#fff' },
-  setRowSwipeAction: { width: 64, backgroundColor: '#e85d4a', alignItems: 'center', justifyContent: 'center' },
-  setRowSwipeActionRestore: { backgroundColor: ACCENT },
+  setRowSwipeAction: { width: 66, alignItems: 'center', justifyContent: 'center' },
+  setRowSwipeActionBar: { paddingBottom: 14 },
+  setRowSwipeBtn: { width: 40, height: 40, borderRadius: 20, backgroundColor: '#e85d4a', alignItems: 'center', justifyContent: 'center' },
+  setRowSwipeBtnRestore: { backgroundColor: ACCENT },
   inputPeeking: { backgroundColor: '#fff8e8', color: '#8a5e00' },
   setIconBtn: { width: 34, alignItems: 'center', justifyContent: 'center' },
   setNoteIcon: { width: 17, height: 17, borderRadius: 9, alignItems: 'center', justifyContent: 'center' },
