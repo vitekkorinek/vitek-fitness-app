@@ -274,6 +274,8 @@ export interface Invoice {
   id: string;
   invoice_number: string;
   client_id: string | null;
+  /** Recipient typed manually (not a registered client) — client_id is null then. */
+  manual_client_name: string | null;
   created_by: string | null;
   status: InvoiceStatus;
   issue_date: string;

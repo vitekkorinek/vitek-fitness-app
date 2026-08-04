@@ -406,6 +406,14 @@ async function fetchManualEntries(
 type InvStatusFilter = 'all' | InvoiceStatus;
 type ActiveTab = 'invoices' | 'earnings';
 
+// Client filter: a registered client (by id) or a manually-named recipient who is
+// not registered yet. Manual invoices whose name matches a registered client are
+// folded under that client — so when a trial person later registers under the
+// same name, their old invoices move under it automatically.
+type InvClientFilter =
+  | { type: 'client'; id: string; name: string }
+  | { type: 'manual'; name: string };
+
 const INV_STATUS_OPTIONS: { key: InvStatusFilter; label: string }[] = [
   { key: 'all', label: 'All' },
   { key: 'draft', label: 'Draft' },
@@ -453,6 +461,8 @@ export default function FinanceScreen() {
   const [invStatusPickerOpen, setInvStatusPickerOpen] = useState(false);
   const [invYearFilter, setInvYearFilter] = useState<number | null>(null);
   const [invYearPickerOpen, setInvYearPickerOpen] = useState(false);
+  const [invClientFilter, setInvClientFilter] = useState<InvClientFilter | null>(null);
+  const [invClientPickerOpen, setInvClientPickerOpen] = useState(false);
 
   const loadInvoices = useCallback(async () => {
     if (!profile?.id) return;
@@ -497,20 +507,49 @@ export default function FinanceScreen() {
     setRefreshing(false);
   }, [load]);
 
+  // Filter options derived from the loaded invoices: registered clients that have
+  // invoices, plus manual recipient names that don't match any registered client.
+  const invClientOptions = useMemo(() => {
+    const reg = new Map<string, string>();
+    invoices.forEach(inv => { if (inv.client_id && inv.clientName) reg.set(inv.client_id, inv.clientName); });
+    const regNames = new Set([...reg.values()].map(n => n.trim().toLowerCase()));
+    const manualMap = new Map<string, string>();
+    invoices.forEach(inv => {
+      const mn = (inv.manual_client_name ?? '').trim();
+      if (inv.client_id || !mn || regNames.has(mn.toLowerCase())) return;
+      const key = mn.toLowerCase();
+      if (!manualMap.has(key)) manualMap.set(key, mn);
+    });
+    return {
+      registered: [...reg.entries()].map(([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name)),
+      manual: [...manualMap.values()].sort((a, b) => a.localeCompare(b)),
+    };
+  }, [invoices]);
+
   const filteredInvoices = useMemo(() => invoices.filter(inv => {
     if (invStatusFilter !== 'all' && inv.status !== invStatusFilter) return false;
     if (invYearFilter !== null) {
       const invYear = parseInt(inv.issue_date.split('-')[0], 10);
       if (invYear !== invYearFilter) return false;
     }
+    if (invClientFilter) {
+      const manualName = (inv.manual_client_name ?? '').trim().toLowerCase();
+      const wanted = invClientFilter.name.trim().toLowerCase();
+      if (invClientFilter.type === 'client') {
+        const nameMatch = !inv.client_id && manualName === wanted;
+        if (inv.client_id !== invClientFilter.id && !nameMatch) return false;
+      } else {
+        if (inv.client_id || manualName !== wanted) return false;
+      }
+    }
     if (invSearch.trim()) {
       const q = invSearch.toLowerCase();
-      const matchesClient = (inv.clientName ?? '').toLowerCase().includes(q);
+      const matchesClient = (inv.clientName ?? inv.manual_client_name ?? '').toLowerCase().includes(q);
       const matchesNumber = inv.invoice_number.toLowerCase().includes(q);
       if (!matchesClient && !matchesNumber) return false;
     }
     return true;
-  }), [invoices, invStatusFilter, invYearFilter, invSearch]);
+  }), [invoices, invStatusFilter, invYearFilter, invClientFilter, invSearch]);
 
   const diff = data && data.prevIncome != null ? data.totalIncome - data.prevIncome : null;
   const isUp = diff != null && diff >= 0;
@@ -570,8 +609,22 @@ export default function FinanceScreen() {
               </Text>
               <SymbolView name="chevron.down" size={10} tintColor={invStatusFilter !== 'all' ? '#fff' : MUTED} />
             </TouchableOpacity>
+            {/* Client dropdown (green when a specific client/person is filtered) */}
             <TouchableOpacity
-              style={[st.invFilterPill, st.invYearPill, invYearFilter !== null && st.invFilterPillActive]}
+              style={[st.invFilterPill, invClientFilter !== null && st.invFilterPillActive]}
+              onPress={() => setInvClientPickerOpen(true)}
+              activeOpacity={0.7}
+            >
+              <Text
+                style={[st.invFilterPillText, invClientFilter !== null && st.invFilterPillTextActive]}
+                numberOfLines={1}
+              >
+                {invClientFilter ? invClientFilter.name.split(' ')[0] : t.finance.clientPill}
+              </Text>
+              <SymbolView name="chevron.down" size={10} tintColor={invClientFilter !== null ? '#fff' : MUTED} />
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[st.invFilterPill, invYearFilter !== null && st.invFilterPillActive]}
               onPress={() => setInvYearPickerOpen(true)}
               activeOpacity={0.7}
             >
@@ -610,7 +663,7 @@ export default function FinanceScreen() {
             >
               <View style={invSt.left}>
                 <Text style={invSt.number}>{inv.invoice_number}</Text>
-                <Text style={invSt.client} numberOfLines={1}>{inv.clientName ?? '—'}</Text>
+                <Text style={invSt.client} numberOfLines={1}>{inv.clientName ?? inv.manual_client_name ?? '—'}</Text>
               </View>
               <View style={invSt.right}>
                 <Text style={invSt.amount}>€{fmtPrice(inv.gross_amount_eur)}</Text>
@@ -735,6 +788,65 @@ export default function FinanceScreen() {
               ))}
             </View>
           )}
+        </BottomSheet>
+      )}
+
+      {/* Invoice client picker */}
+      {invClientPickerOpen && (
+        <BottomSheet onClose={() => setInvClientPickerOpen(false)}>
+          {close => {
+            const { registered, manual } = invClientOptions;
+            const allLast = registered.length === 0 && manual.length === 0;
+            return (
+              <View style={st.pickerBox}>
+                <Text style={st.pickerTitle}>{t.finance.filterByClient}</Text>
+                <ScrollView style={{ maxHeight: 420 }} showsVerticalScrollIndicator={false}>
+                  <TouchableOpacity
+                    style={[st.pickerOption, allLast && st.pickerOptionLast]}
+                    onPress={() => close(() => { setInvClientFilter(null); })}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={[st.pickerOptionText, invClientFilter === null && st.pickerOptionTextActive]}>
+                      {t.finance.allClients}
+                    </Text>
+                    {invClientFilter === null && <SymbolView name="checkmark" size={14} tintColor={ACCENT} />}
+                  </TouchableOpacity>
+                  {registered.map((c, i) => {
+                    const on = invClientFilter?.type === 'client' && invClientFilter.id === c.id;
+                    const last = manual.length === 0 && i === registered.length - 1;
+                    return (
+                      <TouchableOpacity
+                        key={c.id}
+                        style={[st.pickerOption, last && st.pickerOptionLast]}
+                        onPress={() => close(() => { setInvClientFilter({ type: 'client', id: c.id, name: c.name }); })}
+                        activeOpacity={0.7}
+                      >
+                        <Text style={[st.pickerOptionText, on && st.pickerOptionTextActive]}>{c.name}</Text>
+                        {on && <SymbolView name="checkmark" size={14} tintColor={ACCENT} />}
+                      </TouchableOpacity>
+                    );
+                  })}
+                  {manual.length > 0 && (
+                    <Text style={st.pickerSectionLabel}>{t.finance.notRegisteredSection}</Text>
+                  )}
+                  {manual.map((name, i) => {
+                    const on = invClientFilter?.type === 'manual' && invClientFilter.name === name;
+                    return (
+                      <TouchableOpacity
+                        key={name}
+                        style={[st.pickerOption, i === manual.length - 1 && st.pickerOptionLast]}
+                        onPress={() => close(() => { setInvClientFilter({ type: 'manual', name }); })}
+                        activeOpacity={0.7}
+                      >
+                        <Text style={[st.pickerOptionText, on && st.pickerOptionTextActive]}>{name}</Text>
+                        {on && <SymbolView name="checkmark" size={14} tintColor={ACCENT} />}
+                      </TouchableOpacity>
+                    );
+                  })}
+                </ScrollView>
+              </View>
+            );
+          }}
         </BottomSheet>
       )}
 
@@ -1063,7 +1175,6 @@ const st = StyleSheet.create({
   invFilterPillActive: { backgroundColor: ACCENT },
   invFilterPillText: { fontSize: 13, fontWeight: '600', color: TEXT },
   invFilterPillTextActive: { color: '#fff' },
-  invYearPill: { marginLeft: 'auto' as any },
   invList: { flex: 1, backgroundColor: BG },
   invListContent: { paddingHorizontal: 16, paddingTop: 4, paddingBottom: 32, gap: 8 },
 
@@ -1088,6 +1199,10 @@ const st = StyleSheet.create({
   pickerOptionLast: { borderBottomWidth: 0 },
   pickerOptionText: { fontSize: 16, color: TEXT, fontWeight: '500' },
   pickerOptionTextActive: { color: ACCENT, fontWeight: '700' },
+  pickerSectionLabel: {
+    fontSize: 11, fontWeight: '700', color: '#aaa', letterSpacing: 0.6,
+    paddingHorizontal: 20, paddingTop: 14, paddingBottom: 6,
+  },
 });
 
 const chartSt = StyleSheet.create({
