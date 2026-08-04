@@ -1137,7 +1137,7 @@ export default function FavouritesScreen() {
                     >
                       <View style={s.dayHeader}>
                         <View style={s.heartBadge}>
-                          <SymbolView name="heart.fill" size={44} tintColor={ACCENT} />
+                          <SymbolView name="heart.fill" size={44} tintColor="#88376c" />
                           <View style={s.heartDateWrap}>
                             <Text style={s.heartDate}>{refDate.getDate()}</Text>
                           </View>
