@@ -187,121 +187,45 @@ interface FavouriteDay {
   created_at: string;
 }
 
-// ─── FullWidthCard ────────────────────────────────────────────────────────────
+// ─── HubBadge (round landing badge — 4 tinted satellites + the filled center) ──
 
-function FullWidthCard({
-  title, description, count, countLabel, colors, symbolName, onPress, loading,
+function HubBadge({
+  title, sub, circleColor, iconColor, symbolName, onPress, center,
 }: {
   title: string;
-  description: string;
-  count: number;
-  countLabel: string;
-  colors: [string, string, ...string[]];
+  sub: string;
+  circleColor: string;
+  iconColor: string;
   symbolName: any;
   onPress: () => void;
-  loading?: boolean;
+  center?: boolean;
 }) {
   const scale = useRef(new Animated.Value(1)).current;
-  const onPressIn  = () => Animated.spring(scale, { toValue: 0.97, useNativeDriver: true, speed: 30 }).start();
+  const onPressIn  = () => Animated.spring(scale, { toValue: 0.94, useNativeDriver: true, speed: 30 }).start();
   const onPressOut = () => Animated.spring(scale, { toValue: 1,    useNativeDriver: true, speed: 20 }).start();
 
   return (
-    <Animated.View style={[fc.wrap, { transform: [{ scale }] }]}>
-      <Pressable onPress={onPress} onPressIn={onPressIn} onPressOut={onPressOut}>
-        <LinearGradient colors={colors} style={fc.card} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}>
-          <View style={fc.iconWrap}>
-            <SymbolView name={symbolName} size={120} tintColor="rgba(255,255,255,0.10)" />
-          </View>
-          <View style={fc.arrow}>
-            <SymbolView name="arrow.right" size={14} tintColor="rgba(255,255,255,0.55)" />
-          </View>
-          <View>
-            <Text style={fc.title}>{title}</Text>
-            <Text style={fc.desc}>{description}</Text>
-          </View>
-          <View style={fc.badge}>
-            {loading ? (
-              <Text style={fc.badgeText}>—</Text>
-            ) : (
-              <Text style={fc.badgeText}>{count} {countLabel}</Text>
-            )}
-          </View>
-        </LinearGradient>
+    <Animated.View style={{ transform: [{ scale }] }}>
+      <Pressable onPress={onPress} onPressIn={onPressIn} onPressOut={onPressOut} style={[hub.item, center && hub.itemCenter]}>
+        <View style={[hub.circle, center && hub.circleCenter, { backgroundColor: circleColor }]}>
+          <SymbolView name={symbolName} size={center ? 42 : 38} tintColor={iconColor} />
+        </View>
+        <Text style={hub.label} numberOfLines={1}>{title}</Text>
+        <Text style={hub.count} numberOfLines={1}>{sub}</Text>
       </Pressable>
     </Animated.View>
   );
 }
 
-const fc = StyleSheet.create({
-  wrap:    {
-    borderRadius: 20,
-    shadowColor: '#000', shadowOffset: { width: 0, height: 5 },
-    shadowOpacity: 0.18, shadowRadius: 14, elevation: 7,
-  },
-  card:    { borderRadius: 20, padding: 16, height: 132, overflow: 'hidden', justifyContent: 'space-between' },
-  iconWrap:{ position: 'absolute', right: -20, bottom: -18 },
-  arrow:   { position: 'absolute', top: 16, right: 16 },
-  title:   { fontSize: 18, fontWeight: '800', color: '#fff', letterSpacing: -0.3 },
-  desc:    { fontSize: 13, color: 'rgba(255,255,255,0.60)', lineHeight: 17, marginTop: 3 },
-  badge:   { alignSelf: 'flex-start', backgroundColor: 'rgba(255,255,255,0.18)', borderRadius: 100, paddingHorizontal: 11, paddingVertical: 4 },
-  badgeText: { fontSize: 12, fontWeight: '700', color: '#fff' },
-});
-
-// ─── TileCard (half-width grid tile — the 4 favourites) ───────────────────────
-
-function TileCard({
-  title, description, count, countLabel, colors, symbolName, onPress, loading,
-}: {
-  title: string;
-  description: string;
-  count: number;
-  countLabel: string;
-  colors: [string, string, ...string[]];
-  symbolName: any;
-  onPress: () => void;
-  loading?: boolean;
-}) {
-  const scale = useRef(new Animated.Value(1)).current;
-  const onPressIn  = () => Animated.spring(scale, { toValue: 0.96, useNativeDriver: true, speed: 30 }).start();
-  const onPressOut = () => Animated.spring(scale, { toValue: 1,    useNativeDriver: true, speed: 20 }).start();
-
-  return (
-    <Animated.View style={[tc.wrap, { transform: [{ scale }] }]}>
-      <Pressable onPress={onPress} onPressIn={onPressIn} onPressOut={onPressOut} style={{ flex: 1 }}>
-        <LinearGradient colors={colors} style={tc.card} start={{ x: 0.4, y: 0 }} end={{ x: 0.6, y: 1 }}>
-          <View style={tc.iconWrap}>
-            <SymbolView name={symbolName} size={96} tintColor="rgba(255,255,255,0.10)" />
-          </View>
-          <View style={tc.arrow}>
-            <SymbolView name="arrow.right" size={13} tintColor="rgba(255,255,255,0.45)" weight="medium" />
-          </View>
-          <View>
-            <Text style={tc.title}>{title}</Text>
-            <Text style={tc.desc} numberOfLines={2}>{description}</Text>
-          </View>
-          <View style={tc.badge}>
-            <Text style={tc.badgeText}>{loading ? '—' : `${count} ${countLabel}`}</Text>
-          </View>
-        </LinearGradient>
-      </Pressable>
-    </Animated.View>
-  );
-}
-
-const tc = StyleSheet.create({
-  wrap:    {
-    flex: 1,
-    borderRadius: 20,
-    shadowColor: '#000', shadowOffset: { width: 0, height: 5 },
-    shadowOpacity: 0.16, shadowRadius: 12, elevation: 6,
-  },
-  card:    { borderRadius: 20, padding: 16, height: 162, overflow: 'hidden', justifyContent: 'space-between' },
-  iconWrap:{ position: 'absolute', right: -16, bottom: -14 },
-  arrow:   { position: 'absolute', top: 14, right: 14 },
-  title:   { fontSize: 17, fontWeight: '800', color: '#fff', letterSpacing: -0.3 },
-  desc:    { fontSize: 11.5, color: 'rgba(255,255,255,0.60)', lineHeight: 15, marginTop: 3 },
-  badge:   { alignSelf: 'flex-start', backgroundColor: 'rgba(255,255,255,0.18)', borderRadius: 100, paddingHorizontal: 10, paddingVertical: 3 },
-  badgeText: { fontSize: 11.5, fontWeight: '700', color: '#fff' },
+const hub = StyleSheet.create({
+  row:    { flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 24 },
+  center: { alignItems: 'center' },
+  item:   { alignItems: 'center', width: 124 },
+  itemCenter: { width: 250 },
+  circle: { width: 96, height: 96, borderRadius: 48, alignItems: 'center', justifyContent: 'center' },
+  circleCenter: { width: 106, height: 106, borderRadius: 53 },
+  label:  { fontSize: 14, fontWeight: '600', color: TEXT, marginTop: 9 },
+  count:  { fontSize: 12, color: MUTED, marginTop: 1 },
 });
 
 // ─── RecipeCard ───────────────────────────────────────────────────────────────
@@ -312,16 +236,34 @@ function RecipeCard({ recipe, onPress }: { recipe: Recipe; onPress: () => void }
   return (
     <TouchableOpacity style={rc.card} onPress={onPress} activeOpacity={0.88}>
       {recipe.cover_photo_url ? (
-        <Image source={{ uri: recipe.cover_photo_url }} style={rc.cover} resizeMode="cover" />
+        <>
+          <Image source={{ uri: recipe.cover_photo_url }} style={rc.cover} resizeMode="cover" />
+          <LinearGradient colors={['transparent', 'rgba(0,0,0,0.6)']} style={rc.gradient} />
+        </>
       ) : (
-        <LinearGradient colors={['#d4841e', '#8a4e0e']} style={rc.cover} />
+        <>
+          <LinearGradient
+            colors={['#f9f1e0', '#f3e3c2', '#ecd3a2']}
+            start={{ x: 0.3, y: 0 }} end={{ x: 0.7, y: 1 }}
+            style={rc.cover}
+          />
+          <View style={rc.watermark}>
+            <SymbolView name="book.closed.fill" size={72} tintColor="rgba(176,102,20,0.15)" />
+          </View>
+        </>
       )}
-      <LinearGradient colors={['transparent', 'rgba(0,0,0,0.6)']} style={rc.gradient} />
       <View style={rc.info}>
-        <Text style={[rc.name, !recipe.name.trim() && { fontStyle: 'italic', color: 'rgba(255,255,255,0.7)' }]} numberOfLines={2}>
+        <Text
+          style={[
+            rc.name,
+            !recipe.cover_photo_url && rc.nameOnLight,
+            !recipe.name.trim() && { fontStyle: 'italic', color: recipe.cover_photo_url ? 'rgba(255,255,255,0.7)' : '#a1701f' },
+          ]}
+          numberOfLines={2}
+        >
           {recipe.name.trim() ? recipe.name : 'Untitled recipe'}
         </Text>
-        <Text style={rc.sub}>
+        <Text style={[rc.sub, !recipe.cover_photo_url && rc.subOnLight]}>
           {recipe.portions} portion{recipe.portions !== 1 ? 's' : ''}
           {kcal != null ? ` · ${kcal} kcal` : ''}
         </Text>
@@ -341,9 +283,12 @@ const rc = StyleSheet.create({
   card:     { borderRadius: 14, overflow: 'hidden', height: 130, position: 'relative' },
   cover:    { ...StyleSheet.absoluteFillObject },
   gradient: { ...StyleSheet.absoluteFillObject },
+  watermark:{ position: 'absolute', right: -4, bottom: -10 },
   info:     { position: 'absolute', bottom: 0, left: 0, right: 0, padding: 12 },
   name:     { fontSize: 14, fontWeight: '700', color: '#fff', lineHeight: 18 },
   sub:      { fontSize: 10, color: 'rgba(255,255,255,0.65)', marginTop: 3 },
+  nameOnLight: { color: '#6b3f0b' },
+  subOnLight:  { color: '#a1701f' },
   badge:    { position: 'absolute', top: 8, right: 8, backgroundColor: 'rgba(0,0,0,0.35)', borderRadius: 10, padding: 4 },
 });
 
@@ -770,72 +715,60 @@ export default function FavouritesScreen() {
     <View style={s.root}>
       <StatusBar barStyle="dark-content" />
 
-      {/* ── Landing: 3 category cards ────────────────────────────────── */}
+      {/* ── Landing: hub — trainer Recommendations center, 4 folders orbiting ── */}
       {view === 'landing' && (
         <ScrollView
           contentInsetAdjustmentBehavior="never"
           contentContainerStyle={[s.landingContent, { paddingTop: headerH + 16, paddingBottom: tabBarH + 16 }]}
           showsVerticalScrollIndicator={false}
         >
-          {/* 4 favourites as a 2×2 tile grid */}
-          <Text style={s.sectionLabel}>Your saved & shared</Text>
-          <View style={s.tileRow}>
-            <TileCard
+          <View style={hub.row}>
+            <HubBadge
               title="Recipes"
-              description="Trainer picks & your own"
-              count={recipes.length}
-              countLabel={recipes.length === 1 ? 'recipe' : 'recipes'}
-              colors={['#d4841e', '#b06614', '#8a4e0e']}
+              sub={recipesLoading ? '—' : `${recipes.length} ${recipes.length === 1 ? 'recipe' : 'recipes'}`}
+              circleColor="#f7ecd9"
+              iconColor="#b06614"
               symbolName="book.closed.fill"
               onPress={() => setView('recipes')}
-              loading={recipesLoading}
             />
-            <TileCard
+            <HubBadge
               title="Meals"
-              description="Saved combinations"
-              count={meals.length}
-              countLabel={meals.length === 1 ? 'meal' : 'meals'}
-              colors={['#33499a', '#26386f', '#1a2650']}
+              sub={mealsLoading ? '—' : `${meals.length} ${meals.length === 1 ? 'meal' : 'meals'}`}
+              circleColor="#e9edf8"
+              iconColor="#33499a"
               symbolName="fork.knife"
               onPress={() => setView('meals')}
-              loading={mealsLoading}
             />
           </View>
-          <View style={s.tileRow}>
-            <TileCard
+          <View style={hub.center}>
+            <HubBadge
+              center
+              title="Recommendations"
+              sub={recommLoading ? '—' : `${recommendations.length} ${recommendations.length === 1 ? 'item' : 'items'} · from your trainer`}
+              circleColor={HEADER}
+              iconColor="#fff"
+              symbolName="pills.fill"
+              onPress={() => setView('recommendations')}
+            />
+          </View>
+          <View style={hub.row}>
+            <HubBadge
               title="Foods"
-              description="Your go-to single foods"
-              count={favFoods.length}
-              countLabel={favFoods.length === 1 ? 'food' : 'foods'}
-              colors={['#347463', '#255145', '#183a30']}
+              sub={favFoodsLoading ? '—' : `${favFoods.length} ${favFoods.length === 1 ? 'food' : 'foods'}`}
+              circleColor="#e2f0f2"
+              iconColor="#16697a"
               symbolName="carrot.fill"
               onPress={() => setView('foods')}
-              loading={favFoodsLoading}
             />
-            <TileCard
+            <HubBadge
               title="Days"
-              description="Favourite full-day logs"
-              count={days.length}
-              countLabel={days.length === 1 ? 'day' : 'days'}
-              colors={['#88376c', '#682452', '#4a1740']}
+              sub={daysLoading ? '—' : `${days.length} ${days.length === 1 ? 'day' : 'days'}`}
+              circleColor="#f5e7f0"
+              iconColor="#88376c"
               symbolName="calendar"
               onPress={() => setView('days')}
-              loading={daysLoading}
             />
           </View>
-
-          {/* Recommendations — a distinct full-width card (from your trainer) */}
-          <Text style={s.sectionLabel}>From your trainer</Text>
-          <FullWidthCard
-            title="Recommendations"
-            description="Supplements & nutrition tips"
-            count={recommendations.length}
-            countLabel={recommendations.length === 1 ? 'item' : 'items'}
-            colors={['#453a30', '#2f2820', '#211b15']}
-            symbolName="pills.fill"
-            onPress={() => setView('recommendations')}
-            loading={recommLoading}
-          />
         </ScrollView>
       )}
 
@@ -987,21 +920,34 @@ export default function FavouritesScreen() {
                         activeOpacity={0.88}
                       >
                         {meal.cover_photo_url ? (
-                          <Image source={{ uri: meal.cover_photo_url }} style={mc.cover} resizeMode="cover" />
+                          <>
+                            <Image source={{ uri: meal.cover_photo_url }} style={mc.cover} resizeMode="cover" />
+                            <LinearGradient colors={['transparent', 'rgba(0,0,0,0.6)']} style={mc.gradient} />
+                          </>
                         ) : (
-                          <LinearGradient colors={['#2e4288', '#1d2d6a']} style={mc.cover} />
-                        )}
-                        <LinearGradient colors={['transparent', 'rgba(0,0,0,0.6)']} style={mc.gradient} />
-                        {!meal.cover_photo_url && (
-                          <View style={mc.centerIcon}>
-                            <SymbolView name="fork.knife" size={30} tintColor="rgba(255,255,255,0.35)" />
-                          </View>
+                          <>
+                            <LinearGradient
+                              colors={['#f2f4fb', '#e4e9f7', '#d5dcf1']}
+                              start={{ x: 0.3, y: 0 }} end={{ x: 0.7, y: 1 }}
+                              style={mc.cover}
+                            />
+                            <View style={mc.watermark}>
+                              <SymbolView name="fork.knife" size={72} tintColor="rgba(51,73,154,0.14)" />
+                            </View>
+                          </>
                         )}
                         <View style={mc.info}>
-                          <Text style={[mc.name, !meal.name.trim() && { fontStyle: 'italic', color: 'rgba(255,255,255,0.7)' }]} numberOfLines={1}>
+                          <Text
+                            style={[
+                              mc.name,
+                              !meal.cover_photo_url && mc.nameOnLight,
+                              !meal.name.trim() && { fontStyle: 'italic', color: meal.cover_photo_url ? 'rgba(255,255,255,0.7)' : '#5a6693' },
+                            ]}
+                            numberOfLines={1}
+                          >
                             {meal.name.trim() ? meal.name : 'Unnamed meal'}
                           </Text>
-                          <Text style={mc.sub} numberOfLines={1}>
+                          <Text style={[mc.sub, !meal.cover_photo_url && mc.subOnLight]} numberOfLines={1}>
                             {meal.ingredients.length} item{meal.ingredients.length !== 1 ? 's' : ''} · {kcal} kcal · P {pro}g · C {carbs}g · F {fat}g
                           </Text>
                         </View>
@@ -1558,9 +1504,7 @@ const s = StyleSheet.create({
   root:   { flex: 1, backgroundColor: BG },
   loader: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingTop: 60 },
 
-  landingContent: { padding: 16, paddingTop: 16, gap: 12 },
-  tileRow:      { flexDirection: 'row', gap: 12 },
-  sectionLabel: { fontSize: 11, fontWeight: '700', color: MUTED, letterSpacing: 0.6, textTransform: 'uppercase', marginTop: 6, marginLeft: 4, marginBottom: -2 },
+  landingContent: { padding: 16, gap: 22, flexGrow: 1, justifyContent: 'center' },
 
   recipeToolbar: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 16, paddingVertical: 12 },
   searchBar:  { flex: 1, flexDirection: 'row', alignItems: 'center', backgroundColor: CARD, borderRadius: 10, paddingHorizontal: 10, paddingVertical: 9, gap: 8, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.06, shadowRadius: 4, elevation: 2 },
@@ -1684,10 +1628,12 @@ const mc = StyleSheet.create({
   card:       { borderRadius: 14, overflow: 'hidden', height: 130, position: 'relative' },
   cover:      { ...StyleSheet.absoluteFillObject },
   gradient:   { ...StyleSheet.absoluteFillObject },
-  centerIcon: { ...StyleSheet.absoluteFillObject, alignItems: 'center', justifyContent: 'center' },
+  watermark:  { position: 'absolute', right: -4, bottom: -10 },
   info:       { position: 'absolute', bottom: 0, left: 0, right: 0, padding: 12 },
   name:       { fontSize: 14, fontWeight: '700', color: '#fff', lineHeight: 18 },
   sub:        { fontSize: 10, color: 'rgba(255,255,255,0.7)', marginTop: 3 },
+  nameOnLight: { color: '#1a2650' },
+  subOnLight:  { color: '#5a6693' },
   swipeDelete:     { width: 84, backgroundColor: '#e05555', alignItems: 'center', justifyContent: 'center', gap: 4, borderRadius: 14, marginLeft: 8 },
   swipeDeleteText: { fontSize: 11, fontWeight: '700', color: '#fff' },
 });
