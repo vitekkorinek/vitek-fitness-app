@@ -332,8 +332,22 @@ function todayLabel(): string {
   return new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
 }
 
+// targetReps 12 = the app-wide default rep target (same as the builder's makeSet)
+// — renders as the grey 12× in chips/placeholders until real reps are typed, and
+// persists as the set's target_reps if the row is saved untouched.
 function makeEmptySet(n: number, isWarmup = false): SessionSet {
-  return { localId: uid(), workoutSetId: null, setNumber: n, targetReps: null, targetWeightKg: null, firstSessionWeightKg: null, firstSessionReps: null, repsCompleted: '', weightKg: '', isRemoved: false, isWarmup, isDropset: false, dropsetParentLocalId: null, trainerNotes: [], clientNotes: [], isAddedDuringSession: true, isDone: false, prefillTrendWeight: null, prefillTrendReps: null };
+  return { localId: uid(), workoutSetId: null, setNumber: n, targetReps: 12, targetWeightKg: null, firstSessionWeightKg: null, firstSessionReps: null, repsCompleted: '', weightKg: '', isRemoved: false, isWarmup, isDropset: false, dropsetParentLocalId: null, trainerNotes: [], clientNotes: [], isAddedDuringSession: true, isDone: false, prefillTrendWeight: null, prefillTrendReps: null };
+}
+
+// A freshly added row starts as a copy of the previous row of its KIND (typed
+// weight/reps plus the targets behind the placeholders): the last sets usually
+// repeat the same numbers, so the new row is one edit away instead of typed
+// from scratch (Vitek, Aug 2026). Chained rows (dropset ↓ / ramp ↑) are skipped
+// as sources and never inherit — their numbers are deviations by definition.
+function copyPrevSetValues(fresh: SessionSet, sets: SessionSet[], isWarmup: boolean): SessionSet {
+  const prev = [...sets].reverse().find(s => s.isWarmup === isWarmup && !s.isDropset && !s.isRemoved);
+  if (!prev) return fresh;
+  return { ...fresh, weightKg: prev.weightKg, repsCompleted: prev.repsCompleted, targetWeightKg: prev.targetWeightKg, targetReps: prev.targetReps };
 }
 
 function calcTotal(weightKg: number | null, equipment: string | null, barWeightKg: number): string {
@@ -2361,7 +2375,7 @@ export default function TrainerWorkoutSessionScreen() {
       if (i !== exIdx) return ex;
       // A fresh (unchecked) set re-opens a checked-off exercise — the badge
       // drops back to the partial fill. Same in the warm-up/dropset adders.
-      return { ...ex, isDone: false, sets: [...ex.sets, makeEmptySet(nextSetNumber(ex.sets, false))] };
+      return { ...ex, isDone: false, sets: [...ex.sets, copyPrevSetValues(makeEmptySet(nextSetNumber(ex.sets, false)), ex.sets, false)] };
     }));
   };
 
@@ -2375,7 +2389,7 @@ export default function TrainerWorkoutSessionScreen() {
       let insertAt = 0;
       ex.sets.forEach((s, i2) => { if (s.isWarmup) insertAt = i2 + 1; });
       const newSets = [...ex.sets];
-      newSets.splice(insertAt, 0, makeEmptySet(nextSetNumber(ex.sets, true), true));
+      newSets.splice(insertAt, 0, copyPrevSetValues(makeEmptySet(nextSetNumber(ex.sets, true), true), ex.sets, true));
       return { ...ex, isDone: false, sets: newSets };
     }));
   };
@@ -2777,7 +2791,9 @@ export default function TrainerWorkoutSessionScreen() {
       targetBarbellWeightKg: null,
       firstSessionBarbellWeightKg: null,
       firstSessionMachineBrand: null,
-      sets: [makeEmptySet(1)],
+      // 3 rows at the 12-rep target — an added exercise arrives looking like a
+      // builder-made one, not a single bare row (Vitek, Aug 2026).
+      sets: [makeEmptySet(1), makeEmptySet(2), makeEmptySet(3)],
     };
     setExercises(prev => {
       const next = [...prev];
@@ -3124,7 +3140,9 @@ export default function TrainerWorkoutSessionScreen() {
       exerciseDescription: picked.description,
       isDone: false,
       addedAt: sessionCount > 0 ? `Session ${sessionCount + 1} · ${todayLabel()}` : null,
-      sets: [makeEmptySet(1)],
+      // 3 rows at the 12-rep target — an added exercise arrives looking like a
+      // builder-made one, not a single bare row (Vitek, Aug 2026).
+      sets: [makeEmptySet(1), makeEmptySet(2), makeEmptySet(3)],
       slotNumber: exercisesRef.current.length + 1,
       movedFromLabel: null,
       orderChangeDescription: null,

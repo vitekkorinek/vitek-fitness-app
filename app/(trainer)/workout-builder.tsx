@@ -110,7 +110,7 @@ function makeSet(setNumber: number, weight?: number, isWarmup = false): BuilderS
   return {
     key: uid(),
     set_number: setNumber,
-    target_reps: '10',
+    target_reps: '12',
     target_weight_kg: weight != null ? String(weight) : '',
     rest_seconds: '60',
     is_warmup: isWarmup,
