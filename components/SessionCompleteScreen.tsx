@@ -899,15 +899,19 @@ const s = StyleSheet.create({
   header: {
     backgroundColor: HEADER,
     alignItems: 'center',
-    paddingBottom: 28,
+    paddingBottom: 22,
     paddingHorizontal: 24,
   },
+  // ⚠️ `paddingTop`, NOT a fixed height + centering. The stars are absolutely
+  // positioned from this box's TOP, so centering a 64pt mark in a 110pt box both
+  // fixed the mark 23pt below them AND left 23pt of dead space under it. Pinning
+  // the mark by its top keeps every star exactly where it was and lets the box
+  // end where the mark does.
   logoWrap: {
     width: 130,
-    height: 110,
     alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 16,
+    paddingTop: 23,
+    marginBottom: 10,
   },
   headerOverscroll: { position: 'absolute', top: -500, left: 0, right: 0, height: 500, backgroundColor: HEADER },
   pinnedBar: { position: 'absolute', top: 0, left: 0, right: 0 },
