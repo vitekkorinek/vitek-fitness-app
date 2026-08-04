@@ -27,6 +27,7 @@ import {
   type PortionUnit,
 } from '@/lib/foodApi';
 import GlassPanel from '@/components/GlassPanel';
+import { KeyboardDoneButton } from '@/components/KeyboardDoneButton';
 
 const ACCENT  = '#24ac88';
 const HEADER  = '#244e43';
@@ -108,15 +109,8 @@ export default function FoodCreateModal({
   const [saving, setSaving]             = useState(false);
   const [showNutrition, setShowNutrition] = useState(false);
   const [showFoodGroups, setShowFoodGroups] = useState(false);
-  const [kbHeight, setKbHeight]           = useState(0);
 
   const isEdit = mode === 'trainer' && !!editRow;
-
-  useEffect(() => {
-    const show = Keyboard.addListener('keyboardWillShow', e => setKbHeight(e.endCoordinates.height));
-    const hide = Keyboard.addListener('keyboardWillHide', () => setKbHeight(0));
-    return () => { show.remove(); hide.remove(); };
-  }, []);
 
   // Pre-fill form when editing
   useEffect(() => {
@@ -619,17 +613,7 @@ export default function FoodCreateModal({
         </GlassPanel>
         </Pressable>
       </Pressable>
-
-      {/* Floating Done button — appears above keyboard for all keyboard types */}
-      {kbHeight > 0 && (
-        <TouchableOpacity
-          style={[s.kbDoneBtn, { bottom: kbHeight + 10 }]}
-          onPress={() => Keyboard.dismiss()}
-          activeOpacity={0.8}
-        >
-          <Text style={s.kbDoneBtnText}>Done</Text>
-        </TouchableOpacity>
-      )}
+      <KeyboardDoneButton />
     </Modal>
   );
 }
@@ -848,23 +832,5 @@ const s = StyleSheet.create({
     fontSize: 11,
     color: '#414b45',
     width: 72,
-  },
-  kbDoneBtn: {
-    position: 'absolute',
-    right: 16,
-    backgroundColor: ACCENT,
-    borderRadius: 100,
-    paddingHorizontal: 20,
-    paddingVertical: 8,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.18,
-    shadowRadius: 6,
-    elevation: 5,
-  },
-  kbDoneBtnText: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: '#fff',
   },
 });

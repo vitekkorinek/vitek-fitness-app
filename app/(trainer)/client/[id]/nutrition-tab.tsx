@@ -10,6 +10,7 @@ import type { ClientNutritionTargets, FoodLogEntry } from '@/lib/nutritionInsigh
 import type { User } from '@/types/database';
 import { GlassToggle } from '@/components/GlassToggle';
 import GlassPanel from '@/components/GlassPanel';
+import { KeyboardDoneButton } from '@/components/KeyboardDoneButton';
 
 const ACCENT    = '#24ac88';
 const HEADER    = '#244e43';
@@ -1070,6 +1071,7 @@ export default function NutritionTab({ clientId, trainerId, client }: {
           </Pressable>
         </Pressable>
         {Platform.OS==='ios'&&<InputAccessoryView nativeID={INPUT_ID}/>}
+        <KeyboardDoneButton />
       </Modal>
 
       {/* Macro % modal */}
@@ -1093,6 +1095,7 @@ export default function NutritionTab({ clientId, trainerId, client }: {
           </Pressable>
         </Pressable>
         {Platform.OS==='ios'&&<InputAccessoryView nativeID={INPUT_ID}/>}
+        <KeyboardDoneButton />
       </Modal>
 
       {/* Calculator modal */}
@@ -1197,7 +1200,9 @@ export default function NutritionTab({ clientId, trainerId, client }: {
             </Pressable>
           </Pressable>
           {Platform.OS==='ios'&&<InputAccessoryView nativeID={INPUT_ID}/>}
+          <KeyboardDoneButton />
         </Modal>
+        <KeyboardDoneButton />
       </Modal>
     </>
   );

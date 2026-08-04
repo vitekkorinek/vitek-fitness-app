@@ -33,6 +33,7 @@ import { CameraView, useCameraPermissions } from 'expo-camera';
 import type { FoodResult, FoodPortion, PortionUnit, NutritionValues } from '@/lib/foodApi';
 import { VFIcon } from '@/components/VFIcon';
 import FoodCreateModal from '@/components/FoodCreateModal';
+import { KeyboardDoneButton } from '@/components/KeyboardDoneButton';
 
 const ACCENT  = '#24ac88';
 const HEADER  = '#244e43';
@@ -1091,6 +1092,7 @@ export default function FoodSearchModal({
           </View>
         </View>
       </Modal>
+      <KeyboardDoneButton />
     </Modal>
   );
 }

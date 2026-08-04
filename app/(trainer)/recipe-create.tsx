@@ -23,6 +23,7 @@ import FoodSearchModal from '@/components/FoodSearchModal';
 import { SessionResumeChip } from '@/components/SessionResumeChip';
 import GlassPanel from '@/components/GlassPanel';
 import type { FoodConfirmResult } from '@/components/FoodSearchModal';
+import { KeyboardDoneButton } from '@/components/KeyboardDoneButton';
 
 const BG     = '#faf9f7';
 const CARD   = '#ffffff';
@@ -358,6 +359,7 @@ export default function TrainerCreateRecipeScreen() {
           </GlassPanel>
           </TouchableOpacity>
         </TouchableOpacity>
+        <KeyboardDoneButton />
       </Modal>
 
       {/* ── Portions modal ────────────────────────────────────────── */}
@@ -386,6 +388,7 @@ export default function TrainerCreateRecipeScreen() {
           </GlassPanel>
           </TouchableOpacity>
         </TouchableOpacity>
+        <KeyboardDoneButton />
       </Modal>
 
       {/* ── Instructions modal ────────────────────────────────────── */}
@@ -411,6 +414,7 @@ export default function TrainerCreateRecipeScreen() {
             textAlignVertical="top"
           />
         </View>
+        <KeyboardDoneButton />
       </Modal>
 
       {/* ── Food search modal ─────────────────────────────────────── */}

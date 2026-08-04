@@ -26,6 +26,7 @@ import { BottomSheet } from '@/components/BottomSheet';
 import GlassPanel from '@/components/GlassPanel';
 import t from '@/i18n/en';
 import type { FinanceManualEntry, Invoice, InvoiceStatus } from '@/types/database';
+import { KeyboardDoneButton } from '@/components/KeyboardDoneButton';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -962,6 +963,7 @@ function ManualEntryModal({
         </GlassPanel>
         </View>
       </View>
+      <KeyboardDoneButton />
     </Modal>
   );
 }

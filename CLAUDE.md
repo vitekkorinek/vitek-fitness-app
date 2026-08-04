@@ -79,6 +79,12 @@ Two presentations, split by purpose (mirrors native iOS action-sheet vs alert). 
 - **Exception:** Do Mode weight/reps inputs = inline TextInput (speed required)
 - Reference: `InfoTab` in `app/(trainer)/client/[id]/index.tsx`
 
+### Keyboard "Done" pill — APP-WIDE RULE (Aug 2026)
+**Every keyboard in the app has the same way out: the small filled-ACCENT "Done" pill at the keyboard's top-right.** Vitek's ask, by name, after seeing it in Do Mode — *"can we have this as a rule in all keyboards across the entire app"*. It is the shared **`components/KeyboardDoneButton.tsx`** (`right: 8, bottom: kbHeight + 4`, radius 14 — the exact `kbdDoneBtn` spec Do Mode shipped). It ONLY dismisses; **a Done that also saves is doing two jobs** and was rejected once (see CLAUDE-domode.md "SetNoteModal").
+- **⚠️ A React Native `Modal` is its own native window, so ONE global mount cannot cover the app.** Three mount points do: `app/_layout.tsx` (every plain screen), `components/BottomSheet.tsx` (every sheet), and **one `<KeyboardDoneButton />` as the last child of every bespoke `<Modal>` that contains a `TextInput`**. That last part is the rule for new code — add it when you add the Modal.
+- **Only the LAST-MOUNTED instance renders** (module-level stack inside the component), so the nesting never draws two pills. Never hand-roll a look-alike — three had diverged (two in each Do Mode file, one in `FoodCreateModal` at radius 100/`right:16`) and all are deleted.
+- Unrelated to `InputAccessoryView`, which is still used empty to SUPPRESS the iOS system Done toolbar.
+
 ### Trainer header + buttons
 - **All trainer screens with a + in the header** (clients.tsx, finance.tsx, library.tsx, all-invoices.tsx, client profile index.tsx): plain white `+` text, **no green circle background**.
 - Style: `addButton: { padding: 8 }`, `addButtonText: { color: '#fff', fontSize: 24, fontWeight: '300' }`

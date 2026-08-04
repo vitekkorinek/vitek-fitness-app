@@ -40,6 +40,7 @@ function newId(): string {
 }
 import t from '@/i18n/en';
 import type { Measurement, User } from '@/types/database';
+import { KeyboardDoneButton } from '@/components/KeyboardDoneButton';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -561,6 +562,7 @@ function ZoneBarCard({ title, currentValue, goalValue, segs, data, unit, clientI
           </GlassPanel>
           </View>
         </View>
+        <KeyboardDoneButton />
       </Modal>
     </View>
   );
@@ -829,6 +831,7 @@ function QuickEditModal({
         </GlassPanel>
         </View>
       </View>
+      <KeyboardDoneButton />
     </Modal>
   );
 }
@@ -1219,6 +1222,7 @@ function AddMeasurementModal({
           </ScrollView>
         </View>
       </KeyboardAvoidingView>
+      <KeyboardDoneButton />
     </Modal>
   );
 }

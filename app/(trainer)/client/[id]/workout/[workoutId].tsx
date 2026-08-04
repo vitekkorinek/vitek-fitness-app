@@ -132,6 +132,7 @@ import CategoryCover from '@/components/CategoryCover';
 import { LightHeader, HeaderIcon, HEADER_ICON, useHeaderHeight } from '@/components/LightHeader';
 import { MUSCLE_FILTER_OPTIONS, matchesMuscleFilters, muscleFilterLabels, usesMachineBrand } from '@/lib/exerciseFilters';
 import { fd } from '@/lib/appType';
+import { KeyboardDoneButton } from '@/components/KeyboardDoneButton';
 
 // ─── Types ──────────────────────────────────────────────────────────────────────
 
@@ -4972,15 +4973,6 @@ export default function TrainerWorkoutSessionScreen() {
         </Modal>
       )}
 
-      {/* ── Keyboard "Done" — pinned just above the keyboard (numeric keypads have no return key) ── */}
-      {kbHeight > 0 && (
-        <View style={{ position: 'absolute', right: 8, bottom: kbHeight + 4, zIndex: 100 }} pointerEvents="box-none">
-          <TouchableOpacity onPress={() => Keyboard.dismiss()} hitSlop={12} style={styles.kbdDoneBtn} activeOpacity={0.7}>
-            <Text style={styles.kbdDoneText}>Done</Text>
-          </TouchableOpacity>
-        </View>
-      )}
-
       {/* ── Pending-done toast ───────────────────────────────────────── */}
       {repsToast && (
         <View pointerEvents="none" style={[styles.pendingDoneToast, { top: HEADER_MIN + 8 }]}>
@@ -5430,6 +5422,7 @@ export default function TrainerWorkoutSessionScreen() {
             </View>
           </View>
           </KeyboardAvoidingView>
+          <KeyboardDoneButton />
         </Modal>
       )}
 
@@ -6486,6 +6479,7 @@ function EquipPickerPopup({
           </View>
         </View>
       </KeyboardAvoidingView>
+      <KeyboardDoneButton />
     </Modal>
   );
 }
@@ -6850,6 +6844,7 @@ function RestTimerSheet({
           )}
         </Animated.View>
       </KeyboardAvoidingView>
+      <KeyboardDoneButton />
     </Modal>
   );
 }
@@ -7067,6 +7062,7 @@ function ExerciseInfoModal({
           onClose={() => setProgressOpen(false)}
         />
       )}
+      <KeyboardDoneButton />
     </Modal>
   );
 }
@@ -7309,6 +7305,7 @@ function SetNoteModal({ trainerNotes, clientNotes, onAddNote, onEditNote, onDele
           )}
         </Animated.View>
       </KeyboardAvoidingView>
+      <KeyboardDoneButton />
     </Modal>
   );
 }
@@ -7909,16 +7906,6 @@ function ExerciseLibraryPicker({ onPick, onClose, suggestFor }: {
   const [muscleFilters, setMuscleFilters] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
 
-  // Own keyboard listener — this picker is a `Modal`, so the SCREEN's `kbHeight` (and its
-  // Done pill) do not reach inside it. Same pair of events as the screen's: `didShow` for
-  // the height, `willHide` so the pill leaves with the keyboard rather than after it.
-  const [kbHeight, setKbHeight] = useState(0);
-  useEffect(() => {
-    const show = Keyboard.addListener('keyboardDidShow', e => setKbHeight(e.endCoordinates.height));
-    const hide = Keyboard.addListener('keyboardWillHide', () => setKbHeight(0));
-    return () => { show.remove(); hide.remove(); };
-  }, []);
-
   useEffect(() => {
     supabase
       .from('exercises')
@@ -8106,20 +8093,8 @@ function ExerciseLibraryPicker({ onPick, onClose, suggestFor }: {
           overlay={<View />}
         />
 
-        {/* Keyboard "Done" — same pill, same position as Do Mode's (Vitek, July 30 2026:
-            "in do mode we have Done on the right side to dismiss it... i think the one in
-            do mode is good"). Do Mode needs it because numeric keypads have no return key;
-            here the text keyboard does have one, so this is for CONSISTENCY — one way out
-            of a keyboard everywhere in the app. Reuses `styles.kbdDoneBtn`/`kbdDoneText`
-            rather than a look-alike, so restyling one restyles both. */}
-        {kbHeight > 0 && (
-          <View style={{ position: 'absolute', right: 8, bottom: kbHeight + 4, zIndex: 100 }} pointerEvents="box-none">
-            <TouchableOpacity onPress={() => Keyboard.dismiss()} hitSlop={12} style={styles.kbdDoneBtn} activeOpacity={0.7}>
-              <Text style={styles.kbdDoneText}>Done</Text>
-            </TouchableOpacity>
-          </View>
-        )}
       </View>
+      <KeyboardDoneButton />
     </Modal>
   );
 }
@@ -8337,6 +8312,7 @@ function TrainingNotesModal({
           </ScrollView>
         </Animated.View>
       </KeyboardAvoidingView>
+      <KeyboardDoneButton />
     </Modal>
   );
 }
@@ -8427,8 +8403,6 @@ const styles = StyleSheet.create({
   bannerCap: { position: 'absolute', bottom: 0, left: 0, right: 0, height: 26, backgroundColor: '#fff', borderTopLeftRadius: 26, borderTopRightRadius: 26 },
   // Filled ACCENT, white label — over the light keyboard a white pill with green text
   // read as part of the keyboard chrome rather than a button (Vitek, July 27 2026).
-  kbdDoneBtn: { backgroundColor: ACCENT, borderRadius: 14, paddingHorizontal: 16, paddingVertical: 7, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.18, shadowRadius: 4, elevation: 3 },
-  kbdDoneText: { color: '#fff', fontSize: 16, fontWeight: '700' },
   startBtn: { backgroundColor: '#24ac88', borderRadius: 20, paddingHorizontal: 14, paddingVertical: 8 },
   startBtnText: { color: '#fff', fontWeight: '700', fontSize: 13, letterSpacing: 0.4 },
   finishBtn: { backgroundColor: '#24ac88', borderRadius: 20, paddingHorizontal: 14, paddingVertical: 8 },

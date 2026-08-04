@@ -24,6 +24,7 @@ import {
 } from '@/lib/foodApi';
 import type { FoodConfirmResult } from '@/components/FoodSearchModal';
 import GlassPanel from '@/components/GlassPanel';
+import { KeyboardDoneButton } from '@/components/KeyboardDoneButton';
 
 const ACCENT = '#24ac88';
 const HEADER = '#244e43';
@@ -324,6 +325,7 @@ export default function EditPortionSheet({ food, visible, onClose, onConfirm, on
           </Pressable>
         </Modal>
       )}
+      <KeyboardDoneButton />
     </Modal>
   );
 }

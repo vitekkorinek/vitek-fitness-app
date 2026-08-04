@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, StyleSheet, ActivityIndicator, Animated,
-  TextInput,
+  TextInput, Keyboard,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { SymbolView } from 'expo-symbols';
@@ -188,9 +188,68 @@ export function SessionCompleteScreen({
   const bounceAnim = useRef(new Animated.Value(0)).current;
   const isFreeSession = workoutId === 'free';
 
+  // ── Scroll-away banner (Do Mode's pattern) ────────────────────────────────
+  // The greeting banner is the first item INSIDE the scroll, so it moves up with
+  // the content and gives the cards the whole screen. What stays is a slim green
+  // bar over the status area — same green as the banner, so it is invisible until
+  // the banner has passed under it, at which point the session label fades in.
+  const scrollRef = useRef<ScrollView>(null);
+  const scrollAnim = useRef(new Animated.Value(0)).current;
+  const [headerH, setHeaderH] = useState(0);
+  const BAR_H = insets.top + 44;
+  const collapseEnd = Math.max(headerH - BAR_H, 1);
+  const collapseStart = Math.max(0, collapseEnd - 50);
+  // The bar has NO background at rest — the banner runs to the top of the screen
+  // and the bar is just floating chrome over it, exactly like Do Mode. Its green
+  // fades in only once the banner has scrolled under it, so nothing is reserved.
+  const barBgOpacity = scrollAnim.interpolate({
+    inputRange: [collapseStart, collapseEnd],
+    outputRange: [0, 1],
+    extrapolate: 'clamp',
+  });
+  // Label trails the background slightly — clamped so the range stays increasing
+  // on the first render, before the banner has been measured.
+  const labelStart = Math.min(collapseStart + 20, collapseEnd - 1);
+  const barLabelOpacity = scrollAnim.interpolate({
+    inputRange: [labelStart, collapseEnd],
+    outputRange: [0, 1],
+    extrapolate: 'clamp',
+  });
+
+  // Keyboard height — the note card is the last thing in the scroll, so without
+  // this the keyboard sits straight on top of the field being typed into.
+  const [kbHeight, setKbHeight] = useState(0);
+  const [footerH, setFooterH] = useState(0);
+  // The keyboard covers the footer and the safe-area padding below it BEFORE it
+  // reaches the scroll viewport — pad by the raw keyboard height and the note is
+  // left floating a footer's worth above the keys.
+  const kbOverlap = Math.max(0, kbHeight - insets.bottom - footerH);
+  // What already sits between the note card's bottom edge and the end of the
+  // scroll content: `body`'s gap (12) + the trailing spacer (16) + `body`'s
+  // bottom padding (16). scrollToEnd parks the content's end at the viewport
+  // bottom, so this is dead space between the note and the keyboard already.
+  const NOTE_TRAIL = 44;
+  const NOTE_KB_GAP = 16;
+  const scrollPadBottom = kbHeight > 0 ? Math.max(0, kbOverlap - NOTE_TRAIL + NOTE_KB_GAP) : 0;
+
   useEffect(() => {
     void load();
   }, []);
+
+  useEffect(() => {
+    const show = Keyboard.addListener('keyboardDidShow', e => setKbHeight(e.endCoordinates.height));
+    const hide = Keyboard.addListener('keyboardWillHide', () => setKbHeight(0));
+    return () => { show.remove(); hide.remove(); };
+  }, []);
+
+  // Scroll only AFTER the padding above has been laid out — the note card is the
+  // last thing in the list, so the end of the content is the note card sitting
+  // exactly on top of the keyboard.
+  useEffect(() => {
+    if (kbHeight === 0) return;
+    const t = setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 80);
+    return () => clearTimeout(t);
+  }, [kbHeight]);
 
   useEffect(() => {
     if (!canScrollMore) return;
@@ -584,35 +643,13 @@ export function SessionCompleteScreen({
 
   return (
     <View style={[s.root, { paddingBottom: insets.bottom }]}>
-      {/* Header */}
-      <View style={[s.header, { paddingTop: insets.top + 24 }]}>
-        {review && (
-          <TouchableOpacity
-            style={[s.reviewBack, { top: insets.top + 4 }]}
-            onPress={() => router.back()}
-            activeOpacity={0.7}
-            hitSlop={10}
-          >
-            <SymbolView name="chevron.left" size={20} tintColor="#fff" />
-          </TouchableOpacity>
-        )}
-        <View style={s.logoWrap}>
-          <Star size={20} style={{ position: 'absolute', left: 8, top: 16 }} />
-          <Star size={12} style={{ position: 'absolute', left: 24, top: 4 }} />
-          <Star size={16} style={{ position: 'absolute', right: 6, top: 12 }} />
-          <Star size={10} style={{ position: 'absolute', right: 22, top: 2 }} />
-          <Star size={10} style={{ position: 'absolute', left: 2, top: 56 }} />
-          <VFIcon size={64} color="#ffffff" />
-        </View>
-        <Text style={s.greeting}>{greeting}</Text>
-        <Text style={s.sessionLabel}>{sessionLabel}</Text>
-      </View>
-
       <View style={{ flex: 1 }}>
         <ScrollView
+          ref={scrollRef}
           style={s.scroll}
-          contentContainerStyle={s.scrollContent}
+          contentContainerStyle={{ paddingBottom: scrollPadBottom }}
           showsVerticalScrollIndicator={false}
+          keyboardDismissMode="on-drag"
           onContentSizeChange={(_, h) => {
             scrollContentHeightRef.current = h;
             setCanScrollMore(h > scrollViewHeightRef.current + 40);
@@ -625,9 +662,30 @@ export function SessionCompleteScreen({
             const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent;
             const distFromBottom = contentSize.height - layoutMeasurement.height - contentOffset.y;
             setCanScrollMore(distFromBottom > 40);
+            scrollAnim.setValue(contentOffset.y);
           }}
           scrollEventThrottle={16}
         >
+          {/* Header — scrolls away with the content */}
+          <View
+            style={[s.header, { paddingTop: insets.top + 24 }]}
+            onLayout={e => setHeaderH(e.nativeEvent.layout.height)}
+          >
+            {/* Keeps the pull-down overscroll green instead of flashing the page bg. */}
+            <View style={s.headerOverscroll} pointerEvents="none" />
+            <View style={s.logoWrap}>
+              <Star size={20} style={{ position: 'absolute', left: 8, top: 16 }} />
+              <Star size={12} style={{ position: 'absolute', left: 24, top: 4 }} />
+              <Star size={16} style={{ position: 'absolute', right: 6, top: 12 }} />
+              <Star size={10} style={{ position: 'absolute', right: 22, top: 2 }} />
+              <Star size={10} style={{ position: 'absolute', left: 2, top: 56 }} />
+              <VFIcon size={64} color="#ffffff" />
+            </View>
+            <Text style={s.greeting}>{greeting}</Text>
+            <Text style={s.sessionLabel}>{sessionLabel}</Text>
+          </View>
+
+          <View style={s.body}>
           {loading ? (
             <ActivityIndicator color={ACCENT} style={{ marginTop: 40 }} />
           ) : (
@@ -784,7 +842,35 @@ export function SessionCompleteScreen({
               <View style={{ height: 16 }} />
             </>
           )}
+          </View>
         </ScrollView>
+
+        {/* Slim pinned bar — transparent while the banner is up, so the banner
+            keeps the whole top of the screen; its green fades in behind the label
+            as the banner scrolls under it. */}
+        <View style={[s.pinnedBar, { height: BAR_H }]} pointerEvents="box-none">
+          <Animated.View
+            style={[StyleSheet.absoluteFill, { backgroundColor: HEADER, opacity: barBgOpacity }]}
+            pointerEvents="none"
+          />
+          <View style={[s.pinnedBarRow, { top: insets.top }]} pointerEvents="box-none">
+            {/* Animated.View, not Animated.Text — Animated.Text captures RN's Text at
+                its own module init and so misses the app-wide Manrope wrapper. */}
+            <Animated.View style={[s.pinnedBarLabelWrap, { opacity: barLabelOpacity }]} pointerEvents="none">
+              <Text style={s.pinnedBarLabel} numberOfLines={1}>{sessionLabel}</Text>
+            </Animated.View>
+            {review && (
+              <TouchableOpacity
+                style={s.reviewBack}
+                onPress={() => router.back()}
+                activeOpacity={0.7}
+                hitSlop={10}
+              >
+                <SymbolView name="chevron.left" size={20} tintColor="#fff" />
+              </TouchableOpacity>
+            )}
+          </View>
+        </View>
 
         {canScrollMore && (
           <Animated.View style={[s.scrollIndicator, { transform: [{ translateY: bounceAnim }] }]} pointerEvents="none">
@@ -796,7 +882,10 @@ export function SessionCompleteScreen({
       </View>
 
       {/* Done button */}
-      <View style={[s.footer, { paddingBottom: Math.max(insets.bottom, 16) }]}>
+      <View
+        style={[s.footer, { paddingBottom: Math.max(insets.bottom, 16) }]}
+        onLayout={e => setFooterH(e.nativeEvent.layout.height)}
+      >
         <TouchableOpacity style={s.doneBtn} onPress={handleDone} activeOpacity={0.85}>
           <Text style={s.doneBtnText}>Done</Text>
         </TouchableOpacity>
@@ -820,11 +909,18 @@ const s = StyleSheet.create({
     justifyContent: 'center',
     marginBottom: 16,
   },
-  reviewBack: { position: 'absolute', left: 12, width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.20)' },
+  headerOverscroll: { position: 'absolute', top: -500, left: 0, right: 0, height: 500, backgroundColor: HEADER },
+  pinnedBar: { position: 'absolute', top: 0, left: 0, right: 0 },
+  // Own row so the back button's absolute `left`/`top` are measured from the
+  // screen edge, not from the label's padding box.
+  pinnedBarRow: { position: 'absolute', left: 0, right: 0, height: 44, justifyContent: 'center' },
+  pinnedBarLabelWrap: { paddingHorizontal: 56 },
+  pinnedBarLabel: { fontSize: 13, fontWeight: '600', color: '#fff', textAlign: 'center' },
+  reviewBack: { position: 'absolute', left: 12, top: 4, width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.20)' },
   greeting: { fontSize: 21, fontWeight: '500', color: '#fff', textAlign: 'center', marginBottom: 6 },
   sessionLabel: { fontSize: 11, color: 'rgba(255,255,255,0.38)', textAlign: 'center' },
   scroll: { flex: 1 },
-  scrollContent: { padding: 16, gap: 12 },
+  body: { padding: 16, gap: 12 },
   statsRow: { flexDirection: 'row', gap: 10 },
   statCard: {
     flex: 1,
