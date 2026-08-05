@@ -76,6 +76,16 @@ export function markSetKeypadInputFocused() {
   lastSetInputNode = (TextInput as any).State?.currentlyFocusedInput?.() ?? null;
   ownershipSubscribers.forEach(fn => fn());
 }
+/** Call from the set inputs' onBlur. Leaving a set input is the one signal that
+ *  ALWAYS fires when focus moves elsewhere — the keyboard events don't (the
+ *  reverse of the Next-walk race: moving into a NOTE field, keyboardDidShow can
+ *  fire while the OLD set input is still the reported focus, so the ownership
+ *  check passed and the pills stayed up over the note keyboard — Vitek's
+ *  report). Deferred a tick so a set→set move sees the NEW focus (which is in
+ *  the registry) rather than the gap between blur and focus. */
+export function markSetKeypadInputBlurred() {
+  setTimeout(() => ownershipSubscribers.forEach(fn => fn()), 50);
+}
 function setInputOwnsKeyboard(): boolean {
   const focused = (TextInput as any).State?.currentlyFocusedInput?.() ?? null;
   if (focused == null) return false;

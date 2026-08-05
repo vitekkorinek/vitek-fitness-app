@@ -132,7 +132,7 @@ import CategoryCover from '@/components/CategoryCover';
 import { LightHeader, HeaderIcon, HEADER_ICON, useHeaderHeight } from '@/components/LightHeader';
 import { MUSCLE_FILTER_OPTIONS, matchesMuscleFilters, muscleFilterLabels, usesMachineBrand } from '@/lib/exerciseFilters';
 import { fd } from '@/lib/appType';
-import { SetKeypadBar, registerSetKeypadInput, focusSetKeypadInput, markSetKeypadInputFocused, SetKeypadField } from '@/components/SetKeypadBar';
+import { SetKeypadBar, registerSetKeypadInput, focusSetKeypadInput, markSetKeypadInputFocused, markSetKeypadInputBlurred, SetKeypadField } from '@/components/SetKeypadBar';
 
 // ─── Types ──────────────────────────────────────────────────────────────────────
 
@@ -6710,6 +6710,7 @@ function InlineSetRow({
           value={displayWeight}
           onChangeText={onChangeWeight}
           onFocus={isPeeking ? undefined : () => onSetFocus('kg')}
+          onBlur={markSetKeypadInputBlurred}
           placeholder={set.targetWeightKg != null ? String(set.targetWeightKg) : '—'}
           placeholderTextColor="#bbb"
           keyboardType="decimal-pad"
@@ -6727,6 +6728,7 @@ function InlineSetRow({
         value={displayReps}
         onChangeText={onChangeReps}
         onFocus={isPeeking ? undefined : () => onSetFocus('reps')}
+        onBlur={markSetKeypadInputBlurred}
         placeholder={set.targetReps != null ? String(set.targetReps) : '—'}
         placeholderTextColor="#bbb"
         keyboardType="number-pad"
