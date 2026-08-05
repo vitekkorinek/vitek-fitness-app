@@ -721,6 +721,7 @@ const en = {
     postcode: 'Postcode',
     phone: 'Phone',
     steuernummer: 'Steuernummer',
+    vatNumber: 'USt-IdNr.',
     iban: 'IBAN',
     bic: 'BIC',
     logo: 'Logo',

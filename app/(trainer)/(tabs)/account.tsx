@@ -54,6 +54,7 @@ type TrainerSettings = {
   address_postcode: string;
   phone: string;
   steuernummer: string;
+  vat_number: string;
   iban: string;
   bic: string;
   logo_url: string;
@@ -75,6 +76,7 @@ const EMPTY: TrainerSettings = {
   address_postcode: '',
   phone: '',
   steuernummer: '',
+  vat_number: '',
   iban: '',
   bic: '',
   logo_url: '',
@@ -231,6 +233,7 @@ export default function AccountScreen() {
         address_postcode: settingsData.address_postcode ?? '',
         phone: settingsData.phone ?? '',
         steuernummer: settingsData.steuernummer ?? '',
+        vat_number: settingsData.vat_number ?? '',
         iban: settingsData.iban ?? '',
         bic: settingsData.bic ?? '',
         logo_url: settingsData.logo_url ?? '',
@@ -614,6 +617,18 @@ export default function AccountScreen() {
                     placeholder: 'e.g. 12/345/67890',
                     keyboard: 'default',
                     onSave: v => patchField({ steuernummer: v }),
+                  })}
+                />
+                <Sep />
+                <BizRow
+                  label={t.account.vatNumber}
+                  value={settings.vat_number}
+                  onPress={() => openField({
+                    label: t.account.vatNumber,
+                    value: settings.vat_number,
+                    placeholder: 'e.g. DE123456789',
+                    keyboard: 'default',
+                    onSave: v => patchField({ vat_number: v }),
                   })}
                 />
                 <Sep />

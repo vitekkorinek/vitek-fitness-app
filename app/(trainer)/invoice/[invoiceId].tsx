@@ -65,6 +65,7 @@ type TrainerSettings = {
   address_city: string | null;
   address_postcode: string | null;
   steuernummer: string | null;
+  vat_number: string | null;
   iban: string | null;
   bic: string | null;
   logo_url: string | null;
@@ -80,6 +81,7 @@ type PreviewData = {
   trainerPostcode: string;
   trainerEmail: string;
   trainerSteuernummer: string;
+  trainerVatNumber: string;
   trainerIban: string;
   trainerBic: string;
   clientName: string;
@@ -199,6 +201,7 @@ function buildInvoiceHtml(params: {
   trainerPostcode: string;
   trainerEmail: string;
   trainerSteuernummer: string;
+  trainerVatNumber: string;
   trainerIban: string;
   trainerBic: string;
   clientName: string;
@@ -214,7 +217,7 @@ function buildInvoiceHtml(params: {
 }): string {
   const {
     invoiceNumber, issueDate,
-    trainerName, trainerStreet, trainerCity, trainerPostcode, trainerEmail, trainerSteuernummer, trainerIban, trainerBic,
+    trainerName, trainerStreet, trainerCity, trainerPostcode, trainerEmail, trainerSteuernummer, trainerVatNumber, trainerIban, trainerBic,
     clientName, clientStreet, clientCity, clientPostcode, clientCountry,
     lineItems, gross, net, vat, notes,
   } = params;
@@ -269,7 +272,8 @@ function buildInvoiceHtml(params: {
       <div style="font-size:11px;color:#666;line-height:1.65;">
         ${trainerAddr ? trainerAddr + '<br>' : ''}
         ${trainerEmail ? escHtml(trainerEmail) + '<br>' : ''}
-        ${trainerSteuernummer ? 'USt-IdNr.: ' + escHtml(trainerSteuernummer) : ''}
+        ${trainerSteuernummer ? 'Steuernummer: ' + escHtml(trainerSteuernummer) + '<br>' : ''}
+        ${trainerVatNumber ? 'USt-IdNr.: ' + escHtml(trainerVatNumber) : ''}
       </div>
     </div>
     <div>
@@ -424,6 +428,7 @@ export default function InvoiceScreen() {
       address_city: settingsRes.data?.address_city ?? null,
       address_postcode: settingsRes.data?.address_postcode ?? null,
       steuernummer: settingsRes.data?.steuernummer ?? null,
+      vat_number: settingsRes.data?.vat_number ?? null,
       iban: settingsRes.data?.iban ?? null,
       bic: settingsRes.data?.bic ?? null,
       logo_url: settingsRes.data?.logo_url ?? null,
@@ -535,6 +540,7 @@ export default function InvoiceScreen() {
       address_city: trainerSettings?.address_city ?? null,
       address_postcode: trainerSettings?.address_postcode ?? null,
       steuernummer: trainerSettings?.steuernummer ?? null,
+      vat_number: trainerSettings?.vat_number ?? null,
       iban: trainerSettings?.iban ?? null,
       bic: trainerSettings?.bic ?? null,
       logo_url: trainerSettings?.logo_url ?? null,
@@ -612,6 +618,7 @@ export default function InvoiceScreen() {
         trainerPostcode: trainerSettings?.address_postcode ?? '',
         trainerEmail: profile.email ?? '',
         trainerSteuernummer: trainerSettings?.steuernummer ?? '',
+        trainerVatNumber: trainerSettings?.vat_number ?? '',
         trainerIban: trainerSettings?.iban ?? '',
         trainerBic: trainerSettings?.bic ?? '',
         clientName: selectedClient?.name ?? '',
@@ -1422,7 +1429,8 @@ function InvoicePageBody({ data }: { data: PreviewData }) {
                   <Text key={i} style={pvSt.trainerAddr}>{line}</Text>
                 ))}
                 {data.trainerEmail ? <Text style={pvSt.trainerAddr}>{data.trainerEmail}</Text> : null}
-                {data.trainerSteuernummer ? <Text style={pvSt.trainerAddr}>USt-IdNr.: {data.trainerSteuernummer}</Text> : null}
+                {data.trainerSteuernummer ? <Text style={pvSt.trainerAddr}>Steuernummer: {data.trainerSteuernummer}</Text> : null}
+                {data.trainerVatNumber ? <Text style={pvSt.trainerAddr}>USt-IdNr.: {data.trainerVatNumber}</Text> : null}
               </View>
               <View style={pvSt.brandCol}>
                 <VFLogo height={88} color={HEADER} />
