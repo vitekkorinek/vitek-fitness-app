@@ -27,7 +27,6 @@ import { useAuth } from '@/context/AuthContext';
 import { VFIcon } from '@/components/VFIcon';
 import { HeaderPhotoPositioner } from '@/components/HeaderPhoto';
 import t from '@/i18n/en';
-import { KeyboardDoneButton } from '@/components/KeyboardDoneButton';
 
 // The Do Mode header is full width × ~42% of screen height. The builder frames
 // the header crop at that same aspect so what the trainer sets is what shows.
@@ -789,7 +788,6 @@ export default function AddExerciseScreen() {
             </GlassPanel>
           </View>
         </KeyboardAvoidingView>
-        <KeyboardDoneButton />
       </Modal>
 
       {/* Glass header — rendered last so it overlays the form. Carried the old

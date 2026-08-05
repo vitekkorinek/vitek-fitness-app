@@ -31,7 +31,6 @@ import { useCardVariant, CARD_VARIANTS, isCoverDark, isFooterDark, type CoverCar
 import { DARK_CARD_FOOTER, DARK_CARD_GRADIENT } from '@/components/WorkoutPaperCover';
 import { nameInitial } from '@/lib/utils';
 import t from '@/i18n/en';
-import { KeyboardDoneButton } from '@/components/KeyboardDoneButton';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -764,7 +763,6 @@ export default function AccountScreen() {
               <View style={{ height: 0 }} />
             </InputAccessoryView>
           )}
-          <KeyboardDoneButton />
         </Modal>
       )}
 
@@ -856,7 +854,6 @@ export default function AccountScreen() {
             <View style={{ height: 0 }} />
           </InputAccessoryView>
         )}
-        <KeyboardDoneButton />
       </Modal>
 
       {/* ── Password updated toast ───────────────────────────────── */}

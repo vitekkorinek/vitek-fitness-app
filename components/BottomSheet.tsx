@@ -12,7 +12,6 @@
 import React, { useRef, useEffect, useCallback } from 'react';
 import { Modal, View, Pressable, Animated, PanResponder, StyleSheet, KeyboardAvoidingView, Platform } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { KeyboardDoneButton } from './KeyboardDoneButton';
 
 const SHEET_OFF_SCREEN = 900;
 
@@ -76,7 +75,6 @@ export function BottomSheet({
         </Animated.View>
         {/* Sheets are their own native window — the root layout's pill can't
             reach in here, so every sheet carries one. */}
-        <KeyboardDoneButton />
       </Container>
     </Modal>
   );

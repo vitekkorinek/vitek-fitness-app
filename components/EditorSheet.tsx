@@ -14,7 +14,6 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { SymbolView } from 'expo-symbols';
 import GlassPanel from '@/components/GlassPanel';
-import { KeyboardDoneButton } from '@/components/KeyboardDoneButton';
 import t from '@/i18n/en';
 
 /**
@@ -39,10 +38,6 @@ import t from '@/i18n/en';
  * rest inside a `KeyboardAvoidingView`. The side slots are a fixed 64 wide so the title stays
  * optically centred whether or not there is a Save.
  *
- * Per the app-wide keyboard rule, this mounts its own `<KeyboardDoneButton />` — a Modal is
- * its own native window, so the global one in `app/_layout.tsx` cannot reach inside it. A
- * form built on this does NOT need to add another; only the last-mounted instance renders,
- * so nested editors (e.g. the recipe editor's own name/portions popups) are fine.
  *
  * **Discard guard.** Pass `dirty` and ✕ asks before throwing the work away (Vitek, 5 Aug 2026:
  * *"when we click on the x it goes away — i think question asking if i want to really delete it
@@ -152,7 +147,6 @@ export function EditorSheet({
         </KeyboardAvoidingView>
       </View>
 
-      <KeyboardDoneButton />
 
       {/* Discard confirm — an overlay INSIDE this Modal, never a Modal of its own (see the
           note at the top). Rendered after the Done pill so it always sits on top. */}

@@ -50,7 +50,6 @@ import type { ClientTrainingData, WorkoutWithLastDate } from '@/lib/clientTraini
 import ProgressTab from './progress-tab';
 import { useSessionStore } from '@/store/sessionStore';
 import { RestTimerChip } from '@/components/RestTimerChip';
-import { KeyboardDoneButton } from '@/components/KeyboardDoneButton';
 
 type Tab = 'training' | 'sessions' | 'nutrition' | 'progress' | 'info';
 
@@ -3509,7 +3508,6 @@ function NewPackageModal({
               <View style={{ height: 0 }} />
             </InputAccessoryView>
           )}
-          <KeyboardDoneButton />
         </Modal>
       )}
     </>
@@ -4166,7 +4164,6 @@ function InfoTab({
               <View style={{ height: 0 }} />
             </InputAccessoryView>
           )}
-          <KeyboardDoneButton />
         </Modal>
       )}
 
@@ -4225,7 +4222,6 @@ function InfoTab({
             <View style={{ height: 0 }} />
           </InputAccessoryView>
         )}
-        <KeyboardDoneButton />
       </Modal>
 
       {/* Success toast */}

@@ -30,7 +30,6 @@ import { useCardVariant, CARD_VARIANTS, isCoverDark, isFooterDark, type CoverCar
 import { DARK_CARD_FOOTER, DARK_CARD_GRADIENT } from '@/components/WorkoutPaperCover';
 import t from '@/i18n/en';
 import type { SessionPackage, Invoice } from '@/types/database';
-import { KeyboardDoneButton } from '@/components/KeyboardDoneButton';
 
 const BG     = '#faf9f7';
 const CARD   = '#ffffff';
@@ -622,7 +621,6 @@ export default function MeScreen() {
             <View style={{ height: 0 }} />
           </InputAccessoryView>
         )}
-        <KeyboardDoneButton />
       </Modal>
 
       {/* ── Sex picker sheet ─────────────────────────────────────────── */}
@@ -765,7 +763,6 @@ export default function MeScreen() {
             <View style={{ height: 0 }} />
           </InputAccessoryView>
         )}
-        <KeyboardDoneButton />
       </Modal>
 
       {/* ── Sign-out confirm modal ────────────────────────────────── */}

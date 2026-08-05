@@ -20,7 +20,6 @@ import { useAuth } from '@/context/AuthContext';
 import { LightHeader, useHeaderHeight } from '@/components/LightHeader';
 import GlassPanel from '@/components/GlassPanel';
 import t from '@/i18n/en';
-import { KeyboardDoneButton } from '@/components/KeyboardDoneButton';
 
 const ACCENT = '#24ac88';
 const CARD = '#ffffff';
@@ -196,7 +195,6 @@ export default function ChangePasswordScreen() {
               <View style={{ height: 0 }} />
             </InputAccessoryView>
           )}
-          <KeyboardDoneButton />
         </Modal>
       )}
 

@@ -133,7 +133,7 @@ import CategoryCover, { categoryHasCover } from '@/components/CategoryCover';
 import { LightHeader, HeaderIcon, HEADER_ICON, useHeaderHeight } from '@/components/LightHeader';
 import { MUSCLE_FILTER_OPTIONS, matchesMuscleFilters, muscleFilterLabels, usesMachineBrand } from '@/lib/exerciseFilters';
 import { fd } from '@/lib/appType';
-import { KeyboardDoneButton } from '@/components/KeyboardDoneButton';
+import { SetKeypadBar, registerSetKeypadInput, focusSetKeypadInput, markSetKeypadInputFocused, SetKeypadField } from '@/components/SetKeypadBar';
 
 // PROTOTYPE (July 2026): a real photo pulled from the Push workout's exercises,
 // used as the Do Mode header hero to test "vertical photo in the header". Hardcoded
@@ -2483,8 +2483,68 @@ export default function TrainerWorkoutSessionScreen() {
     }
   };
 
-  const handleSetFocusDo = (exIdx: number, setLocalId: string) => {
+  // ── kg/reps keypad bar (components/SetKeypadBar.tsx) ──
+  // Which set input owns the keyboard right now. Written by handleSetFocusDo,
+  // read by the bar's two actions; never cleared on blur on purpose — the bar
+  // only exists while one of these inputs is focused, so stale state is inert.
+  const [keypadFocus, setKeypadFocus] = useState<{ exIdx: number; setLocalId: string; field: SetKeypadField } | null>(null);
+
+  // The walking order for "Next": kg → reps within a row, then the next
+  // non-removed row (dropset/ramp rows included — typing their values is normal).
+  const buildKeypadSeq = (ex: SessionExercise) => {
+    const seq: { localId: string; field: SetKeypadField }[] = [];
+    ex.sets.forEach(s => {
+      if (s.isRemoved) return;
+      seq.push({ localId: s.localId, field: 'kg' }, { localId: s.localId, field: 'reps' });
+    });
+    return seq;
+  };
+
+  // Copies the value being typed into every set of the SAME block — warm-ups and
+  // working sets are separate blocks, and dropset/ramp rows neither source nor
+  // receive it (their numbers are deviations by definition — the same rule as
+  // copyPrevSetValues). The keyboard stays up for further edits.
+  const applyKeypadToAllSets = () => {
+    if (!keypadFocus) return;
+    const ex = exercisesRef.current[keypadFocus.exIdx];
+    const src = ex?.sets.find(s => s.localId === keypadFocus.setLocalId);
+    if (!ex || !src) return;
+    const field = keypadFocus.field === 'kg' ? ('weightKg' as const) : ('repsCompleted' as const);
+    const value = src[field];
+    if (!value.trim()) return;
+    handleEditBeforeStart();
+    setExercises(prev => prev.map((e, i) => i !== keypadFocus.exIdx ? e : ({
+      ...e,
+      sets: e.sets.map(s =>
+        s.isRemoved || s.isDropset || s.isWarmup !== src.isWarmup ? s : { ...s, [field]: value }
+      ),
+    })));
+  };
+
+  const focusNextSetInput = () => {
+    const f = keypadFocus;
+    const ex = f ? exercisesRef.current[f.exIdx] : undefined;
+    if (!f || !ex) { Keyboard.dismiss(); return; }
+    const seq = buildKeypadSeq(ex);
+    const i = seq.findIndex(e => e.localId === f.setLocalId && e.field === f.field);
+    const next = i >= 0 ? seq[i + 1] : undefined;
+    if (!next || !focusSetKeypadInput(next.localId, next.field)) Keyboard.dismiss();
+  };
+
+  // "Next" mid-sequence, "Done" on the last field — there it dismisses.
+  const keypadNextLabel = (() => {
+    if (!keypadFocus) return en.doMode.keypadBar.next;
+    const ex = exercises[keypadFocus.exIdx];
+    if (!ex) return en.doMode.keypadBar.next;
+    const seq = buildKeypadSeq(ex);
+    const i = seq.findIndex(e => e.localId === keypadFocus.setLocalId && e.field === keypadFocus.field);
+    return i >= 0 && i === seq.length - 1 ? en.doMode.keypadBar.done : en.doMode.keypadBar.next;
+  })();
+
+  const handleSetFocusDo = (exIdx: number, setLocalId: string, field: SetKeypadField) => {
     markListInputFocused(); // claim the keyboard for the list (before any early return)
+    markSetKeypadInputFocused(); // …and for the keypad bar (identity check, see SetKeypadBar.tsx)
+    setKeypadFocus({ exIdx, setLocalId, field });
     // Use ref so we always read the latest exercises, not a potentially stale closure
     const ex = exercisesRef.current[exIdx];
     if (!ex) return;
@@ -4399,7 +4459,7 @@ export default function TrainerWorkoutSessionScreen() {
                                   sessionCount={sessionCount}
                                   onRemoveSet={(setLocalId) => removeSet(exIdx, setLocalId)}
                                   onSetDone={(setLocalId) => toggleSetDone(exIdx, setLocalId)}
-                                  onSetFocus={(setLocalId) => handleSetFocusDo(exIdx, setLocalId)}
+                                  onSetFocus={(setLocalId, field) => handleSetFocusDo(exIdx, setLocalId, field)}
                                 />
                                 {memberIdx < item.members.length - 1 && (
                                   <View style={styles.ssInCardConnector}>
@@ -4484,7 +4544,7 @@ export default function TrainerWorkoutSessionScreen() {
                           sessionCount={sessionCount}
                           onRemoveSet={(setLocalId) => removeSet(exIdx, setLocalId)}
                           onSetDone={(setLocalId) => toggleSetDone(exIdx, setLocalId)}
-                          onSetFocus={(setLocalId) => handleSetFocusDo(exIdx, setLocalId)}
+                          onSetFocus={(setLocalId, field) => handleSetFocusDo(exIdx, setLocalId, field)}
                         />
                       </View>
                     </View>
@@ -5034,7 +5094,6 @@ export default function TrainerWorkoutSessionScreen() {
             </View>
           </View>
           </KeyboardAvoidingView>
-          <KeyboardDoneButton />
         </Modal>
       )}
 
@@ -5098,6 +5157,11 @@ export default function TrainerWorkoutSessionScreen() {
           </View>
         )}
       </Modal>
+
+      {/* kg/reps keypad bar — the number pads have no return key, and this is
+          what replaced the floating Done pill (Aug 5 2026): an absolute strip
+          pinned to the keyboard, shown only while a set input owns it. */}
+      <SetKeypadBar onApplyAll={applyKeypadToAllSets} onNext={focusNextSetInput} nextLabel={keypadNextLabel} />
     </View>
   );
 }
@@ -5407,7 +5471,7 @@ function ExerciseCard({
   sessionCount: number;
   onRemoveSet: (setLocalId: string) => void;
   onSetDone: (setLocalId: string) => void;
-  onSetFocus: (setLocalId: string) => void;
+  onSetFocus: (setLocalId: string, field: SetKeypadField) => void;
 }) {
   const swipeableRef = useRef<Swipeable>(null);
   const closingExternallyRef = useRef(false);
@@ -5825,7 +5889,7 @@ function ExerciseCard({
                       onNotePress={() => onOpenSetNote(s.localId)}
                       onRemoveSet={() => { setRowMenuSetId(null); onRemoveSet(s.localId); }}
                       onSetDone={() => onSetDone(s.localId)}
-                      onSetFocus={() => onSetFocus(s.localId)}
+                      onSetFocus={(field) => onSetFocus(s.localId, field)}
                       onPlusPress={() => setRowMenuSetId(id => (id === s.localId ? null : s.localId))}
                       equipment={exercise.equipment}
                       barWeightKg={barWeightKg}
@@ -6110,7 +6174,6 @@ function EquipPickerPopup({
           </View>
         </View>
       </KeyboardAvoidingView>
-      <KeyboardDoneButton />
     </Modal>
   );
 }
@@ -6143,7 +6206,7 @@ function InlineSetRow({
   onNotePress: () => void;
   onRemoveSet: () => void;
   onSetDone: () => void;
-  onSetFocus: () => void;
+  onSetFocus: (field: SetKeypadField) => void;
   onPlusPress: () => void;
   equipment: string | null;
   barWeightKg: number;
@@ -6271,10 +6334,11 @@ function InlineSetRow({
 
       <View style={styles.kgCol}>
         <TextInput
+          ref={registerSetKeypadInput(set.localId, 'kg')}
           style={[styles.kgInput, styles.kgInputInCol, isPeeking && styles.inputPeeking, weightTrendColor ? { color: weightTrendColor } : undefined]}
           value={displayWeight}
           onChangeText={onChangeWeight}
-          onFocus={isPeeking ? undefined : onSetFocus}
+          onFocus={isPeeking ? undefined : () => onSetFocus('kg')}
           placeholder={set.targetWeightKg != null ? String(set.targetWeightKg) : '—'}
           placeholderTextColor="#bbb"
           keyboardType="decimal-pad"
@@ -6287,10 +6351,11 @@ function InlineSetRow({
       </View>
 
       <TextInput
+        ref={registerSetKeypadInput(set.localId, 'reps')}
         style={[styles.repsInput, isPeeking && styles.inputPeeking, repsTrendColor ? { color: repsTrendColor } : undefined]}
         value={displayReps}
         onChangeText={onChangeReps}
-        onFocus={isPeeking ? undefined : onSetFocus}
+        onFocus={isPeeking ? undefined : () => onSetFocus('reps')}
         placeholder={set.targetReps != null ? String(set.targetReps) : '—'}
         placeholderTextColor="#bbb"
         keyboardType="number-pad"
@@ -6637,7 +6702,6 @@ function RestTimerSheet({
           )}
         </Animated.View>
       </KeyboardAvoidingView>
-      <KeyboardDoneButton />
     </Modal>
   );
 }
@@ -6859,7 +6923,6 @@ function ExerciseInfoModal({
           onClose={() => setProgressOpen(false)}
         />
       )}
-      <KeyboardDoneButton />
     </Modal>
   );
 }
@@ -7106,7 +7169,6 @@ function SetNoteModal({ trainerNotes, clientNotes, onAddNote, onEditNote, onDele
           )}
         </Animated.View>
       </KeyboardAvoidingView>
-      <KeyboardDoneButton />
     </Modal>
   );
 }
@@ -7899,7 +7961,6 @@ function ExerciseLibraryPicker({ onPick, onClose, suggestFor }: {
         />
 
       </View>
-      <KeyboardDoneButton />
     </Modal>
   );
 }
@@ -8119,7 +8180,6 @@ function TrainingNotesModal({
           </ScrollView>
         </Animated.View>
       </KeyboardAvoidingView>
-      <KeyboardDoneButton />
     </Modal>
   );
 }

@@ -11,7 +11,6 @@ import { useAuth } from '@/context/AuthContext';
 import { supabase } from '@/lib/supabase';
 import { BottomSheet } from '@/components/BottomSheet';
 import GlassPanel from '@/components/GlassPanel';
-import { KeyboardDoneButton } from '@/components/KeyboardDoneButton';
 
 const BG     = '#faf9f7';
 const CARD   = '#ffffff';
@@ -1782,10 +1781,8 @@ function NewAppointmentSheet({
             </GlassPanel>
             </View>
           </KeyboardAvoidingView>
-          <KeyboardDoneButton />
         </Modal>
       )}
-      <KeyboardDoneButton />
     </Modal>
   );
 }

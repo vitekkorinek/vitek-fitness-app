@@ -36,7 +36,6 @@ import { setKey, compareSets, buildSetLabels } from '@/lib/warmupSets';
 import en from '@/i18n/en';
 import type { WorkoutCategory } from '@/lib/workoutCategories';
 import type { Exercise, Routine } from '@/types/database';
-import { KeyboardDoneButton } from '@/components/KeyboardDoneButton';
 
 const uid = () => `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 
@@ -2026,7 +2025,6 @@ function SaveSheet({ visible, initialClientId, saving, defaultRoutineId, onClose
           </Pressable>
         </Pressable>
       </KeyboardAvoidingView>
-      <KeyboardDoneButton />
     </Modal>
   );
 }

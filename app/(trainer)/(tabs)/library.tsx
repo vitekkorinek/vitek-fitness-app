@@ -54,7 +54,6 @@ import { ft, fd } from '@/lib/appType';
 import { fetchExerciseNames, fetchTemplateExerciseNames } from '@/lib/exerciseNames';
 import t from '@/i18n/en';
 import type { Exercise } from '@/types/database';
-import { KeyboardDoneButton } from '@/components/KeyboardDoneButton';
 
 type Segment = 'exercises' | 'workouts' | 'nutrition';
 

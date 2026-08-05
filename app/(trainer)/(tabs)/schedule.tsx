@@ -15,7 +15,6 @@ import { LightHeader, HeaderIcon, HEADER_ICON, useHeaderHeight } from '@/compone
 import { useTabBarHeight } from '@/components/FloatingTabBar';
 import { BottomSheet } from '@/components/BottomSheet';
 import GlassPanel from '@/components/GlassPanel';
-import { KeyboardDoneButton } from '@/components/KeyboardDoneButton';
 
 const makeUUID = () => 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
   const r = Math.random() * 16 | 0; return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
@@ -1743,10 +1742,8 @@ function NewAppointmentSheet({
             </GlassPanel>
             </View>
           </KeyboardAvoidingView>
-          <KeyboardDoneButton />
         </Modal>
       )}
-      <KeyboardDoneButton />
     </Modal>
   );
 }

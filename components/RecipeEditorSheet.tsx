@@ -18,7 +18,6 @@ import FoodSearchModal from '@/components/FoodSearchModal';
 import { EditorSheet } from '@/components/EditorSheet';
 import GlassPanel from '@/components/GlassPanel';
 import type { FoodConfirmResult } from '@/components/FoodSearchModal';
-import { KeyboardDoneButton } from '@/components/KeyboardDoneButton';
 
 /**
  * Trainer recipe create/edit form.
@@ -392,7 +391,6 @@ export default function RecipeEditorSheet({
           </GlassPanel>
           </TouchableOpacity>
         </TouchableOpacity>
-        <KeyboardDoneButton />
       </Modal>
 
       {/* ── Portions modal ────────────────────────────────────────── */}
@@ -421,7 +419,6 @@ export default function RecipeEditorSheet({
           </GlassPanel>
           </TouchableOpacity>
         </TouchableOpacity>
-        <KeyboardDoneButton />
       </Modal>
 
       {/* ── Instructions modal ────────────────────────────────────── */}
@@ -447,7 +444,6 @@ export default function RecipeEditorSheet({
             textAlignVertical="top"
           />
         </View>
-        <KeyboardDoneButton />
       </Modal>
 
       {/* ── Food search modal ─────────────────────────────────────── */}

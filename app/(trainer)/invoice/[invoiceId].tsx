@@ -30,7 +30,6 @@ import t from '@/i18n/en';
 import { BottomSheet } from '@/components/BottomSheet';
 import GlassPanel from '@/components/GlassPanel';
 import type { Invoice, LineItem } from '@/types/database';
-import { KeyboardDoneButton } from '@/components/KeyboardDoneButton';
 import { VFLogo, VF_LOCKUP_PATHS, VF_LOCKUP_RATIO, VF_LOCKUP_VIEWBOX } from '@/components/VFIcon';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -997,7 +996,6 @@ export default function InvoiceScreen() {
               <View style={{ height: 0 }} />
             </InputAccessoryView>
           )}
-          <KeyboardDoneButton />
         </Modal>
       )}
 

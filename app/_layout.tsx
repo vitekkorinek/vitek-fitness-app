@@ -12,7 +12,6 @@ import 'react-native-reanimated';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 import { AuthProvider, useAuth } from '@/context/AuthContext';
-import { KeyboardDoneButton } from '@/components/KeyboardDoneButton';
 import { buildHref, holdsUnsavedWork, isRestorable, rememberRoute, takeRememberedRoute } from '@/lib/lastRoute';
 import { useOtaUpdates } from '@/lib/otaUpdates';
 import { flushSessionOutbox } from '@/lib/sessionOutbox';
@@ -208,10 +207,6 @@ function RootLayoutNav() {
         <Stack.Screen name="change-password"  options={{ headerShown: false, gestureEnabled: false }} />
         <Stack.Screen name="modal"            options={{ presentation: 'modal' }} />
       </Stack>
-      {/* App-wide keyboard "Done" pill. This one covers every plain screen; a
-          Modal is its own native window, so sheets/popups mount their own —
-          see components/KeyboardDoneButton.tsx. */}
-      <KeyboardDoneButton />
     </ThemeProvider>
   );
 }

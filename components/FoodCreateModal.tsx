@@ -28,7 +28,6 @@ import {
 } from '@/lib/foodApi';
 import GlassPanel from '@/components/GlassPanel';
 import { EditorSheet } from '@/components/EditorSheet';
-import { KeyboardDoneButton } from '@/components/KeyboardDoneButton';
 
 const ACCENT  = '#24ac88';
 const HEADER  = '#244e43';
@@ -757,7 +756,6 @@ export default function FoodCreateModal({
         </GlassPanel>
         </Pressable>
       </Pressable>
-      <KeyboardDoneButton />
     </Modal>
   );
 }

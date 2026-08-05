@@ -40,7 +40,6 @@ import { PearIcon } from '@/components/icons/PearIcon';
 import { NotificationOverlay } from '@/components/NotificationOverlay';
 import { useSessionStore } from '@/store/sessionStore';
 import { RestTimerChip } from '@/components/RestTimerChip';
-import { KeyboardDoneButton } from '@/components/KeyboardDoneButton';
 
 const BG     = '#faf9f7';
 const SCREEN_BG = '#faf9f7';
@@ -1680,7 +1679,6 @@ export default function NutritionDailyScreen() {
           </GlassPanel>
           </TouchableOpacity>
         </TouchableOpacity>
-        <KeyboardDoneButton />
       </Modal>
 
       {/* ── Edit food entry modal ──────────────────────────────────────── */}
@@ -1748,7 +1746,6 @@ export default function NutritionDailyScreen() {
           </GlassPanel>
           </TouchableOpacity>
         </TouchableOpacity>
-        <KeyboardDoneButton />
       </Modal>
 
       {/* ── Create meal modal ─────────────────────────────────────────── */}
@@ -1786,7 +1783,6 @@ export default function NutritionDailyScreen() {
           </GlassPanel>
           </View>
         </KeyboardAvoidingView>
-        <KeyboardDoneButton />
       </Modal>
       {Platform.OS === 'ios' && <InputAccessoryView nativeID="createMealIAV" />}
 

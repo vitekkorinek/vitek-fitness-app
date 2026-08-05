@@ -559,6 +559,12 @@ const en = {
     // ~24pt wide and sits beside the kg/reps values.
     warmupLabel: 'W',
     warmupSetLabel: (n: number) => `Warm-up ${n}`,
+    // The kg/reps keyboard accessory bar (components/SetKeypadBar.tsx).
+    keypadBar: {
+      applyToAllSets: 'Apply to all sets',
+      next: 'Next',
+      done: 'Done',
+    },
   },
 
   // Trainer — Exercise Detail Screen
