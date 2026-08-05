@@ -15,7 +15,7 @@ import {
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as ImagePicker from 'expo-image-picker';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { SymbolView } from 'expo-symbols';
 import { supabase } from '@/lib/supabase';
 import {
@@ -27,6 +27,7 @@ import {
   type PortionUnit,
 } from '@/lib/foodApi';
 import GlassPanel from '@/components/GlassPanel';
+import { EditorSheet } from '@/components/EditorSheet';
 import { KeyboardDoneButton } from '@/components/KeyboardDoneButton';
 
 const ACCENT  = '#24ac88';
@@ -60,10 +61,52 @@ function makeUUID(): string {
   });
 }
 
+/** Every value the form holds, flattened to one comparable string. */
+interface FormValues {
+  name: string; nameDe: string; brand: string;
+  calories: string; protein: string; carbs: string; fat: string;
+  fiber: string; sugar: string; salt: string;
+  portionAmount: string; portionUnit: PortionUnit;
+  servingGrams: string; pieceGrams: string;
+  customLabel: string; customGrams: string;
+  foodGroups: Set<string>; photoUri: string | null;
+}
+
+function formSignature(v: FormValues): string {
+  return [
+    v.name, v.nameDe, v.brand,
+    v.calories, v.protein, v.carbs, v.fat, v.fiber, v.sugar, v.salt,
+    v.portionAmount, v.portionUnit,
+    v.servingGrams, v.pieceGrams, v.customLabel, v.customGrams,
+    [...v.foodGroups].sort().join(','),
+    v.photoUri ?? '',
+  ].join('\u0001');   // a separator no field can contain, so "ab|c" can't equal "a|bc"
+}
+
+const EMPTY_SIGNATURE = formSignature({
+  name: '', nameDe: '', brand: '',
+  calories: '', protein: '', carbs: '', fat: '', fiber: '', sugar: '', salt: '',
+  portionAmount: '100', portionUnit: 'g',
+  servingGrams: '', pieceGrams: '', customLabel: '', customGrams: '',
+  foodGroups: new Set(), photoUri: null,
+});
+
 interface Props {
   visible: boolean;
   onClose: () => void;
   mode: 'client' | 'trainer';
+  /**
+   * How the form is presented.
+   *
+   * `'sheet'` — the app-wide full-screen slide-up `EditorSheet` (✕ left, Save right). Use this
+   * whenever the form is opened from a SCREEN, so it matches every other create/edit form.
+   *
+   * `'glass'` (default) — the centred Liquid Glass popup. Kept for the one case that needs it:
+   * creating a food from INSIDE `FoodSearchModal`, which is itself a full-screen slide-up. A
+   * second slide-up over the first would read as losing the search you were in the middle of;
+   * a popup reads as a detour you come back from.
+   */
+  presentation?: 'glass' | 'sheet';
   // Client mode
   clientId?: string;
   onSavedClient?: (newFood: FoodResult) => void;
@@ -78,6 +121,7 @@ export default function FoodCreateModal({
   visible,
   onClose,
   mode,
+  presentation = 'glass',
   clientId,
   onSavedClient,
   trainerId,
@@ -112,33 +156,65 @@ export default function FoodCreateModal({
 
   const isEdit = mode === 'trainer' && !!editRow;
 
+  // What the form looked like when it opened — the baseline the ✕ discard-guard compares
+  // against. Captured HERE, next to the prefill that produces it, rather than snapshotted
+  // from state on a later render: the prefill's `setState`s have not landed yet at that
+  // point, so a snapshot taken then would read as "empty" and the form would count as dirty
+  // the moment its own values arrived. `null` = closed, nothing to protect.
+  const pristineRef = useRef<string | null>(null);
+
   // Pre-fill form when editing
   useEffect(() => {
     if (!visible) {
       resetForm();
+      pristineRef.current = null;
       return;
     }
     if (isEdit && editRow) {
-      setName(editRow.name);
-      setNameDe(editRow.name_de ?? '');
-      setBrand('');
-      setCalories(String(editRow.calories_per_100g ?? ''));
-      setProtein(String(editRow.protein_g ?? ''));
-      setCarbs(String(editRow.carbs_g ?? ''));
-      setFat(String(editRow.fat_g ?? ''));
-      setFiber(String(editRow.fiber_g ?? ''));
-      setSugar(String(editRow.sugar_g ?? ''));
-      setSalt(String(editRow.salt_g ?? ''));
-      setPortionAmount('100');
-      setPortionUnit('g');
-      const ep = editRow.portions ?? [];
-      setServingGrams(String(ep.find(p => p.label === 'serving')?.grams ?? ''));
-      setPieceGrams(String(ep.find(p => p.label === 'piece')?.grams ?? ''));
-      const cp = ep.find(p => p.label !== 'serving' && p.label !== 'piece');
-      setCustomLabel(cp?.label ?? '');
-      setCustomGrams(cp ? String(cp.grams) : '');
-      setFoodGroups(new Set(editRow.food_groups ?? []));
-      setPhotoUri(editRow.photo_url ?? null);
+      const ep     = editRow.portions ?? [];
+      const cp     = ep.find(p => p.label !== 'serving' && p.label !== 'piece');
+      const opened = {
+        name:     editRow.name,
+        nameDe:   editRow.name_de ?? '',
+        brand:    '',
+        calories: String(editRow.calories_per_100g ?? ''),
+        protein:  String(editRow.protein_g ?? ''),
+        carbs:    String(editRow.carbs_g ?? ''),
+        fat:      String(editRow.fat_g ?? ''),
+        fiber:    String(editRow.fiber_g ?? ''),
+        sugar:    String(editRow.sugar_g ?? ''),
+        salt:     String(editRow.salt_g ?? ''),
+        portionAmount: '100',
+        portionUnit:   'g' as PortionUnit,
+        servingGrams:  String(ep.find(p => p.label === 'serving')?.grams ?? ''),
+        pieceGrams:    String(ep.find(p => p.label === 'piece')?.grams ?? ''),
+        customLabel:   cp?.label ?? '',
+        customGrams:   cp ? String(cp.grams) : '',
+        foodGroups:    new Set(editRow.food_groups ?? []),
+        photoUri:      editRow.photo_url ?? null,
+      };
+      setName(opened.name);
+      setNameDe(opened.nameDe);
+      setBrand(opened.brand);
+      setCalories(opened.calories);
+      setProtein(opened.protein);
+      setCarbs(opened.carbs);
+      setFat(opened.fat);
+      setFiber(opened.fiber);
+      setSugar(opened.sugar);
+      setSalt(opened.salt);
+      setPortionAmount(opened.portionAmount);
+      setPortionUnit(opened.portionUnit);
+      setServingGrams(opened.servingGrams);
+      setPieceGrams(opened.pieceGrams);
+      setCustomLabel(opened.customLabel);
+      setCustomGrams(opened.customGrams);
+      setFoodGroups(opened.foodGroups);
+      setPhotoUri(opened.photoUri);
+      pristineRef.current = formSignature(opened);
+    } else {
+      // A new food always opens on the reset form, so its baseline is the empty one.
+      pristineRef.current = EMPTY_SIGNATURE;
     }
   }, [visible, isEdit, editRow]);
 
@@ -285,27 +361,48 @@ export default function FoodCreateModal({
 
   const canSave = name.trim().length > 0 && !saving && !uploadingPhoto;
 
-  return (
-    <Modal
-      visible={visible}
-      transparent
-      animationType="fade"
-      onRequestClose={onClose}
-      statusBarTranslucent
-    >
-      <Pressable style={s.overlay} onPress={onClose}>
-        <Pressable style={s.glassShadow} onPress={() => {}}>
-        <GlassPanel style={[s.glassBox, { width: SCREEN_W - 48 }]}>
-          <Text style={s.title}>
-            {isEdit ? 'Edit Food' : 'New Food'}
-          </Text>
+  const sheet = presentation === 'sheet';
+  const title = isEdit ? 'Edit Food' : 'New Food';
 
+  const dirty = pristineRef.current !== null && formSignature({
+    name, nameDe, brand, calories, protein, carbs, fat, fiber, sugar, salt,
+    portionAmount, portionUnit, servingGrams, pieceGrams, customLabel, customGrams,
+    foodGroups, photoUri,
+  }) !== pristineRef.current;
+  // Everything below is tuned for the GLASS popup, where the whole form has to fit inside a
+  // centred card: small type, tight margins, a 72pt gram box. On the full-screen sheet that
+  // reads as a popup someone stretched — so the sheet gets its own scale (app-standard
+  // borderless `#f5f5f3` fills, roomier rows, real touch targets) via additive `*OnSheet`
+  // twins. Never edit the base styles for this: they still serve the popup.
+  const inputStyle        = sheet ? [s.fieldInput, s.fieldInputOnSheet]         : s.fieldInput;
+  const labelStyle        = sheet ? [s.fieldLabel, s.fieldLabelOnSheet]         : s.fieldLabel;
+  const sectionStyle      = sheet ? [s.sectionToggle, s.sectionToggleOnSheet]   : s.sectionToggle;
+  const portionRowStyle   = sheet ? [s.portionRow, s.portionRowOnSheet]         : s.portionRow;
+  const portionInputStyle = sheet
+    ? [s.portionInput, s.fieldInputOnSheet, s.portionInputOnSheet]
+    : s.portionInput;
+  // The three portion rows must share ONE label column or their gram boxes don't line up —
+  // Serving/Piece are plain labels but the custom row's label is a TextInput, which was
+  // `flex: 1` and so pushed its gram box far right of the other two.
+  const portionLabelStyle       = sheet ? [s.portionFixedLabel, s.portionLabelOnSheet]  : s.portionFixedLabel;
+  const portionCustomLabelStyle = sheet
+    ? [s.portionCustomLabel, s.fieldInputOnSheet, s.portionLabelOnSheet]
+    : s.portionCustomLabel;
+  const portionUnitStyle  = sheet ? [s.portionRowUnit, s.portionUnitOnSheet]     : s.portionRowUnit;
+
+  const body = (
+    <>
           <ScrollView
-            style={{ maxHeight: SCREEN_H * 0.72 }}
+            style={sheet ? undefined : { maxHeight: SCREEN_H * 0.72 }}
+            contentContainerStyle={sheet ? s.sheetContent : undefined}
             showsVerticalScrollIndicator={false}
             keyboardShouldPersistTaps="handled"
             keyboardDismissMode="interactive"
-            automaticallyAdjustKeyboardInsets
+            // ⚠️ EXACTLY ONE thing may compensate for the keyboard. The glass popup has no
+            // KeyboardAvoidingView, so the ScrollView does it itself; `EditorSheet` DOES have
+            // one, and running both moved the content up twice — the focused field shot past
+            // the top and left a keyboard-sized hole under the form.
+            automaticallyAdjustKeyboardInsets={!sheet}
           >
             {/* Photo picker — trainer mode only */}
             {mode === 'trainer' && (
@@ -341,9 +438,9 @@ export default function FoodCreateModal({
             )}
 
             {/* Name */}
-            <Text style={s.fieldLabel}>Name *</Text>
+            <Text style={labelStyle}>Name *</Text>
             <TextInput
-              style={s.fieldInput}
+              style={inputStyle}
               value={name}
               onChangeText={setName}
               placeholder="e.g. Greek Yogurt"
@@ -353,9 +450,9 @@ export default function FoodCreateModal({
             {/* Name auf Deutsch — trainer mode only */}
             {mode === 'trainer' && (
               <>
-                <Text style={s.fieldLabel}>Name auf Deutsch (optional)</Text>
+                <Text style={labelStyle}>Name auf Deutsch (optional)</Text>
                 <TextInput
-                  style={s.fieldInput}
+                  style={inputStyle}
                   value={nameDe}
                   onChangeText={setNameDe}
                   placeholder="z.B. Griechischer Joghurt"
@@ -367,9 +464,9 @@ export default function FoodCreateModal({
             {/* Brand — client mode only */}
             {mode === 'client' && (
               <>
-                <Text style={s.fieldLabel}>Brand (optional)</Text>
+                <Text style={labelStyle}>Brand (optional)</Text>
                 <TextInput
-                  style={s.fieldInput}
+                  style={inputStyle}
                   value={brand}
                   onChangeText={setBrand}
                   placeholder="e.g. Chobani"
@@ -379,7 +476,7 @@ export default function FoodCreateModal({
             )}
 
             {/* ── NUTRITION PER 100g — collapsible ── */}
-            <TouchableOpacity style={s.sectionToggle} onPress={() => setShowNutrition(v => !v)} activeOpacity={0.7}>
+            <TouchableOpacity style={sectionStyle} onPress={() => setShowNutrition(v => !v)} activeOpacity={0.7}>
               <Text style={s.sectionLabel}>NUTRITION PER 100g</Text>
               <SymbolView name={showNutrition ? 'chevron.up' : 'chevron.down'} size={11} tintColor={MUTED} />
             </TouchableOpacity>
@@ -388,9 +485,9 @@ export default function FoodCreateModal({
               <>
                 <View style={s.fieldRow}>
                   <View style={s.fieldHalf}>
-                    <Text style={s.fieldLabel}>Calories (kcal)</Text>
+                    <Text style={labelStyle}>Calories (kcal)</Text>
                     <TextInput
-                      style={s.fieldInput}
+                      style={inputStyle}
                       value={calories}
                       onChangeText={setCalories}
                       keyboardType="decimal-pad"
@@ -399,9 +496,9 @@ export default function FoodCreateModal({
                     />
                   </View>
                   <View style={s.fieldHalf}>
-                    <Text style={s.fieldLabel}>Protein (g)</Text>
+                    <Text style={labelStyle}>Protein (g)</Text>
                     <TextInput
-                      style={s.fieldInput}
+                      style={inputStyle}
                       value={protein}
                       onChangeText={setProtein}
                       keyboardType="decimal-pad"
@@ -413,9 +510,9 @@ export default function FoodCreateModal({
 
                 <View style={s.fieldRow}>
                   <View style={s.fieldHalf}>
-                    <Text style={s.fieldLabel}>Carbs (g)</Text>
+                    <Text style={labelStyle}>Carbs (g)</Text>
                     <TextInput
-                      style={s.fieldInput}
+                      style={inputStyle}
                       value={carbs}
                       onChangeText={setCarbs}
                       keyboardType="decimal-pad"
@@ -424,9 +521,9 @@ export default function FoodCreateModal({
                     />
                   </View>
                   <View style={s.fieldHalf}>
-                    <Text style={s.fieldLabel}>Fat (g)</Text>
+                    <Text style={labelStyle}>Fat (g)</Text>
                     <TextInput
-                      style={s.fieldInput}
+                      style={inputStyle}
                       value={fat}
                       onChangeText={setFat}
                       keyboardType="decimal-pad"
@@ -438,9 +535,9 @@ export default function FoodCreateModal({
 
                 <View style={s.fieldRow}>
                   <View style={s.fieldHalf}>
-                    <Text style={s.fieldLabel}>Fiber (g)</Text>
+                    <Text style={labelStyle}>Fiber (g)</Text>
                     <TextInput
-                      style={s.fieldInput}
+                      style={inputStyle}
                       value={fiber}
                       onChangeText={setFiber}
                       keyboardType="decimal-pad"
@@ -449,9 +546,9 @@ export default function FoodCreateModal({
                     />
                   </View>
                   <View style={s.fieldHalf}>
-                    <Text style={s.fieldLabel}>Sugar (g)</Text>
+                    <Text style={labelStyle}>Sugar (g)</Text>
                     <TextInput
-                      style={s.fieldInput}
+                      style={inputStyle}
                       value={sugar}
                       onChangeText={setSugar}
                       keyboardType="decimal-pad"
@@ -461,9 +558,9 @@ export default function FoodCreateModal({
                   </View>
                 </View>
 
-                <Text style={s.fieldLabel}>Salt (g)</Text>
+                <Text style={labelStyle}>Salt (g)</Text>
                 <TextInput
-                  style={s.fieldInput}
+                  style={inputStyle}
                   value={salt}
                   onChangeText={setSalt}
                   keyboardType="decimal-pad"
@@ -476,7 +573,7 @@ export default function FoodCreateModal({
             {/* ── FOOD GROUPS — collapsible, trainer only ── */}
             {mode === 'trainer' && (
               <>
-                <TouchableOpacity style={s.sectionToggle} onPress={() => setShowFoodGroups(v => !v)} activeOpacity={0.7}>
+                <TouchableOpacity style={sectionStyle} onPress={() => setShowFoodGroups(v => !v)} activeOpacity={0.7}>
                   <Text style={s.sectionLabel}>FOOD GROUPS (optional)</Text>
                   <SymbolView name={showFoodGroups ? 'chevron.up' : 'chevron.down'} size={11} tintColor={MUTED} />
                 </TouchableOpacity>
@@ -488,7 +585,7 @@ export default function FoodCreateModal({
                       return (
                         <TouchableOpacity
                           key={g.key}
-                          style={[s.groupPill, active && s.groupPillActive]}
+                          style={[s.groupPill, sheet && s.pillOnSheet, active && s.groupPillActive]}
                           onPress={() => toggleGroup(g.key)}
                           activeOpacity={0.7}
                         >
@@ -503,66 +600,73 @@ export default function FoodCreateModal({
               </>
             )}
 
-            {/* ── DEFAULT PORTION — always visible ── */}
-            <Text style={[s.sectionLabel, { marginTop: 18, marginBottom: 4 }]}>DEFAULT PORTION</Text>
+            {/* ── DEFAULT PORTION — always visible ──
+                Not a toggle, but on the sheet it takes the same hairline + rhythm as the
+                collapsible headers so the three sections read as one list. */}
+            <View style={sheet ? s.sectionToggleOnSheet : undefined}>
+              <Text style={[s.sectionLabel, !sheet && { marginTop: 18, marginBottom: 4 }]}>DEFAULT PORTION</Text>
+            </View>
 
             {mode === 'trainer' ? (
               <>
-                <Text style={s.portionHint}>100g is always available. Set optional extras:</Text>
+                <Text style={[s.portionHint, sheet && s.portionHintOnSheet]}>100g is always available. Set optional extras:</Text>
 
                 {/* Serving */}
-                <View style={s.portionRow}>
-                  <Text style={s.portionFixedLabel}>Serving</Text>
+                <View style={portionRowStyle}>
+                  <Text style={portionLabelStyle}>Serving</Text>
                   <TextInput
-                    style={s.portionInput}
+                    style={portionInputStyle}
                     value={servingGrams}
                     onChangeText={setServingGrams}
                     keyboardType="decimal-pad"
-                    placeholder="— g"
+                    placeholder={sheet ? '—' : '— g'}
                     placeholderTextColor="#8a938e"
                   />
-                  <Text style={s.portionRowUnit}>g per serving</Text>
+                  <Text style={portionUnitStyle}>g per serving</Text>
                 </View>
 
                 {/* Piece */}
-                <View style={s.portionRow}>
-                  <Text style={s.portionFixedLabel}>Piece</Text>
+                <View style={portionRowStyle}>
+                  <Text style={portionLabelStyle}>Piece</Text>
                   <TextInput
-                    style={s.portionInput}
+                    style={portionInputStyle}
                     value={pieceGrams}
                     onChangeText={setPieceGrams}
                     keyboardType="decimal-pad"
-                    placeholder="— g"
+                    placeholder={sheet ? '—' : '— g'}
                     placeholderTextColor="#8a938e"
                   />
-                  <Text style={s.portionRowUnit}>g per piece</Text>
+                  <Text style={portionUnitStyle}>g per piece</Text>
                 </View>
 
-                {/* Custom */}
-                <View style={s.portionRow}>
+                {/* Custom. Serving and Piece name themselves, so nothing said that this third
+                    row's LEFT box is a field you type the unit's name into — Vitek asked
+                    outright, "the bottom thing is for me to write what i want?". */}
+                {sheet && <Text style={s.portionSubLabel}>Your own unit — name it yourself</Text>}
+                <View style={portionRowStyle}>
                   <TextInput
-                    style={s.portionCustomLabel}
+                    style={portionCustomLabelStyle}
                     value={customLabel}
                     onChangeText={setCustomLabel}
-                    placeholder="Can, Tub…"
+                    placeholder={sheet ? 'e.g. Can' : 'Can, Tub…'}
                     placeholderTextColor="#8a938e"
                   />
                   <TextInput
-                    style={s.portionInput}
+                    style={portionInputStyle}
                     value={customGrams}
                     onChangeText={setCustomGrams}
                     keyboardType="decimal-pad"
-                    placeholder="— g"
+                    placeholder={sheet ? '—' : '— g'}
                     placeholderTextColor="#8a938e"
                   />
-                  <Text style={s.portionRowUnit}>g per unit</Text>
+                  <Text style={portionUnitStyle}>g per unit</Text>
                 </View>
               </>
             ) : (
               <>
                 <View style={{ height: 8 }} />
                 <TextInput
-                  style={s.fieldInput}
+                  style={inputStyle}
                   value={portionAmount}
                   onChangeText={setPortionAmount}
                   keyboardType="decimal-pad"
@@ -573,7 +677,7 @@ export default function FoodCreateModal({
                   {PORTION_UNITS.map(u => (
                     <TouchableOpacity
                       key={u}
-                      style={[s.unitPill, portionUnit === u && s.unitPillActive]}
+                      style={[s.unitPill, sheet && s.pillOnSheet, portionUnit === u && s.unitPillActive]}
                       onPress={() => setPortionUnit(u)}
                       activeOpacity={0.7}
                     >
@@ -589,8 +693,48 @@ export default function FoodCreateModal({
               </>
             )}
 
+            {/* On the sheet, Save lives in the header — only the destructive link stays here. */}
+            {sheet && isEdit && onDeleteTrainer && (
+              <TouchableOpacity style={s.deleteLink} onPress={onDeleteTrainer}>
+                <Text style={s.deleteLinkText}>Delete food</Text>
+              </TouchableOpacity>
+            )}
+
             <View style={{ height: 8 }} />
           </ScrollView>
+    </>
+  );
+
+  if (sheet) {
+    return (
+      <EditorSheet
+        visible={visible}
+        onClose={onClose}
+        title={title}
+        onSave={handleSave}
+        canSave={canSave}
+        saving={saving}
+        dirty={dirty}
+      >
+        {body}
+      </EditorSheet>
+    );
+  }
+
+  return (
+    <Modal
+      visible={visible}
+      transparent
+      animationType="fade"
+      onRequestClose={onClose}
+      statusBarTranslucent
+    >
+      <Pressable style={s.overlay} onPress={onClose}>
+        <Pressable style={s.glassShadow} onPress={() => {}}>
+        <GlassPanel style={[s.glassBox, { width: SCREEN_W - 48 }]}>
+          <Text style={s.title}>{title}</Text>
+
+          {body}
 
           <TouchableOpacity
             style={[s.saveBtn, !canSave && s.saveBtnDisabled]}
@@ -640,6 +784,36 @@ const s = StyleSheet.create({
     overflow: 'hidden',
     padding: 24,
   },
+  // ── `presentation="sheet"` overrides ──────────────────────────────────────────
+  // Additive twins only — the base styles still serve the glass popup, where the whole
+  // form has to fit inside a centred card. On a full screen that scale reads as a
+  // stretched popup, so everything here is one step roomier.
+  sheetContent:      { padding: 20, paddingBottom: 48 },
+  // ⚠️ WHITE + soft shadow, NOT the usual `#f5f5f3` form fill. That fill is the app's
+  // standard because form inputs normally sit on a WHITE modal — here the sheet itself is
+  // `#faf9f7`, two shades off `#f5f5f3`, so the boxes vanished into the page and you could
+  // not see where the fields were. This is the app's "white input row on `#faf9f7`" spec.
+  fieldInputOnSheet: {
+    backgroundColor: '#fff', borderWidth: 0, borderRadius: 12,
+    paddingHorizontal: 14, paddingVertical: 13, fontSize: 15,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.07, shadowRadius: 4, elevation: 2,
+  },
+  fieldLabelOnSheet: { fontSize: 13, fontWeight: '600', color: '#3d4642', marginTop: 18, marginBottom: 8 },
+  // The collapsed sections are the form's spine — a hairline above each makes them read
+  // as rows you can open, not as labels floating in the gap.
+  sectionToggleOnSheet: {
+    marginTop: 24, marginBottom: 4, paddingTop: 18, paddingBottom: 10,
+    borderTopWidth: 1, borderTopColor: BORDER,
+  },
+  portionHintOnSheet:  { fontSize: 12, marginTop: 2, marginBottom: 14 },
+  portionSubLabel:     { fontSize: 12, color: '#3d4642', fontWeight: '600', marginTop: 6, marginBottom: 8 },
+  portionRowOnSheet:   { marginBottom: 12, gap: 10 },
+  // ONE label column across all three rows, so the gram boxes line up.
+  portionLabelOnSheet: { width: 104, flex: 0, fontSize: 14 },
+  portionInputOnSheet: { width: 84, textAlign: 'right' },
+  portionUnitOnSheet:  { width: undefined, flex: 1, fontSize: 12 },
+  pillOnSheet:         { backgroundColor: '#fff' },
   title: {
     fontSize: 17,
     fontWeight: '700',

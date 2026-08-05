@@ -756,6 +756,13 @@ const en = {
     ok: 'OK',
   },
 
+  // Shown by components/EditorSheet.tsx when ✕ is tapped on a form with unsaved edits.
+  discardSheet: {
+    title: 'Discard changes?',
+    message: "What you've written here won't be saved.",
+    confirm: 'Discard',
+    keepEditing: 'Keep editing',
+  },
   appIcon: {
     row: 'App icon',
     sub: 'How the app looks on your home screen',

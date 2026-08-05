@@ -21,6 +21,8 @@ import {
 import { LinearGradient } from 'expo-linear-gradient';
 import * as ImagePicker from 'expo-image-picker';
 import FoodCreateModal from '@/components/FoodCreateModal';
+import RecipeEditorSheet from '@/components/RecipeEditorSheet';
+import { EditorSheet } from '@/components/EditorSheet';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { SymbolView } from 'expo-symbols';
@@ -237,10 +239,15 @@ export default function LibraryScreen() {
   // Incremented on each screen focus — passed to WorkoutsTab to trigger reload
   const [focusTick, setFocusTick] = useState(0);
 
-  // Nutrition tab sub-tab state lifted here so header + button can respond to active sub-tab
+  // Nutrition tab sub-tab state lifted here so header + button can respond to active sub-tab.
+  // ⚠️ ONE TICK PER SUB-TAB — never share a counter between two tabs. `nutAddTick` used to be
+  // read by Recipes as well as Tips/Recommendations, and since a tick never resets, a tip you
+  // added an hour ago still read as "open the recipe editor" the next time the Recipes tab
+  // mounted. Every consumer also guards with the `addTickAtMount` ref (see NutritionTipsTab).
   const [nutSubTab, setNutSubTab] = useState<NutSubTab>('recipes');
   const [nutAddTick, setNutAddTick] = useState(0);
   const [nutFoodsAddTick, setNutFoodsAddTick] = useState(0);
+  const [nutRecipesAddTick, setNutRecipesAddTick] = useState(0);
 
   // Workouts tab sub-tab state lifted here so header + button can respond
   const [workoutSubTab, setWorkoutSubTab] = useState<'workouts' | 'templates'>('workouts');
@@ -349,6 +356,7 @@ export default function LibraryScreen() {
           setNutSubTab={setNutSubTab}
           addTick={nutAddTick}
           foodsAddTick={nutFoodsAddTick}
+          recipesAddTick={nutRecipesAddTick}
         />
       )}
 
@@ -449,7 +457,7 @@ export default function LibraryScreen() {
             onPress={() => {
               if (segment === 'exercises') router.push('/(trainer)/add-exercise' as any);
               else if (segment === 'workouts') router.push('/(trainer)/workout-builder' as any);
-              else if (nutSubTab === 'recipes') router.push('/(trainer)/recipe-create' as any);
+              else if (nutSubTab === 'recipes') setNutRecipesAddTick(n => n + 1);
               else if (nutSubTab === 'foods') setNutFoodsAddTick(n => n + 1);
               else setNutAddTick(n => n + 1);
             }}
@@ -508,6 +516,7 @@ function LibraryNutritionTab({
   setNutSubTab,
   addTick,
   foodsAddTick,
+  recipesAddTick,
 }: {
   trainerId: string;
   router: ReturnType<typeof useRouter>;
@@ -515,6 +524,7 @@ function LibraryNutritionTab({
   setNutSubTab: (t: NutSubTab) => void;
   addTick: number;
   foodsAddTick: number;
+  recipesAddTick: number;
 }) {
   const NUT_TABS: { key: NutSubTab; label: string }[] = [
     { key: 'recipes',         label: 'Recipes' },
@@ -534,7 +544,7 @@ function LibraryNutritionTab({
       />
 
       {nutSubTab === 'recipes' && (
-        <RecipesTab trainerId={trainerId} router={router} addTick={addTick} />
+        <RecipesTab trainerId={trainerId} addTick={recipesAddTick} />
       )}
       {nutSubTab === 'recommendations' && (
         <NutritionTipsTab trainerId={trainerId} category="supplement" addTick={addTick} />
@@ -612,6 +622,8 @@ function NutritionTipsTab({
     load().finally(() => setLoading(false));
   }, [load]);
 
+  const pristineRef = useRef<string | null>(null);
+
   // Track mount-time addTick so tab switches don't trigger creation
   const addTickAtMount = useRef(addTick);
   useEffect(() => {
@@ -627,13 +639,20 @@ function NutritionTipsTab({
     setRefreshing(false);
   }, [load]);
 
+  // Baseline for the ✕ discard guard — captured where each open sets its values, so an edit
+  // compares against the tip as it was rather than against an empty form.
+  const tipSignature = (title: string, body: string, link: string, cover: string | null) =>
+    [title, body, link, cover ?? ''].join('\u0001');
+
   const openCreate = () => {
     setEditId(null); setEditTitle(''); setEditBody('');
     setEditLink(''); setEditCover(null);
+    pristineRef.current = tipSignature('', '', '', null);
     setEditModal(true);
   };
 
   const openEdit = (tip: NutritionTip) => {
+    pristineRef.current = tipSignature(tip.title, tip.body ?? '', tip.link_url ?? '', tip.cover_photo_url ?? null);
     setEditId(tip.id);
     setEditTitle(tip.title);
     setEditBody(tip.body ?? '');
@@ -793,24 +812,19 @@ function NutritionTipsTab({
         </ScrollView>
       )}
 
-      {/* ── Full-screen Create/Edit Modal ── */}
-      <Modal visible={editModal} transparent={false} animationType="slide" onRequestClose={() => setEditModal(false)} statusBarTranslucent>
-        <View style={{ flex: 1, backgroundColor: BG }}>
-          <View style={[nutStyles.fsHeader, { paddingTop: insets.top + 14 }]}>
-            <TouchableOpacity onPress={() => setEditModal(false)} hitSlop={8}>
-              <SymbolView name="xmark" size={18} tintColor={TEXT} />
-            </TouchableOpacity>
-            <Text style={nutStyles.fsHeaderTitle}>
-              {editId ? 'Edit' : 'New'} {category === 'supplement' ? 'Recommendation' : 'Tip'}
-            </Text>
-            <TouchableOpacity onPress={saveTip} disabled={!editTitle.trim() || saving} hitSlop={8}>
-              <Text style={[nutStyles.fsSaveBtn, (!editTitle.trim() || saving) && nutStyles.fsSaveBtnDisabled]}>
-                {saving ? 'Saving…' : 'Save'}
-              </Text>
-            </TouchableOpacity>
-          </View>
-
-          <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+      {/* ── Create/Edit — the shared full-screen editor (see components/EditorSheet.tsx) ── */}
+      <EditorSheet
+        visible={editModal}
+        onClose={() => setEditModal(false)}
+        title={`${editId ? 'Edit' : 'New'} ${category === 'supplement' ? 'Recommendation' : 'Tip'}`}
+        onSave={saveTip}
+        canSave={!!editTitle.trim()}
+        saving={saving}
+        dirty={
+          pristineRef.current !== null &&
+          tipSignature(editTitle, editBody, editLink, editCover) !== pristineRef.current
+        }
+      >
           <ScrollView contentContainerStyle={nutStyles.fsContent} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
             {/* Cover photo — supplement only */}
             {category === 'supplement' && (
@@ -880,10 +894,7 @@ function NutritionTipsTab({
               />
             </View>
           </ScrollView>
-          </KeyboardAvoidingView>
-        </View>
-        <KeyboardDoneButton />
-      </Modal>
+      </EditorSheet>
 
       {/* Confirm delete modal */}
       <Modal visible={!!confirmDelete} transparent animationType="fade" onRequestClose={() => setConfirmDelete(null)}>
@@ -1060,10 +1071,16 @@ function FoodsTab({
         />
       </View>
 
-      {/* Badge-tier filter */}
+      {/* Badge-tier filter.
+          ⚠️ `style={filterScroll}` is REQUIRED, not decoration: React Native gives every
+          ScrollView `flexGrow: 1`, so a HORIZONTAL one inside a flex column claims all the
+          leftover vertical space and stretches its children to fill it. While the list was
+          still loading there was nothing else to claim that space, so the pills briefly grew
+          to full screen height and then snapped back once the rows arrived. */}
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
+        style={foodStyles.filterScroll}
         contentContainerStyle={foodStyles.filterRow}
       >
         {BADGE_FILTERS.map(f => {
@@ -1106,19 +1123,14 @@ function FoodsTab({
         </ScrollView>
       )}
 
-      {/* Floating + button */}
-      <TouchableOpacity
-        style={[foodStyles.fab, { bottom: tabBarH + 16 }]}
-        onPress={() => { setEditRow(null); setCreateOpen(true); }}
-        activeOpacity={0.85}
-      >
-        <Text style={foodStyles.fabIcon}>＋</Text>
-      </TouchableOpacity>
+      {/* No floating + here — the screen header's + already opens this tab's editor (via
+          `nutFoodsAddTick`), and Foods was the only sub-tab carrying a second one. */}
 
       <FoodCreateModal
         visible={createOpen}
         onClose={() => { setCreateOpen(false); setEditRow(null); }}
         mode="trainer"
+        presentation="sheet"
         trainerId={trainerId}
         editRow={editRow}
         onSavedTrainer={handleSaved}
@@ -1201,22 +1213,6 @@ function FoodCard({ row, onPress }: { row: TrainerFoodRow; onPress: () => void }
 }
 
 const foodStyles = StyleSheet.create({
-  fab: {
-    position: 'absolute',
-    right: 20,
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: '#24ac88',
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.22,
-    shadowRadius: 8,
-    elevation: 6,
-  },
-  fabIcon: { color: '#fff', fontSize: 22, lineHeight: 24 },
   card: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1257,18 +1253,25 @@ const foodStyles = StyleSheet.create({
     alignItems: 'center',
     gap: 6,
   },
+  // Sizes to its content instead of eating the free vertical space — see the note at the
+  // call site. `flexShrink: 0` keeps it from being squeezed once the list does arrive.
+  filterScroll: {
+    flexGrow: 0,
+    flexShrink: 0,
+    marginBottom: 12,
+  },
   filterRow: {
     flexDirection: 'row',
+    alignItems: 'center',
     gap: 8,
     paddingHorizontal: 16,
-    paddingBottom: 10,
   },
   filterPill: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    paddingHorizontal: 13,
-    paddingVertical: 7,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
     borderRadius: 100,
     backgroundColor: '#f2f2ef',
   },
@@ -1301,14 +1304,14 @@ const foodStyles = StyleSheet.create({
 
 function RecipesTab({
   trainerId,
-  router,
   addTick,
 }: {
   trainerId: string;
-  router: ReturnType<typeof useRouter>;
   addTick: number;
 }) {
   const tabBarH = useTabBarHeight();
+  const [editorOpen, setEditorOpen] = useState(false);
+  const [editorRecipeId, setEditorRecipeId] = useState<string | null>(null);
   const [recipes, setRecipes] = useState<Recipe[]>([]);
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
@@ -1334,8 +1337,18 @@ function RecipesTab({
     load().finally(() => setLoading(false));
   }, [load]));
 
+  // ⚠️ Compare against the MOUNT-TIME tick, never `> 0` — same guard as NutritionTipsTab
+  // and FoodsTab. A bare `if (addTick > 0)` here (against a counter shared with the
+  // Tips tab, no less) meant that once you had ever added a tip, every later mount of
+  // this tab — the DEFAULT nutrition sub-tab — threw you straight into the recipe editor
+  // and the tab became unreachable.
+  const addTickAtMount = useRef(addTick);
   useEffect(() => {
-    if (addTick > 0) router.push('/(trainer)/recipe-create' as any);
+    if (addTick > addTickAtMount.current) {
+      addTickAtMount.current = addTick;
+      setEditorRecipeId(null);
+      setEditorOpen(true);
+    }
   }, [addTick]);
 
   const onRefresh = useCallback(async () => {
@@ -1500,7 +1513,7 @@ function RecipesTab({
                   <>
                     <TouchableOpacity
                       style={recStyles.editBtn}
-                      onPress={() => close(() => router.push(`/(trainer)/recipe-create?editId=${detail.id}` as any))}
+                      onPress={() => { const rid = detail.id; close(() => { setEditorRecipeId(rid); setEditorOpen(true); }); }}
                       activeOpacity={0.8}
                     >
                       <Text style={recStyles.editBtnText}>Edit Recipe</Text>
@@ -1538,6 +1551,15 @@ function RecipesTab({
           </Pressable>
         </Pressable>
       </Modal>
+
+      {/* Create / edit recipe — an EditorSheet, NOT a pushed route (see EditorSheet.tsx) */}
+      <RecipeEditorSheet
+        visible={editorOpen}
+        editId={editorRecipeId}
+        trainerId={trainerId}
+        onClose={() => setEditorOpen(false)}
+        onSaved={load}
+      />
     </View>
   );
 }
@@ -3062,14 +3084,7 @@ const nutStyles = StyleSheet.create({
   cancelOnGlass:     { fontSize: 14, color: '#414b45', fontWeight: '600' },
 
   // Full-screen create/edit modal
-  fsHeader: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: 20, paddingBottom: 14,
-    borderBottomWidth: 1, borderBottomColor: BORDER, backgroundColor: CARD,
-  },
-  fsHeaderTitle: { fontSize: 16, fontWeight: '700', color: TEXT },
-  fsSaveBtn: { fontSize: 15, fontWeight: '700', color: ACCENT },
-  fsSaveBtnDisabled: { color: MUTED },
+  // (the create/edit header lives in components/EditorSheet.tsx now)
 
   fsContent: { padding: 16, gap: 4, paddingBottom: 60 },
 
@@ -3085,10 +3100,15 @@ const nutStyles = StyleSheet.create({
   coverPickerText: { fontSize: 13, fontWeight: '600', color: '#fff' },
 
   fsField:      { marginBottom: 12 },
-  fsFieldLabel: { fontSize: 10, fontWeight: '700', color: MUTED, letterSpacing: 0.7, marginBottom: 6 },
+  fsFieldLabel: { fontSize: 11, fontWeight: '700', color: '#3d4642', letterSpacing: 0.7, marginBottom: 7 },
+  // ⚠️ WHITE + soft shadow, not the `#f5f5f3` form fill. That fill assumes a WHITE modal
+  // behind it; `EditorSheet` is `#faf9f7`, near enough that the boxes disappeared into the
+  // page (Vitek, 5 Aug: "not really visible where the fields are").
   fsInput: {
-    backgroundColor: '#f5f5f3', borderRadius: 12,
-    paddingHorizontal: 14, paddingVertical: 12, fontSize: 15, color: TEXT,
+    backgroundColor: '#fff', borderRadius: 12,
+    paddingHorizontal: 14, paddingVertical: 13, fontSize: 15, color: TEXT,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.07, shadowRadius: 4, elevation: 2,
   },
   fsBodyInput: { minHeight: 160, textAlignVertical: 'top', lineHeight: 22 },
 });

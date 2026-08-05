@@ -1,10 +1,7 @@
 import {
-  ActivityIndicator,
   Alert,
   Image,
-  KeyboardAvoidingView,
   Modal,
-  Platform,
   ScrollView,
   StyleSheet,
   Text,
@@ -12,23 +9,28 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SymbolView } from 'expo-symbols';
 import * as ImagePicker from 'expo-image-picker';
-import { useAuth } from '@/context/AuthContext';
 import { supabase } from '@/lib/supabase';
 import FoodSearchModal from '@/components/FoodSearchModal';
-import { SessionResumeChip } from '@/components/SessionResumeChip';
+import { EditorSheet } from '@/components/EditorSheet';
 import GlassPanel from '@/components/GlassPanel';
 import type { FoodConfirmResult } from '@/components/FoodSearchModal';
 import { KeyboardDoneButton } from '@/components/KeyboardDoneButton';
 
-const BG     = '#faf9f7';
+/**
+ * Trainer recipe create/edit form.
+ *
+ * ⚠️ This used to be the ROUTE `app/(trainer)/recipe-create.tsx`, pushed from the Library.
+ * It is a modal now — see the note in `components/EditorSheet.tsx` for why (a push blurred
+ * the Library tab, whose blur handler resets the segment, so backing out landed on
+ * Exercises instead of Nutrition). Do not turn it back into a screen.
+ */
+
 const CARD   = '#ffffff';
 const BORDER = '#e8e8e4';
-const HEADER = '#244e43';
 const ACCENT = '#24ac88';
 const TEXT   = '#1a1a1a';
 const MUTED  = '#999';
@@ -44,11 +46,36 @@ interface IngredientDraft extends FoodConfirmResult {
   localId: string;
 }
 
-export default function TrainerCreateRecipeScreen() {
-  const { editId }   = useLocalSearchParams<{ editId?: string }>();
-  const { profile }  = useAuth();
-  const router       = useRouter();
-  const insets       = useSafeAreaInsets();
+/** Everything the form holds, flattened to one comparable string (drives the ✕ discard guard). */
+function signature(
+  name: string,
+  portions: string,
+  instructions: string,
+  cover: string | null,
+  ingredients: IngredientDraft[],
+): string {
+  return [
+    name, portions, instructions, cover ?? '',
+    // `localId` is regenerated on every load, so it must NOT be part of the identity.
+    ingredients.map(i => `${i.foodName}~${i.amount}~${i.unit}`).join(','),
+  ].join('\u0001');
+}
+
+export default function RecipeEditorSheet({
+  visible,
+  editId,
+  trainerId,
+  onClose,
+  onSaved,
+}: {
+  visible: boolean;
+  /** null = create a new recipe. */
+  editId: string | null;
+  trainerId: string;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const insets = useSafeAreaInsets();
 
   const isEdit = !!editId;
 
@@ -69,23 +96,38 @@ export default function TrainerCreateRecipeScreen() {
   const [portionsDraft, setPortionsDraft] = useState('1');
   const [instrDraft, setInstrDraft]       = useState('');
 
-  const trainerId = profile?.id ?? '';
+  // What the form looked like when it opened — the baseline the ✕ discard-guard compares
+  // against. Set where the values are produced, not snapshotted on a later render: for an
+  // edit the values arrive from a fetch, so anything sampled earlier would read as empty and
+  // the form would count as dirty the instant its own data landed. `null` = nothing to protect.
+  const pristineRef = useRef<string | null>(null);
 
+  // The sheet stays mounted between openings, so every open starts from a clean form —
+  // otherwise the last recipe's ingredients would still be sitting there.
   useEffect(() => {
-    if (!editId) return;
+    if (!visible) { pristineRef.current = null; return; }
+    setName(''); setPortions('1'); setInstructions('');
+    setCoverUri(null); setCoverStorageUrl(null);
+    setIngredients([]); setSaving(false);
+    if (!editId) { pristineRef.current = signature('', '1', '', null, []); return; }
     (async () => {
       const [{ data: r }, { data: ings }] = await Promise.all([
         supabase.from('recipes').select('*').eq('id', editId).single(),
         supabase.from('recipe_ingredients').select('*').eq('recipe_id', editId).order('order_index'),
       ]);
+      const loadedName     = r ? (r as any).name : '';
+      const loadedPortions = r ? String((r as any).portions) : '1';
+      const loadedInstr    = r ? ((r as any).instructions ?? '') : '';
+      const loadedCover    = r ? (r as any).cover_photo_url : null;
       if (r) {
-        setName((r as any).name);
-        setPortions(String((r as any).portions));
-        setInstructions((r as any).instructions ?? '');
-        setCoverStorageUrl((r as any).cover_photo_url);
+        setName(loadedName);
+        setPortions(loadedPortions);
+        setInstructions(loadedInstr);
+        setCoverStorageUrl(loadedCover);
       }
+      let loadedIngredients: IngredientDraft[] = [];
       if (ings) {
-        setIngredients((ings as any[]).map(ing => ({
+        loadedIngredients = (ings as any[]).map(ing => ({
           localId: makeUUID(),
           foodName: ing.food_name,
           brand: ing.brand,
@@ -112,10 +154,12 @@ export default function TrainerCreateRecipeScreen() {
             sugar: ing.sugar_g ?? 0,
             salt: ing.salt_g ?? 0,
           },
-        })));
+        }));
+        setIngredients(loadedIngredients);
       }
+      pristineRef.current = signature(loadedName, loadedPortions, loadedInstr, loadedCover, loadedIngredients);
     })();
-  }, [editId]);
+  }, [visible, editId]);
 
   const pickCoverPhoto = async () => {
     const res = await ImagePicker.launchImageLibraryAsync({
@@ -212,7 +256,8 @@ export default function TrainerCreateRecipeScreen() {
         }))
       );
 
-      router.back();
+      onSaved();
+      onClose();
     } catch (e) {
       Alert.alert('Error', 'Failed to save recipe.');
     } finally {
@@ -221,114 +266,102 @@ export default function TrainerCreateRecipeScreen() {
   };
 
   return (
-    <View style={s.root}>
-      {/* ── Header ──────────────────────────────────────────────── */}
-      <View style={[s.header, { paddingTop: insets.top }]}>
-        <View style={s.headerRow}>
-          <TouchableOpacity onPress={() => router.back()} style={s.hdrSide} hitSlop={8}>
-            <SymbolView name="chevron.left" size={22} tintColor="rgba(255,255,255,0.85)" />
-          </TouchableOpacity>
-          <Text style={s.hdrTitle}>{isEdit ? 'Edit recipe' : 'New recipe'}</Text>
-          <SessionResumeChip />
-          <TouchableOpacity
-            onPress={handleSave}
-            style={s.hdrSide}
-            hitSlop={8}
-            disabled={!canSave || saving}
-          >
-            <Text style={[s.saveBtn, (!canSave || saving) && { opacity: 0.4 }]}>
-              {saving ? 'Saving…' : 'Save'}
-            </Text>
+    <EditorSheet
+      visible={visible}
+      onClose={onClose}
+      title={isEdit ? 'Edit recipe' : 'New recipe'}
+      onSave={handleSave}
+      canSave={canSave}
+      saving={saving}
+      dirty={
+        pristineRef.current !== null &&
+        signature(name, portions, instructions, coverStorageUrl ?? coverUri, ingredients) !== pristineRef.current
+      }
+    >
+      <ScrollView
+        contentContainerStyle={[s.content, { paddingBottom: insets.bottom + 100 }]}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+      >
+        {/* Cover photo */}
+        <TouchableOpacity style={s.coverPicker} onPress={pickCoverPhoto} activeOpacity={0.85}>
+          {(coverUri || coverStorageUrl) ? (
+            <Image source={{ uri: coverUri ?? coverStorageUrl! }} style={StyleSheet.absoluteFill} resizeMode="cover" />
+          ) : (
+            <View style={s.coverPlaceholder}>
+              <SymbolView name="camera" size={28} tintColor={MUTED} />
+              <Text style={s.coverPlaceholderText}>Add cover photo</Text>
+            </View>
+          )}
+        </TouchableOpacity>
+
+        {/* Name */}
+        <TouchableOpacity
+          style={s.fieldRow}
+          onPress={() => { setNameDraft(name); setNameModal(true); }}
+        >
+          <Text style={s.fieldLabel}>Name</Text>
+          <Text style={[s.fieldValue, !name && s.fieldPlaceholder]} numberOfLines={1}>
+            {name || 'Recipe name'}
+          </Text>
+          <SymbolView name="chevron.right" size={14} tintColor={MUTED} />
+        </TouchableOpacity>
+
+        {/* Portions */}
+        <TouchableOpacity
+          style={s.fieldRow}
+          onPress={() => { setPortionsDraft(portions); setPortionsModal(true); }}
+        >
+          <Text style={s.fieldLabel}>Portions</Text>
+          <Text style={s.fieldValue}>{portions}</Text>
+          <SymbolView name="chevron.right" size={14} tintColor={MUTED} />
+        </TouchableOpacity>
+
+        {/* Ingredients */}
+        <Text style={s.sectionLabel}>INGREDIENTS</Text>
+        <View style={s.card}>
+          {ingredients.map(ing => (
+            <View key={ing.localId} style={s.ingRow}>
+              <View style={{ flex: 1 }}>
+                <Text style={s.ingName} numberOfLines={1}>{ing.foodName}</Text>
+                <Text style={s.ingAmount}>{ing.amount}{ing.unit} · {Math.round(ing.nutrition.calories)} kcal</Text>
+              </View>
+              <TouchableOpacity onPress={() => removeIngredient(ing.localId)} hitSlop={8}>
+                <SymbolView name="xmark.circle.fill" size={20} tintColor="#ccc" />
+              </TouchableOpacity>
+            </View>
+          ))}
+          <TouchableOpacity style={s.addIngRow} onPress={() => setFoodSearchVisible(true)}>
+            <SymbolView name="plus.circle.fill" size={20} tintColor={ACCENT} />
+            <Text style={s.addIngText}>Add ingredient</Text>
           </TouchableOpacity>
         </View>
-      </View>
 
-      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <ScrollView
-          contentContainerStyle={[s.content, { paddingBottom: insets.bottom + 100 }]}
-          showsVerticalScrollIndicator={false}
-          keyboardShouldPersistTaps="handled"
+        {/* Instructions */}
+        <Text style={s.sectionLabel}>INSTRUCTIONS</Text>
+        <TouchableOpacity
+          style={s.instrRow}
+          onPress={() => { setInstrDraft(instructions); setInstrModal(true); }}
         >
-          {/* Cover photo */}
-          <TouchableOpacity style={s.coverPicker} onPress={pickCoverPhoto} activeOpacity={0.85}>
-            {(coverUri || coverStorageUrl) ? (
-              <Image source={{ uri: coverUri ?? coverStorageUrl! }} style={StyleSheet.absoluteFill} resizeMode="cover" />
-            ) : (
-              <View style={s.coverPlaceholder}>
-                <SymbolView name="camera" size={28} tintColor={MUTED} />
-                <Text style={s.coverPlaceholderText}>Add cover photo</Text>
-              </View>
-            )}
-          </TouchableOpacity>
+          <Text style={[s.instrText, !instructions && s.fieldPlaceholder]} numberOfLines={4}>
+            {instructions || 'Add instructions…'}
+          </Text>
+        </TouchableOpacity>
+      </ScrollView>
 
-          {/* Name */}
-          <TouchableOpacity
-            style={s.fieldRow}
-            onPress={() => { setNameDraft(name); setNameModal(true); }}
-          >
-            <Text style={s.fieldLabel}>Name</Text>
-            <Text style={[s.fieldValue, !name && s.fieldPlaceholder]} numberOfLines={1}>
-              {name || 'Recipe name'}
-            </Text>
-            <SymbolView name="chevron.right" size={14} tintColor={MUTED} />
-          </TouchableOpacity>
-
-          {/* Portions */}
-          <TouchableOpacity
-            style={s.fieldRow}
-            onPress={() => { setPortionsDraft(portions); setPortionsModal(true); }}
-          >
-            <Text style={s.fieldLabel}>Portions</Text>
-            <Text style={s.fieldValue}>{portions}</Text>
-            <SymbolView name="chevron.right" size={14} tintColor={MUTED} />
-          </TouchableOpacity>
-
-          {/* Ingredients */}
-          <Text style={s.sectionLabel}>INGREDIENTS</Text>
-          <View style={s.card}>
-            {ingredients.map(ing => (
-              <View key={ing.localId} style={s.ingRow}>
-                <View style={{ flex: 1 }}>
-                  <Text style={s.ingName} numberOfLines={1}>{ing.foodName}</Text>
-                  <Text style={s.ingAmount}>{ing.amount}{ing.unit} · {Math.round(ing.nutrition.calories)} kcal</Text>
-                </View>
-                <TouchableOpacity onPress={() => removeIngredient(ing.localId)} hitSlop={8}>
-                  <SymbolView name="xmark.circle.fill" size={20} tintColor="#ccc" />
-                </TouchableOpacity>
-              </View>
-            ))}
-            <TouchableOpacity style={s.addIngRow} onPress={() => setFoodSearchVisible(true)}>
-              <SymbolView name="plus.circle.fill" size={20} tintColor={ACCENT} />
-              <Text style={s.addIngText}>Add ingredient</Text>
-            </TouchableOpacity>
-          </View>
-
-          {/* Instructions */}
-          <Text style={s.sectionLabel}>INSTRUCTIONS</Text>
-          <TouchableOpacity
-            style={s.instrRow}
-            onPress={() => { setInstrDraft(instructions); setInstrModal(true); }}
-          >
-            <Text style={[s.instrText, !instructions && s.fieldPlaceholder]} numberOfLines={4}>
-              {instructions || 'Add instructions…'}
-            </Text>
-          </TouchableOpacity>
-        </ScrollView>
-
-        {/* Live macro summary (fixed bottom bar) */}
-        {ingredients.length > 0 && (
-          <View style={[s.macroBar, { paddingBottom: insets.bottom + 8 }]}>
-            <Text style={s.macroBarLabel}>Per portion:</Text>
-            <Text style={s.macroBarVal}>{Math.round(totalsPerPortion.cal)} kcal</Text>
-            <Text style={s.macroBarSep}>·</Text>
-            <Text style={s.macroBarVal}>{totalsPerPortion.pro.toFixed(1)}g P</Text>
-            <Text style={s.macroBarSep}>·</Text>
-            <Text style={s.macroBarVal}>{totalsPerPortion.carbs.toFixed(1)}g C</Text>
-            <Text style={s.macroBarSep}>·</Text>
-            <Text style={s.macroBarVal}>{totalsPerPortion.fat.toFixed(1)}g F</Text>
-          </View>
-        )}
-      </KeyboardAvoidingView>
+      {/* Live macro summary (fixed bottom bar) */}
+      {ingredients.length > 0 && (
+        <View style={[s.macroBar, { paddingBottom: insets.bottom + 8 }]}>
+          <Text style={s.macroBarLabel}>Per portion:</Text>
+          <Text style={s.macroBarVal}>{Math.round(totalsPerPortion.cal)} kcal</Text>
+          <Text style={s.macroBarSep}>·</Text>
+          <Text style={s.macroBarVal}>{totalsPerPortion.pro.toFixed(1)}g P</Text>
+          <Text style={s.macroBarSep}>·</Text>
+          <Text style={s.macroBarVal}>{totalsPerPortion.carbs.toFixed(1)}g C</Text>
+          <Text style={s.macroBarSep}>·</Text>
+          <Text style={s.macroBarVal}>{totalsPerPortion.fat.toFixed(1)}g F</Text>
+        </View>
+      )}
 
       {/* ── Name modal ────────────────────────────────────────────── */}
       <Modal visible={nameModal} transparent animationType="fade">
@@ -426,18 +459,11 @@ export default function TrainerCreateRecipeScreen() {
         onConfirm={addIngredient}
         showSavedMeals={false}
       />
-    </View>
+    </EditorSheet>
   );
 }
 
 const s = StyleSheet.create({
-  root:    { flex: 1, backgroundColor: BG },
-  header:  { backgroundColor: HEADER },
-  headerRow: { height: 62, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20 },
-  hdrSide: { width: 48, alignItems: 'flex-start', justifyContent: 'center' },
-  hdrTitle:{ flex: 1, fontSize: 18, fontWeight: '700', color: '#fff', textAlign: 'center' },
-  saveBtn: { fontSize: 15, fontWeight: '600', color: ACCENT },
-
   content: { padding: 16, gap: 0 },
 
   coverPicker:      { height: 160, borderRadius: 14, overflow: 'hidden', backgroundColor: '#e8e8e4', marginBottom: 16, alignItems: 'center', justifyContent: 'center' },
@@ -466,7 +492,6 @@ const s = StyleSheet.create({
   macroBarSep:   { fontSize: 12, color: MUTED },
 
   overlay:     { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', alignItems: 'center', justifyContent: 'center' },
-  modalCard:   { backgroundColor: CARD, borderRadius: 16, padding: 20, width: '84%' },
   glassShadow: { width: '84%', borderRadius: 38, shadowColor: '#000', shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.22, shadowRadius: 28, elevation: 12 },
   glassBox:    { borderRadius: 38, overflow: 'hidden', padding: 20 },
   modalTitle:  { fontSize: 16, fontWeight: '700', color: TEXT, textAlign: 'center', marginBottom: 14 },

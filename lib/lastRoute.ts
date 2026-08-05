@@ -53,7 +53,8 @@ const UNSAVED_WORK = new Set([
   'add-exercise',
   'add-client',
   'exercise-library',
-  'recipe-create',
+  // (the trainer recipe editor is no longer a route — it is an EditorSheet modal,
+  //  so it can never be the last route in the first place)
   'create',           // (client)/recipe/create
   'availability',
   'plan-week',

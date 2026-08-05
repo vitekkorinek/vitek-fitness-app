@@ -13,7 +13,6 @@ export default function TrainerLayout() {
       <Stack.Screen name="client/[id]/add-workout" />
       <Stack.Screen name="client/[id]/workout/[workoutId]" />
       <Stack.Screen name="invoice/[invoiceId]" />
-      <Stack.Screen name="recipe-create" />
     </Stack>
   );
 }
