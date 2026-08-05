@@ -1099,7 +1099,7 @@ export default function NutritionDailyScreen() {
     setCreateMealModal(false);
     setCreateMealName('');
     setSelectedIds(new Set());
-    setGroceryToast('Meal saved to favourites');
+    setGroceryToast('Meal saved to your Library');
     setTimeout(() => setGroceryToast(null), 2500);
   };
 
@@ -1124,7 +1124,7 @@ export default function NutritionDailyScreen() {
     setSaveDayModal(false);
     setSaveDayName('');
     setSavingDay(false);
-    setDayToast('Day saved to Favourites');
+    setDayToast('Day saved to your Library');
     // Refresh fav dates
     setFavDates(prev => new Set([...prev, toDateStr(selectedDate)]));
     setTimeout(() => setDayToast(null), 2500);
@@ -1524,7 +1524,7 @@ export default function NutritionDailyScreen() {
                 activeOpacity={0.7}
               >
                 <Text style={styles.pickerEmoji}>📅</Text>
-                <Text style={styles.pickerLabel}>Add a day from Favourites</Text>
+                <Text style={styles.pickerLabel}>Add a day from your Library</Text>
                 <SymbolView name="chevron.right" size={14} tintColor="#ccc" />
               </TouchableOpacity>
             </ScrollView>

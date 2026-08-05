@@ -346,7 +346,7 @@ export default function HomeScreen() {
                       <View>
                         <Text style={styles.tileTitle}>Nutrition</Text>
                         <BulletRow label="Food log"   onPress={() => router.push('/(client)/nutrition' as any)} />
-                        <BulletRow label="Favourites" onPress={() => router.push('/(client)/nutrition/favourites' as any)} />
+                        <BulletRow label="Library"    onPress={() => router.push('/(client)/nutrition/favourites' as any)} />
                         <BulletRow label="Weekly"     onPress={() => router.push('/(client)/nutrition/weekly' as any)} />
                         <BulletRow label="Grocery"    onPress={() => router.push('/(client)/nutrition/grocery-list' as any)} />
                       </View>

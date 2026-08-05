@@ -2,6 +2,7 @@ import {
   ActivityIndicator,
   Animated,
   Dimensions,
+  Easing,
   Image,
   InputAccessoryView,
   KeyboardAvoidingView,
@@ -188,14 +189,14 @@ interface FavouriteDay {
   created_at: string;
 }
 
-// ─── HubOrb (round landing badge that springs out of the center heart) ────────
-// The orbit is a fixed pentagon around the heart, so each orb is absolutely
+// ─── HubOrb (page-shaped badge that flies out from between the pages) ────────
+// The orbit is a fixed pentagon around the book, so each badge is absolutely
 // positioned and its fly-in delta is simply the negated orbit offset — the
-// collapsed orb sits AT the heart (scale 0.15, opacity 0); `anim` 0→1 flies
-// it out to its orbit spot.
+// collapsed badge sits AT the gutter (scale 0.15, opacity 0); `anim` 0→1 flies
+// it out, unspinning from `spin` degrees so it tumbles like a loose leaf.
 
 function HubOrb({
-  title, sub, circleColor, iconColor, symbolName, onPress, anim, delta, open, left, top, width,
+  title, sub, circleColor, iconColor, symbolName, onPress, anim, delta, open, left, top, width, spin,
 }: {
   title: string;
   sub: string;
@@ -209,6 +210,7 @@ function HubOrb({
   left: number;
   top: number;
   width?: number;
+  spin: number;
 }) {
   const scale = useRef(new Animated.Value(1)).current;
   const onPressIn  = () => Animated.spring(scale, { toValue: 0.94, useNativeDriver: true, speed: 30 }).start();
@@ -221,18 +223,23 @@ function HubOrb({
         position: 'absolute',
         left,
         top,
-        opacity: anim,
+        // Fades in over the first quarter of the flight — a page has to be
+        // VISIBLE while still in the gutter, or it reads as appearing from
+        // behind the book instead of out of it.
+        opacity: anim.interpolate({ inputRange: [0, 0.25, 1], outputRange: [0, 1, 1] }),
         transform: [
           { translateX: anim.interpolate({ inputRange: [0, 1], outputRange: [delta.dx, 0] }) },
           { translateY: anim.interpolate({ inputRange: [0, 1], outputRange: [delta.dy, 0] }) },
+          { rotate: anim.interpolate({ inputRange: [0, 1], outputRange: [`${spin}deg`, '0deg'] }) },
           { scale: anim.interpolate({ inputRange: [0, 1], outputRange: [0.15, 1] }) },
         ],
       }}
     >
       <Animated.View style={{ transform: [{ scale }] }}>
         <Pressable onPress={onPress} onPressIn={onPressIn} onPressOut={onPressOut} style={[hub.item, width != null && { width }]}>
-          <View style={[hub.circle, { backgroundColor: circleColor }]}>
-            <SymbolView name={symbolName} size={35} tintColor={iconColor} />
+          <View style={[hub.page, { backgroundColor: circleColor }]}>
+            <View style={hub.pageRule} />
+            <SymbolView name={symbolName} size={32} tintColor={iconColor} />
           </View>
           <Text style={hub.label} numberOfLines={1}>{title}</Text>
           <Text style={hub.count} numberOfLines={1}>{sub}</Text>
@@ -242,22 +249,203 @@ function HubOrb({
   );
 }
 
+const ORB_W = 72;
+const ORB_H = 88;
+
 const hub = StyleSheet.create({
-  item:   { alignItems: 'center', width: 124 },
-  circle: { width: 88, height: 88, borderRadius: 44, alignItems: 'center', justifyContent: 'center' },
-  label:  { fontSize: 14, fontWeight: '600', color: TEXT, marginTop: 9 },
-  count:  { fontSize: 12, color: MUTED, marginTop: 1 },
-  heartBtn:   { width: 116, height: 116, alignItems: 'center', justifyContent: 'center' },
-  heartLayer: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, alignItems: 'center', justifyContent: 'center' },
+  item: { alignItems: 'center', width: 124 },
+  page: {
+    width: ORB_W, height: ORB_H,
+    borderTopLeftRadius: 5, borderBottomLeftRadius: 5,
+    borderTopRightRadius: 16, borderBottomRightRadius: 16,
+    alignItems: 'center', justifyContent: 'center',
+    shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 4, elevation: 2,
+  },
+  pageRule: { position: 'absolute', left: 9, top: 13, bottom: 13, width: 1.5, borderRadius: 1, backgroundColor: 'rgba(36,78,67,0.13)' },
+  label: { fontSize: 14, fontWeight: '600', color: TEXT, marginTop: 9 },
+  count: { fontSize: 12, color: MUTED, marginTop: 1 },
 });
 
 const ORB_KEYS = ['reco', 'recipes', 'meals', 'foods', 'days'] as const;
 type OrbKey = typeof ORB_KEYS[number];
 
-// One brand colour for every orb — the colourful macro/micro pips own the
+// One brand colour for every badge — the colourful macro/micro pips own the
 // "colourful circles" language in the Food Log; navigation stays green.
 const ORB_BG   = '#e9efec';
 const ORB_ICON = HEADER;
+
+// ─── BookHub — a hardback that opens the way a hardback opens ────────────────
+// ⚠️ Read this before changing anything here. Three earlier versions were
+// rejected on device, and NONE of them failed on the rotation — they failed
+// because parts of the book were FADED IN instead of being uncovered:
+//
+//   · the right page and the spine had `opacity: anim`, so half the book
+//     materialised out of nothing instead of being revealed by the cover;
+//   · the shut cover was CENTRED by a static offset, which put it half a page
+//     away from where the right page sits — so the "book" also jumped sideways
+//     as those pages appeared;
+//   · and because the spine then ran down the MIDDLE of the shut cover, it had
+//     to be hidden — losing the one mark that says "this is a book" when shut.
+//
+// This version has no fades and no offsets. Everything is where it physically
+// is, and the cover is the only thing that moves:
+//
+//   right board + page   always there, at [BK_W, 2·BK_W] — the shut cover sits
+//                        exactly on top of it and uncovers it as it swings
+//   cover                 hinged on the spine at x = BK_W, rotY 0° → 180°:
+//                        shut it covers the right half, open it has swung over
+//                        to the left half and shows its INSIDE (back face)
+//   spine                 always visible, drawn ABOVE the cover: shut, its left
+//                        half is the book's spine edge; open, it is the gutter
+//
+// So it opens right→left and shuts left→right — a normal book — and the open
+// spread is centred on the spine, which is the hub centre.
+const BK_W = 66;   // one half
+const BK_H = 94;
+
+function BookHub({ anim, onPress }: { anim: Animated.Value; onPress: () => void }) {
+  const press = useRef(new Animated.Value(1)).current;
+  const onPressIn  = () => Animated.spring(press, { toValue: 0.95, useNativeDriver: true, speed: 30 }).start();
+  const onPressOut = () => Animated.spring(press, { toValue: 1,    useNativeDriver: true, speed: 20 }).start();
+
+  const rules = (a: number, b: number, c: number) => (
+    <>
+      <View style={[bk.rule, { width: a }]} />
+      <View style={[bk.rule, { width: b }]} />
+      <View style={[bk.rule, { width: c }]} />
+    </>
+  );
+
+  // ⚠️ THE FLICKER RULE — read before adding anything to this stage.
+  // Every "electric shock" shimmer in this component came from a layer being
+  // EXACTLY COPLANAR with the rotating cover, which happens at rot 0 (shut).
+  // A 3D-transformed layer and a flat one at the same place and the same depth
+  // get ordered per-frame, so they trade places ~60×/sec. Two fixes, and both
+  // must stay:
+  //   · the static right half is HIDDEN (hard opacity step) while the cover is
+  //     flat on it — the cover is an identical green board, so the picture is
+  //     the same, and there is simply nothing underneath to fight. This is what
+  //     made the N shimmer as the book shut.
+  //   · there is NO separate spine strip laid over the middle. The gutter is
+  //     made from the two boards' OWN inset edges, and the binding sliver is a
+  //     child of the static board sitting entirely LEFT of the cover. A strip
+  //     drawn across the gutter is coplanar with the cover's hinge edge, which
+  //     is what made "the middle part" shimmer as the book opened.
+  // Also: no shadows on anything that rotates, and no `backfaceVisibility` —
+  // the opacity step is the single source of truth for which face is drawn.
+  const boardOpacity = anim.interpolate({ inputRange: [0, 0.03, 0.0301, 1], outputRange: [0, 0, 1, 1] });
+  const frontOpacity = anim.interpolate({ inputRange: [0, 0.5, 0.5001, 1], outputRange: [1, 1, 0, 0] });
+  const backOpacity  = anim.interpolate({ inputRange: [0, 0.4999, 0.5, 1], outputRange: [0, 0, 1, 1] });
+
+  // The two faces are SIBLINGS, each hinged on the spine from its own side, the
+  // back being the front + 180° — so mid-swing they are the same plate. Nesting
+  // them inside one rotating leaf z-fights and breaks backface culling.
+  // ⚠️ Hinging is done with translate→rotate→translate, NOT `transformOrigin`:
+  // moving the origin also moves the perspective vanishing point onto the hinge,
+  // which foreshortens brutally right where the gutter is.
+  //
+  // ⚠️ THE SIGNS. Rotating about a point `p` measured from the CENTRE is
+  // `T(p) · R · T(-p)`, so the FIRST translate carries p and it is NEGATIVE for
+  // a left-edge hinge. Get it backwards and the face pivots on its far edge —
+  // it swings clear of the book and flips in mid-air ("the page… completely
+  // disattach from the book and then flips"). Front hinges LEFT (−H first),
+  // back hinges RIGHT (+H first).
+  const front = anim.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '-180deg'] });
+  const back  = anim.interpolate({ inputRange: [0, 1], outputRange: ['180deg', '0deg'] });
+  const H = BK_W / 2;
+
+  return (
+    <Pressable onPress={onPress} onPressIn={onPressIn} onPressOut={onPressOut} hitSlop={16}>
+      <Animated.View style={{ transform: [{ scale: press }] }}>
+        <View style={bk.stage}>
+          {/* right half — hidden only while the cover lies flat on top of it */}
+          <Animated.View style={[bk.board, bk.boardRight, { opacity: boardOpacity }]}>
+            <View style={[bk.page, bk.pageRight]}>{rules(34, 40, 27)}</View>
+          </Animated.View>
+
+          {/* the cover, outside face — the N */}
+          <Animated.View
+            style={[bk.coverFront, {
+              opacity: frontOpacity,
+              transform: [{ perspective: 600 }, { translateX: -H }, { rotateY: front }, { translateX: H }],
+            }]}
+          >
+            {/* the spine edge of the shut book. It belongs to the COVER, not to
+                the board underneath: on the board it was gated by that board's
+                opacity step, so this 3.5px strip blinked into existence just
+                after the cover began to move and blinked out again just before
+                it landed — reported as a "tiny tribble" opening and as the side
+                "moving a bit in" when closing. Riding on the cover, it is simply
+                always there for as long as the cover is. */}
+            <View style={bk.binding} />
+            <View style={bk.coverInner} />
+            <Text style={bk.coverN}>N</Text>
+          </Animated.View>
+
+          {/* the same cover, inside face — the left page */}
+          <Animated.View
+            style={[bk.coverBack, {
+              opacity: backOpacity,
+              transform: [{ perspective: 600 }, { translateX: H }, { rotateY: back }, { translateX: -H }],
+            }]}
+          >
+            <View style={[bk.page, bk.pageLeft]}>{rules(30, 38, 33)}</View>
+          </Animated.View>
+        </View>
+      </Animated.View>
+    </Pressable>
+  );
+}
+
+const bk = StyleSheet.create({
+  stage: { width: BK_W * 2, height: BK_H },
+  board: {
+    position: 'absolute', top: 0, width: BK_W, height: BK_H,
+    backgroundColor: HEADER,
+  },
+  boardRight: {
+    left: BK_W,
+    borderTopRightRadius: 9, borderBottomRightRadius: 9,
+    borderTopLeftRadius: 1, borderBottomLeftRadius: 1,
+    // The only shadow in the book, and it is on the half that never rotates.
+    shadowColor: '#000', shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.18, shadowRadius: 9, elevation: 5,
+  },
+  // the binding edge, sitting entirely LEFT of the cover so it never overlaps it
+  binding: {
+    position: 'absolute', left: -3.5, top: 0, bottom: 0, width: 3.5,
+    backgroundColor: '#1f4539', borderTopLeftRadius: 2, borderBottomLeftRadius: 2,
+  },
+  // the paper, inset from the boards on all four sides — the cover overhangs it
+  // (hardback, not a flat card) and the 3.5 at the gutter is what draws the
+  // gutter itself, so no strip has to be laid across the middle
+  page: {
+    position: 'absolute', top: 4, bottom: 4,
+    backgroundColor: '#f6f5f0',
+    alignItems: 'center', justifyContent: 'center', gap: 7,
+  },
+  pageRight: { left: 3.5, right: 3, borderTopRightRadius: 5, borderBottomRightRadius: 5 },
+  pageLeft:  { right: 3.5, left: 3, borderTopLeftRadius: 5, borderBottomLeftRadius: 5 },
+  rule: { height: 2, borderRadius: 1, backgroundColor: 'rgba(36,78,67,0.11)' },
+
+  coverFront: {
+    position: 'absolute', top: 0, left: BK_W, width: BK_W, height: BK_H,
+    backgroundColor: HEADER,
+    borderTopRightRadius: 9, borderBottomRightRadius: 9,
+    borderTopLeftRadius: 1, borderBottomLeftRadius: 1,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  coverBack: {
+    position: 'absolute', top: 0, left: 0, width: BK_W, height: BK_H,
+    backgroundColor: HEADER,
+    borderTopLeftRadius: 9, borderBottomLeftRadius: 9,
+    borderTopRightRadius: 1, borderBottomRightRadius: 1,
+  },
+  coverInner: {
+    position: 'absolute', left: 7, right: 7, top: 7, bottom: 7,
+    borderRadius: 6, borderWidth: 1, borderColor: 'rgba(255,255,255,0.18)',
+  },
+  coverN: { fontSize: 42, fontWeight: '800', color: '#f0ece0', letterSpacing: 1 },
+});
 
 // ─── RecipeCard ───────────────────────────────────────────────────────────────
 
@@ -386,56 +574,106 @@ export default function FavouritesScreen() {
     if (isInsertMode && tabParam === 'days') setView('days');
   }, [isInsertMode, tabParam]);
 
-  // ── Hub heart: auto-bloom orbit (heart tap collapses/re-expands) ──
+  // ── The book: opens on landing, the five pages fly out of it ──
   const [hubOpen, setHubOpen] = useState(false);
-  const heartAnim = useRef(new Animated.Value(0)).current;
-  const orbAnims  = useRef(ORB_KEYS.map(() => new Animated.Value(0))).current;
+  const bookAnim = useRef(new Animated.Value(0)).current;
+  const orbAnims = useRef(ORB_KEYS.map(() => new Animated.Value(0))).current;
 
-  // Fixed pentagon orbit around a dead-center heart. Offsets are circle-center
-  // relative to the heart center; the fly-in delta is just the negated offset.
+  // Fixed pentagon around the book's gutter. Offsets are page-centre relative
+  // to the hub centre; the fly-in delta is just the negated offset — no
+  // runtime measurement. These numbers were tuned over six device rounds.
   const hubW  = Dimensions.get('window').width - 32;
   const hubCy = 240;
   const hubOrbit: Record<OrbKey, { x: number; y: number; w: number }> = useMemo(() => {
-    const sideX = Math.min(118, hubW / 2 - 62);
+    // Pushed out Aug 5 — the ring was clearing the open book by only 16pt at
+    // the sides and 9pt at the bottom. The side pair cannot simply move further
+    // out (their labels already reach the screen edge), so the labels were
+    // narrowed 124 → 112, which buys the extra x. Ring stays even: sides ~138pt
+    // from centre, bottom pair ~141. Tips is deliberately further out at 178 —
+    // it is alone at the top of the pentagon.
+    const sideX = Math.min(126, hubW / 2 - 58);
     return {
       reco:    { x: 0,      y: -178, w: 190 },
-      recipes: { x: -sideX, y: -52,  w: 124 },
-      meals:   { x: sideX,  y: -52,  w: 124 },
-      foods:   { x: -78,    y: 100,  w: 124 },
-      days:    { x: 78,     y: 100,  w: 124 },
+      recipes: { x: -sideX, y: -64,  w: 112 },
+      meals:   { x: sideX,  y: -64,  w: 112 },
+      foods:   { x: -86,    y: 112,  w: 112 },
+      days:    { x: 86,     y: 112,  w: 112 },
     };
   }, [hubW]);
   const orbPlacement = (k: OrbKey) => {
     const o = hubOrbit[k];
     return {
       left: hubW / 2 + o.x - o.w / 2,
-      top: hubCy + o.y - 44,
+      top: hubCy + o.y - ORB_H / 2,
       width: o.w,
       delta: { dx: -o.x, dy: -o.y },
+      spin: o.x < 0 ? -14 : o.x > 0 ? 14 : -8,
     };
   };
 
+  // The cover swings first, then the pages come out of it. Closing reverses —
+  // and the cover must not start until the pages are actually HOME, which is a
+  // longer wait than it looks: the last page only sets off after 4 staggers.
+  // Its own spring has to finish on top of that, so the cover waits ~380ms, not
+  // the ~170 it took to look wrong on device ("the book closes before the pages
+  // get in"). The pages also come back FASTER and with NO bounce — a page
+  // wobbling as it lands inside a shut book reads wrong, and every ms they save
+  // is a ms the cover isn't sitting open waiting for them.
   const animateHub = useCallback((to: 0 | 1) => {
     setHubOpen(to === 1);
-    Animated.spring(heartAnim, { toValue: to, useNativeDriver: true, speed: 20, bounciness: 6 }).start();
-    const springs = orbAnims.map(a =>
-      Animated.spring(a, { toValue: to, useNativeDriver: true, speed: 14, bounciness: 9 })
-    );
-    Animated.stagger(45, to === 1 ? springs : [...springs].reverse()).start();
-  }, [heartAnim, orbAnims]);
+    // A cover swing is TIMED, not sprung. A spring fast enough not to feel
+    // mushy swung the cover in ~450ms, which Vitek called "super fast" against
+    // the mock — a real cover takes closer to three quarters of a second. The
+    // bezier's y > 1 gives the slight overshoot at the end, so it still flops
+    // onto the page rather than stopping dead.
+    const book = Animated.timing(bookAnim, {
+      toValue: to,
+      duration: to === 1 ? 760 : 640,
+      // Opening keeps the y > 1 control point so the cover flops onto the page
+      // instead of stopping dead. CLOSING must not overshoot: past flat, the
+      // free edge tips away from the viewer and perspective pulls that side
+      // inward — a shut cover that shrinks a hair at the end.
+      easing: to === 1 ? Easing.bezier(0.34, 1.02, 0.44, 1) : Easing.bezier(0.42, 0, 0.25, 1),
+      useNativeDriver: true,
+    });
+    if (to === 1) {
+      // Timed, not sprung, and using the mock's own curve — Vitek: "i like how
+      // in the mock up you made it slows down and kind of settle down". The
+      // y > 1 control point is the settle: each page overshoots its spot a
+      // little and eases back rather than arriving and stopping.
+      const out = orbAnims.map(a =>
+        Animated.timing(a, {
+          toValue: 1,
+          duration: 820,
+          easing: Easing.bezier(0.2, 1.25, 0.4, 1),
+          useNativeDriver: true,
+        })
+      );
+      book.start();
+      // Pages emerge around the point the cover passes edge-on, so they read as
+      // coming out of a book that is already opening rather than out of a shut one.
+      Animated.sequence([Animated.delay(320), Animated.stagger(45, out)]).start();
+    } else {
+      const back = orbAnims.map(a =>
+        Animated.spring(a, { toValue: 0, useNativeDriver: true, speed: 20, bounciness: 0 })
+      );
+      Animated.stagger(38, [...back].reverse()).start();
+      Animated.sequence([Animated.delay(380), book]).start();
+    }
+  }, [bookAnim, orbAnims]);
 
   const toggleHub = () => animateHub(hubOpen ? 0 : 1);
 
-  // Auto-bloom: the orbit opens on its own when the tab lands — the heart tap
-  // only collapses/re-expands it. Blur resets to the lone heart so the next
-  // visit blooms again.
+  // Opens on its own when the tab lands; the tap only shuts/reopens it. Blur
+  // resets to the shut book — Library is a persistent native tab, so without
+  // the reset it would stay open forever and never open again.
   useFocusEffect(
     useCallback(() => {
       const t = setTimeout(() => animateHub(1), 180);
       return () => {
         clearTimeout(t);
         setHubOpen(false);
-        heartAnim.setValue(0);
+        bookAnim.setValue(0);
         orbAnims.forEach(a => a.setValue(0));
       };
     }, [animateHub])
@@ -794,14 +1032,14 @@ export default function FavouritesScreen() {
     view === 'meals'           ? 'Meals' :
     view === 'foods'           ? 'Foods' :
     view === 'days'            ? 'Days' :
-    view === 'recommendations' ? 'Recommendations' :
-    'Favourites';
+    view === 'recommendations' ? 'Tips' :
+    'Library';
 
   return (
     <View style={s.root}>
       <StatusBar barStyle="dark-content" />
 
-      {/* ── Landing: heart hub — the 5 folders bloom into orbit on landing; the heart toggles ── */}
+      {/* ── Landing: the book — it opens on landing, the five pages fly out ── */}
       {view === 'landing' && (
         <ScrollView
           contentInsetAdjustmentBehavior="never"
@@ -809,12 +1047,17 @@ export default function FavouritesScreen() {
           showsVerticalScrollIndicator={false}
         >
           <View style={{ height: 460 }}>
+            {/* The book is rendered FIRST so every page draws ABOVE it — a page
+                has to come out from between the leaves, not from behind. */}
+            <View style={{ position: 'absolute', left: hubW / 2 - BK_W, top: hubCy - BK_H / 2 }}>
+              <BookHub anim={bookAnim} onPress={toggleHub} />
+            </View>
             <HubOrb
-              title="Recommendations"
+              title="Tips"
               sub={recommLoading ? '—' : `${recommendations.length} ${recommendations.length === 1 ? 'item' : 'items'} · from your trainer`}
               circleColor={ORB_BG}
               iconColor={ORB_ICON}
-              symbolName="pills.fill"
+              symbolName="lightbulb.fill"
               onPress={() => setView('recommendations')}
               anim={orbAnims[0]}
               open={hubOpen}
@@ -825,7 +1068,7 @@ export default function FavouritesScreen() {
               sub={recipesLoading ? '—' : `${recipes.length} ${recipes.length === 1 ? 'recipe' : 'recipes'}`}
               circleColor={ORB_BG}
               iconColor={ORB_ICON}
-              symbolName="book.closed.fill"
+              symbolName="frying.pan.fill"
               onPress={() => setView('recipes')}
               anim={orbAnims[1]}
               open={hubOpen}
@@ -864,31 +1107,6 @@ export default function FavouritesScreen() {
               open={hubOpen}
               {...orbPlacement('days')}
             />
-            <Pressable
-              onPress={toggleHub}
-              hitSlop={12}
-              style={[hub.heartBtn, { position: 'absolute', left: hubW / 2 - 58, top: hubCy - 58 }]}
-            >
-              <Animated.View
-                style={[hub.heartLayer, {
-                  opacity: heartAnim.interpolate({ inputRange: [0, 1], outputRange: [1, 0] }),
-                  transform: [{ scale: heartAnim.interpolate({ inputRange: [0, 1], outputRange: [1, 0.92] }) }],
-                }]}
-              >
-                <SymbolView name="heart.fill" size={80} tintColor={ACCENT} />
-              </Animated.View>
-              <Animated.View
-                style={[hub.heartLayer, {
-                  opacity: heartAnim,
-                  transform: [{ scale: heartAnim.interpolate({ inputRange: [0, 1], outputRange: [0.92, 1] }) }],
-                }]}
-              >
-                <SymbolView name="heart.fill" size={80} tintColor={ORB_BG} />
-                <View style={hub.heartLayer}>
-                  <SymbolView name="heart" size={80} tintColor={HEADER} weight="light" />
-                </View>
-              </Animated.View>
-            </Pressable>
           </View>
         </ScrollView>
       )}

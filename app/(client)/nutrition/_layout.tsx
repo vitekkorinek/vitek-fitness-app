@@ -10,8 +10,8 @@ export default function NutritionLayout() {
         <Icon sf="fork.knife" />
       </NativeTabs.Trigger>
       <NativeTabs.Trigger name="favourites">
-        <Label>Favourites</Label>
-        <Icon sf={{ default: 'heart', selected: 'heart.fill' }} />
+        <Label>Library</Label>
+        <Icon sf={{ default: 'book.closed', selected: 'book.fill' }} />
       </NativeTabs.Trigger>
       <NativeTabs.Trigger name="weekly">
         <Label>Weekly</Label>
