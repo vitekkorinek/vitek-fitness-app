@@ -17,7 +17,6 @@ import { useCallback, useState } from 'react';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { SymbolView } from 'expo-symbols';
-import { LinearGradient } from 'expo-linear-gradient';
 import * as ImagePicker from 'expo-image-picker';
 import Swipeable from 'react-native-gesture-handler/Swipeable';
 import { useAuth } from '@/context/AuthContext';
@@ -35,6 +34,12 @@ const HEADER = '#244e43';
 const ACCENT = '#24ac88';
 const TEXT   = '#1a1a1a';
 const MUTED  = '#999';
+
+// No-photo cover = the same paper as the Library pages, with the icon as its
+// mark. Matches the recipe/meal cards in the Library so a photo-less recipe
+// looks the same wherever you meet it.
+const PAPER_BG   = '#e9efec';
+const PAPER_ICON = 'rgba(36,78,67,0.30)';
 const CORAL  = '#e05555';
 
 function makeUUID(): string {
@@ -323,9 +328,9 @@ export default function MealEditorScreen() {
             {meal.cover_photo_url ? (
               <Image source={{ uri: meal.cover_photo_url }} style={StyleSheet.absoluteFill} resizeMode="cover" />
             ) : (
-              <LinearGradient colors={['#2e4288', '#1d2d6a']} style={[StyleSheet.absoluteFill, { alignItems: 'center', justifyContent: 'center' }]}>
-                <SymbolView name="fork.knife" size={48} tintColor="rgba(255,255,255,0.45)" />
-              </LinearGradient>
+              <View style={[StyleSheet.absoluteFill, { backgroundColor: PAPER_BG, alignItems: 'center', justifyContent: 'center' }]}>
+                <SymbolView name="fork.knife" size={48} tintColor={PAPER_ICON} />
+              </View>
             )}
             <View style={s.cameraBadge}>
               {uploadingCover

@@ -239,7 +239,7 @@ function HubOrb({
         <Pressable onPress={onPress} onPressIn={onPressIn} onPressOut={onPressOut} style={[hub.item, width != null && { width }]}>
           <View style={[hub.page, { backgroundColor: circleColor }]}>
             <View style={hub.pageRule} />
-            <SymbolView name={symbolName} size={32} tintColor={iconColor} />
+            <SymbolView name={symbolName} size={34} tintColor={iconColor} />
           </View>
           <Text style={hub.label} numberOfLines={1}>{title}</Text>
           <Text style={hub.count} numberOfLines={1}>{sub}</Text>
@@ -249,8 +249,11 @@ function HubOrb({
   );
 }
 
-const ORB_W = 72;
-const ORB_H = 88;
+// The badges grew and the book shrank in the same round (Aug 5) — the labels
+// went from one word to two ("Your Meals"), so the pages needed the presence to
+// carry them and the book needed to give the room back.
+const ORB_W = 78;
+const ORB_H = 94;
 
 const hub = StyleSheet.create({
   item: { alignItems: 'center', width: 124 },
@@ -261,7 +264,7 @@ const hub = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center',
     shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 4, elevation: 2,
   },
-  pageRule: { position: 'absolute', left: 9, top: 13, bottom: 13, width: 1.5, borderRadius: 1, backgroundColor: 'rgba(36,78,67,0.13)' },
+  pageRule: { position: 'absolute', left: 10, top: 14, bottom: 14, width: 1.5, borderRadius: 1, backgroundColor: 'rgba(36,78,67,0.13)' },
   label: { fontSize: 14, fontWeight: '600', color: TEXT, marginTop: 9 },
   count: { fontSize: 12, color: MUTED, marginTop: 1 },
 });
@@ -273,6 +276,13 @@ type OrbKey = typeof ORB_KEYS[number];
 // "colourful circles" language in the Food Log; navigation stays green.
 const ORB_BG   = '#e9efec';
 const ORB_ICON = HEADER;
+
+// A recipe/meal with no photo falls back to the SAME paper as the library
+// pages, with its own icon as the watermark — so a photo-less card reads as a
+// page out of the book rather than as a coloured tile. Replaced the amber and
+// navy washes (which were themselves the light-wash fix for the dark ones).
+export const PAPER_MARK = 'rgba(36,78,67,0.16)';
+export const PAPER_SUB  = 'rgba(36,78,67,0.52)';
 
 // ─── BookHub — a hardback that opens the way a hardback opens ────────────────
 // ⚠️ Read this before changing anything here. Three earlier versions were
@@ -300,8 +310,8 @@ const ORB_ICON = HEADER;
 //
 // So it opens right→left and shuts left→right — a normal book — and the open
 // spread is centred on the spine, which is the hub centre.
-const BK_W = 66;   // one half
-const BK_H = 94;
+const BK_W = 62;   // one half
+const BK_H = 88;
 
 function BookHub({ anim, onPress }: { anim: Animated.Value; onPress: () => void }) {
   const press = useRef(new Animated.Value(1)).current;
@@ -418,9 +428,11 @@ const bk = StyleSheet.create({
   // the paper, inset from the boards on all four sides — the cover overhangs it
   // (hardback, not a flat card) and the 3.5 at the gutter is what draws the
   // gutter itself, so no strip has to be laid across the middle
+  // Same paper as the badges (ORB_BG) — the pages that fly out are literally
+  // the pages you were just looking at.
   page: {
     position: 'absolute', top: 4, bottom: 4,
-    backgroundColor: '#f6f5f0',
+    backgroundColor: ORB_BG,
     alignItems: 'center', justifyContent: 'center', gap: 7,
   },
   pageRight: { left: 3.5, right: 3, borderTopRightRadius: 5, borderBottomRightRadius: 5 },
@@ -444,7 +456,7 @@ const bk = StyleSheet.create({
     position: 'absolute', left: 7, right: 7, top: 7, bottom: 7,
     borderRadius: 6, borderWidth: 1, borderColor: 'rgba(255,255,255,0.18)',
   },
-  coverN: { fontSize: 42, fontWeight: '800', color: '#f0ece0', letterSpacing: 1 },
+  coverN: { fontSize: 40, fontWeight: '800', color: '#f0ece0', letterSpacing: 1 },
 });
 
 // ─── RecipeCard ───────────────────────────────────────────────────────────────
@@ -461,13 +473,9 @@ function RecipeCard({ recipe, onPress }: { recipe: Recipe; onPress: () => void }
         </>
       ) : (
         <>
-          <LinearGradient
-            colors={['#f9f1e0', '#f3e3c2', '#ecd3a2']}
-            start={{ x: 0.3, y: 0 }} end={{ x: 0.7, y: 1 }}
-            style={rc.cover}
-          />
+          <View style={[rc.cover, rc.paper]} />
           <View style={rc.watermark}>
-            <SymbolView name="book.closed.fill" size={72} tintColor="rgba(176,102,20,0.15)" />
+            <SymbolView name="frying.pan.fill" size={72} tintColor={PAPER_MARK} />
           </View>
         </>
       )}
@@ -476,7 +484,7 @@ function RecipeCard({ recipe, onPress }: { recipe: Recipe; onPress: () => void }
           style={[
             rc.name,
             !recipe.cover_photo_url && rc.nameOnLight,
-            !recipe.name.trim() && { fontStyle: 'italic', color: recipe.cover_photo_url ? 'rgba(255,255,255,0.7)' : '#a1701f' },
+            !recipe.name.trim() && { fontStyle: 'italic', color: recipe.cover_photo_url ? 'rgba(255,255,255,0.7)' : PAPER_SUB },
           ]}
           numberOfLines={2}
         >
@@ -506,8 +514,9 @@ const rc = StyleSheet.create({
   info:     { position: 'absolute', bottom: 0, left: 0, right: 0, padding: 12 },
   name:     { fontSize: 14, fontWeight: '700', color: '#fff', lineHeight: 18 },
   sub:      { fontSize: 10, color: 'rgba(255,255,255,0.65)', marginTop: 3 },
-  nameOnLight: { color: '#6b3f0b' },
-  subOnLight:  { color: '#a1701f' },
+  paper:       { backgroundColor: ORB_BG },
+  nameOnLight: { color: HEADER },
+  subOnLight:  { color: PAPER_SUB },
   badge:    { position: 'absolute', top: 8, right: 8, backgroundColor: 'rgba(0,0,0,0.35)', borderRadius: 10, padding: 4 },
 });
 
@@ -1053,8 +1062,8 @@ export default function FavouritesScreen() {
               <BookHub anim={bookAnim} onPress={toggleHub} />
             </View>
             <HubOrb
-              title="Tips"
-              sub={recommLoading ? '—' : `${recommendations.length} ${recommendations.length === 1 ? 'item' : 'items'} · from your trainer`}
+              title="Vitek's Tips"
+              sub={recommLoading ? '—' : `${recommendations.length} ${recommendations.length === 1 ? 'item' : 'items'}`}
               circleColor={ORB_BG}
               iconColor={ORB_ICON}
               symbolName="lightbulb.fill"
@@ -1075,7 +1084,7 @@ export default function FavouritesScreen() {
               {...orbPlacement('recipes')}
             />
             <HubOrb
-              title="Meals"
+              title="Saved Meals"
               sub={mealsLoading ? '—' : `${meals.length} ${meals.length === 1 ? 'meal' : 'meals'}`}
               circleColor={ORB_BG}
               iconColor={ORB_ICON}
@@ -1086,7 +1095,7 @@ export default function FavouritesScreen() {
               {...orbPlacement('meals')}
             />
             <HubOrb
-              title="Foods"
+              title="Saved Foods"
               sub={favFoodsLoading ? '—' : `${favFoods.length} ${favFoods.length === 1 ? 'food' : 'foods'}`}
               circleColor={ORB_BG}
               iconColor={ORB_ICON}
@@ -1097,7 +1106,7 @@ export default function FavouritesScreen() {
               {...orbPlacement('foods')}
             />
             <HubOrb
-              title="Days"
+              title="Saved Days"
               sub={daysLoading ? '—' : `${days.length} ${days.length === 1 ? 'day' : 'days'}`}
               circleColor={ORB_BG}
               iconColor={ORB_ICON}
@@ -1265,13 +1274,9 @@ export default function FavouritesScreen() {
                           </>
                         ) : (
                           <>
-                            <LinearGradient
-                              colors={['#f2f4fb', '#e4e9f7', '#d5dcf1']}
-                              start={{ x: 0.3, y: 0 }} end={{ x: 0.7, y: 1 }}
-                              style={mc.cover}
-                            />
+                            <View style={[mc.cover, mc.paper]} />
                             <View style={mc.watermark}>
-                              <SymbolView name="fork.knife" size={72} tintColor="rgba(51,73,154,0.14)" />
+                              <SymbolView name="fork.knife" size={72} tintColor={PAPER_MARK} />
                             </View>
                           </>
                         )}
@@ -1280,7 +1285,7 @@ export default function FavouritesScreen() {
                             style={[
                               mc.name,
                               !meal.cover_photo_url && mc.nameOnLight,
-                              !meal.name.trim() && { fontStyle: 'italic', color: meal.cover_photo_url ? 'rgba(255,255,255,0.7)' : '#5a6693' },
+                              !meal.name.trim() && { fontStyle: 'italic', color: meal.cover_photo_url ? 'rgba(255,255,255,0.7)' : PAPER_SUB },
                             ]}
                             numberOfLines={1}
                           >
@@ -1971,8 +1976,9 @@ const mc = StyleSheet.create({
   info:       { position: 'absolute', bottom: 0, left: 0, right: 0, padding: 12 },
   name:       { fontSize: 14, fontWeight: '700', color: '#fff', lineHeight: 18 },
   sub:        { fontSize: 10, color: 'rgba(255,255,255,0.7)', marginTop: 3 },
-  nameOnLight: { color: '#1a2650' },
-  subOnLight:  { color: '#5a6693' },
+  paper:       { backgroundColor: ORB_BG },
+  nameOnLight: { color: HEADER },
+  subOnLight:  { color: PAPER_SUB },
   swipeDelete:     { width: 84, backgroundColor: '#e05555', alignItems: 'center', justifyContent: 'center', gap: 4, borderRadius: 14, marginLeft: 8 },
   swipeDeleteText: { fontSize: 11, fontWeight: '700', color: '#fff' },
 });

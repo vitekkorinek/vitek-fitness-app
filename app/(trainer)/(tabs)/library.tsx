@@ -465,6 +465,14 @@ export default function LibraryScreen() {
 // ─── LibraryNutritionTab ──────────────────────────────────────────────────────
 
 const AMBER = '#f5a623';
+
+// A recipe with no photo falls back to the Library page paper + its own icon —
+// the same treatment as the CLIENT's recipe cards and editors, so a recipe you
+// wrote looks the same on both sides of the app.
+const PAPER_BG   = '#e9efec';
+const PAPER_MARK = 'rgba(36,78,67,0.16)';
+const PAPER_SUB  = 'rgba(36,78,67,0.52)';
+const PAPER_ICON = 'rgba(36,78,67,0.30)';
 const CORAL = '#e05555';
 
 const DAILY_TIPS_LIB = [
@@ -1425,14 +1433,9 @@ function RecipesTab({
                   resizeMode="cover"
                 />
               ) : (
-                <LinearGradient
-                  colors={['#1a5c4a', '#24ac88']}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 1 }}
-                  style={recStyles.detailCoverGrad}
-                >
-                  <Text style={recStyles.detailCoverEmoji}>🍽</Text>
-                </LinearGradient>
+                <View style={[recStyles.detailCoverGrad, { backgroundColor: PAPER_BG }]}>
+                  <SymbolView name={'frying.pan.fill' as any} size={48} tintColor={PAPER_ICON} />
+                </View>
               )}
 
               <ScrollView style={[recStyles.detailBody, { maxHeight: 420 }]} showsVerticalScrollIndicator={false}>
@@ -1543,33 +1546,37 @@ function RecipeCard({ recipe, isOwn, onPress }: { recipe: Recipe; isOwn: boolean
   return (
     <TouchableOpacity style={recStyles.card} onPress={onPress} activeOpacity={0.92}>
       {recipe.cover_photo_url ? (
-        <Image source={{ uri: recipe.cover_photo_url }} style={StyleSheet.absoluteFill} resizeMode="cover" />
+        <>
+          <Image source={{ uri: recipe.cover_photo_url }} style={StyleSheet.absoluteFill} resizeMode="cover" />
+          {/* the scrim exists to make white text legible on a photo — over the
+              paper fallback it would only dirty it, so it is photo-only */}
+          <LinearGradient
+            colors={['transparent', 'rgba(0,0,0,0.55)']}
+            start={{ x: 0.5, y: 0 }}
+            end={{ x: 0.5, y: 1 }}
+            style={StyleSheet.absoluteFill}
+            pointerEvents="none"
+          />
+        </>
       ) : (
-        <LinearGradient
-          colors={['#1a5c4a', '#24ac88']}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={StyleSheet.absoluteFill}
-        />
+        <>
+          <View style={[StyleSheet.absoluteFill, { backgroundColor: PAPER_BG }]} />
+          <View style={recStyles.paperMark}>
+            <SymbolView name={'frying.pan.fill' as any} size={72} tintColor={PAPER_MARK} />
+          </View>
+        </>
       )}
-      <LinearGradient
-        colors={['transparent', 'rgba(0,0,0,0.55)']}
-        start={{ x: 0.5, y: 0 }}
-        end={{ x: 0.5, y: 1 }}
-        style={StyleSheet.absoluteFill}
-        pointerEvents="none"
-      />
       {/* Source badge */}
       <View style={recStyles.sourceBadge}>
         <SymbolView
           name={isOwn ? ('person.badge.checkmark' as any) : ('person.fill' as any)}
           size={13}
-          tintColor={isOwn ? AMBER : 'rgba(255,255,255,0.55)'}
+          tintColor={isOwn ? AMBER : (recipe.cover_photo_url ? 'rgba(255,255,255,0.55)' : PAPER_SUB)}
         />
       </View>
       <View style={recStyles.cardBottom}>
-        <Text style={recStyles.cardName} numberOfLines={1}>{recipe.name}</Text>
-        <Text style={recStyles.cardSub}>{recipe.portions} {recipe.portions === 1 ? 'portion' : 'portions'}</Text>
+        <Text style={[recStyles.cardName, !recipe.cover_photo_url && recStyles.inkName]} numberOfLines={1}>{recipe.name}</Text>
+        <Text style={[recStyles.cardSub, !recipe.cover_photo_url && recStyles.inkSub]}>{recipe.portions} {recipe.portions === 1 ? 'portion' : 'portions'}</Text>
       </View>
     </TouchableOpacity>
   );
@@ -2943,6 +2950,9 @@ const recStyles = StyleSheet.create({
   },
   cardName: { fontSize: 14, fontWeight: '600', color: '#fff' },
   cardSub: { fontSize: 10, color: 'rgba(255,255,255,0.7)', marginTop: 2 },
+  paperMark: { position: 'absolute', right: -4, bottom: -10 },
+  inkName:   { color: HEADER },
+  inkSub:    { color: PAPER_SUB },
 
   detailSheet: {
     backgroundColor: CARD, borderRadius: 16, overflow: 'hidden',

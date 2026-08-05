@@ -14,7 +14,6 @@ import { useCallback, useMemo, useState } from 'react';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { SymbolView } from 'expo-symbols';
-import { LinearGradient } from 'expo-linear-gradient';
 import { useAuth } from '@/context/AuthContext';
 import { supabase } from '@/lib/supabase';
 import { VFIcon } from '@/components/VFIcon';
@@ -29,6 +28,12 @@ const HEADER = '#244e43';
 const ACCENT = '#24ac88';
 const TEXT   = '#1a1a1a';
 const MUTED  = '#999';
+
+// No-photo cover = the same paper as the Library pages, with the icon as its
+// mark. Matches the recipe/meal cards in the Library so a photo-less recipe
+// looks the same wherever you meet it.
+const PAPER_BG   = '#e9efec';
+const PAPER_ICON = 'rgba(36,78,67,0.30)';
 const CORAL  = '#e05555';
 
 interface Ingredient {
@@ -183,9 +188,9 @@ export default function RecipeDetailScreen() {
             {recipe.cover_photo_url ? (
               <Image source={{ uri: recipe.cover_photo_url }} style={StyleSheet.absoluteFill} resizeMode="cover" />
             ) : (
-              <LinearGradient colors={['#d4841e', '#8a4e0e']} style={[StyleSheet.absoluteFill, { alignItems: 'center', justifyContent: 'center' }]}>
-                <SymbolView name="book.closed.fill" size={44} tintColor="rgba(255,255,255,0.45)" />
-              </LinearGradient>
+              <View style={[StyleSheet.absoluteFill, { backgroundColor: PAPER_BG, alignItems: 'center', justifyContent: 'center' }]}>
+                <SymbolView name="frying.pan.fill" size={44} tintColor={PAPER_ICON} />
+              </View>
             )}
           </View>
 
