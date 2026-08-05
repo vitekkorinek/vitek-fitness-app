@@ -26,6 +26,7 @@ import { useTabBarHeight } from '@/components/FloatingTabBar';
 import { SymbolView } from 'expo-symbols';
 import { BottomSheet } from '@/components/BottomSheet';
 import GlassPanel from '@/components/GlassPanel';
+import { APP_ICON_OPTIONS, appIconLabel, appIconsSupported, currentAppIcon, setAppIcon, type AppIconKey } from '@/lib/appIcons';
 import { useCardVariant, CARD_VARIANTS, isCoverDark, isFooterDark, type CoverCardVariant } from '@/lib/cardVariant';
 import { DARK_CARD_FOOTER, DARK_CARD_GRADIENT } from '@/components/WorkoutPaperCover';
 import { nameInitial } from '@/lib/utils';
@@ -134,6 +135,15 @@ export default function AccountScreen() {
   const [cardStyleOpen, setCardStyleOpen] = useState(false);
   const cardVariant    = useCardVariant(s => s.variant);
   const setCardVariant = useCardVariant(s => s.setVariant);
+
+  // App icon (lib/appIcons.ts — iOS stores the selection; row hidden on builds
+  // without the native module)
+  const [appIconOpen, setAppIconOpen] = useState(false);
+  const [appIcon, setAppIconState]    = useState<AppIconKey>(() => currentAppIcon());
+  const pickAppIcon = (key: AppIconKey) => {
+    setAppIconState(key); // optimistic — iOS shows its own system alert
+    void setAppIcon(key).then(() => setAppIconState(currentAppIcon()));
+  };
 
   // Banner photo state — saved to users table, not trainer_settings
   const [bannerPhotoUrl, setBannerPhotoUrl] = useState('');
@@ -517,6 +527,13 @@ export default function AccountScreen() {
               value={CARD_STYLE_LABELS[cardVariant]}
               onPress={() => setCardStyleOpen(true)}
             />
+            {appIconsSupported && (
+              <BizRow
+                label={t.appIcon.row}
+                value={appIconLabel(appIcon)}
+                onPress={() => setAppIconOpen(true)}
+              />
+            )}
           </View>
 
           {/* Business Details */}
@@ -871,6 +888,30 @@ export default function AccountScreen() {
         </BottomSheet>
       )}
 
+      {/* ── App icon sheet (mirrors the client Me tab picker) ─────────── */}
+      {appIconOpen && (
+        <BottomSheet onClose={() => setAppIconOpen(false)}>
+          {close => (
+            <View style={{ paddingHorizontal: 20, paddingBottom: 4, gap: 12, alignItems: 'stretch' }}>
+              <Text style={[modalStyles.title, { textAlign: 'center' }]}>{t.appIcon.row}</Text>
+              <Text style={cardStyleSt.sub}>{t.appIcon.sub}</Text>
+              {APP_ICON_OPTIONS.map(o => (
+                <TouchableOpacity
+                  key={o.key ?? 'default'}
+                  style={[cardStyleSt.option, appIcon === o.key && cardStyleSt.optionActive]}
+                  onPress={() => close(() => pickAppIcon(o.key))}
+                  activeOpacity={0.85}
+                >
+                  <Image source={o.preview} style={appIconSt.preview} />
+                  <Text style={[cardStyleSt.optionLabel, appIcon === o.key && cardStyleSt.optionLabelActive]}>{o.label}</Text>
+                  {appIcon === o.key && <SymbolView name="checkmark" size={15} tintColor="#24ac88" weight="semibold" />}
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
+        </BottomSheet>
+      )}
+
       {/* Solid light header (rendered last so it overlays the content) */}
       <LightHeader solid left={<TrainerLogoButton light />} title={t.account.title} />
     </View>
@@ -1112,6 +1153,14 @@ const cardStyleSt = StyleSheet.create({
   swatchFooterLight: { backgroundColor: '#fff' },
   swatchName:        { width: 18, height: 3, borderRadius: 2, backgroundColor: 'rgba(0,0,0,0.72)' },
   swatchNameOnDark:  { backgroundColor: 'rgba(255,255,255,0.85)' },
+});
+
+const appIconSt = StyleSheet.create({
+  // 22.4% corner radius = the real iOS icon squircle proportion.
+  preview: {
+    width: 44, height: 44, borderRadius: 10,
+    borderWidth: 1, borderColor: 'rgba(0,0,0,0.10)',
+  },
 });
 
 const modalStyles = StyleSheet.create({

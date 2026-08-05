@@ -72,6 +72,27 @@
         {
           "cameraPermission": "Allow Vitek Fitness to use the camera to scan food barcodes."
         }
+      ],
+      [
+        "expo-alternate-app-icons",
+        [
+          {
+            "name": "Dark",
+            "ios": "./assets/app-icons/icon-dark.png"
+          },
+          {
+            "name": "Bright",
+            "ios": "./assets/app-icons/icon-bright.png"
+          },
+          {
+            "name": "Shadow",
+            "ios": "./assets/app-icons/icon-shadow.png"
+          },
+          {
+            "name": "Mint",
+            "ios": "./assets/app-icons/icon-mint.png"
+          }
+        ]
       ]
     ],
     "experiments": {

@@ -755,6 +755,16 @@ const en = {
     signOutFailed: "Couldn't sign out — check your connection and try again.",
     ok: 'OK',
   },
+
+  appIcon: {
+    row: 'App icon',
+    sub: 'How the app looks on your home screen',
+    classic: 'Classic',
+    dark: 'Dark',
+    bright: 'Bright green',
+    shadow: 'Shadow',
+    mint: 'Mint',
+  },
 } as const;
 
 export default en;

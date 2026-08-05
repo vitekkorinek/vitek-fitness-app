@@ -25,6 +25,7 @@ import { BottomSheet } from '@/components/BottomSheet';
 import GlassPanel from '@/components/GlassPanel';
 import { useHeaderHeight } from '@/components/LightHeader';
 import { useTabBarHeight } from '@/components/FloatingTabBar';
+import { APP_ICON_OPTIONS, appIconLabel, appIconsSupported, currentAppIcon, setAppIcon, type AppIconKey } from '@/lib/appIcons';
 import { useCardVariant, CARD_VARIANTS, isCoverDark, isFooterDark, type CoverCardVariant } from '@/lib/cardVariant';
 import { DARK_CARD_FOOTER, DARK_CARD_GRADIENT } from '@/components/WorkoutPaperCover';
 import t from '@/i18n/en';
@@ -130,6 +131,15 @@ export default function MeScreen() {
   const cardVariant    = useCardVariant(s => s.variant);
   const setCardVariant = useCardVariant(s => s.setVariant);
   const [cardStyleOpen, setCardStyleOpen] = useState(false);
+
+  // App icon (lib/appIcons.ts — iOS stores the selection; row hidden on builds
+  // without the native module)
+  const [appIconOpen, setAppIconOpen] = useState(false);
+  const [appIcon, setAppIconState]    = useState<AppIconKey>(() => currentAppIcon());
+  const pickAppIcon = (key: AppIconKey) => {
+    setAppIconState(key); // optimistic — iOS shows its own system alert
+    void setAppIcon(key).then(() => setAppIconState(currentAppIcon()));
+  };
 
   // Sync profile fields when profile loads/refreshes
   useEffect(() => {
@@ -536,6 +546,16 @@ export default function MeScreen() {
             value={CARD_STYLE_LABELS[cardVariant]}
             onPress={() => setCardStyleOpen(true)}
           />
+          {appIconsSupported && (
+            <>
+              <View style={styles.sep} />
+              <EditableRow
+                label={t.appIcon.row}
+                value={appIconLabel(appIcon)}
+                onPress={() => setAppIconOpen(true)}
+              />
+            </>
+          )}
         </View>
 
         {/* ── Account ────────────────────────────────────────────────── */}
@@ -664,6 +684,30 @@ export default function MeScreen() {
                   </View>
                   <Text style={[cardStyleSt.optionLabel, cardVariant === v && cardStyleSt.optionLabelActive]}>{CARD_STYLE_LABELS[v]}</Text>
                   {cardVariant === v && <SymbolView name="checkmark" size={15} tintColor={ACCENT} weight="semibold" />}
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
+        </BottomSheet>
+      )}
+
+      {/* ── App icon sheet ───────────────────────────────────────────── */}
+      {appIconOpen && (
+        <BottomSheet onClose={() => setAppIconOpen(false)}>
+          {close => (
+            <View style={{ paddingHorizontal: 20, paddingBottom: 4, gap: 12, alignItems: 'stretch' }}>
+              <Text style={[modal.title, { textAlign: 'center' }]}>{t.appIcon.row}</Text>
+              <Text style={cardStyleSt.sub}>{t.appIcon.sub}</Text>
+              {APP_ICON_OPTIONS.map(o => (
+                <TouchableOpacity
+                  key={o.key ?? 'default'}
+                  style={[cardStyleSt.option, appIcon === o.key && cardStyleSt.optionActive]}
+                  onPress={() => close(() => pickAppIcon(o.key))}
+                  activeOpacity={0.85}
+                >
+                  <Image source={o.preview} style={appIconSt.preview} />
+                  <Text style={[cardStyleSt.optionLabel, appIcon === o.key && cardStyleSt.optionLabelActive]}>{o.label}</Text>
+                  {appIcon === o.key && <SymbolView name="checkmark" size={15} tintColor={ACCENT} weight="semibold" />}
                 </TouchableOpacity>
               ))}
             </View>
@@ -941,4 +985,12 @@ const cardStyleSt = StyleSheet.create({
   swatchFooterLight: { backgroundColor: '#fff' },
   swatchName:        { width: 18, height: 3, borderRadius: 2, backgroundColor: 'rgba(0,0,0,0.72)' },
   swatchNameOnDark:  { backgroundColor: 'rgba(255,255,255,0.85)' },
+});
+
+const appIconSt = StyleSheet.create({
+  // 22.4% corner radius = the real iOS icon squircle proportion.
+  preview: {
+    width: 44, height: 44, borderRadius: 10,
+    borderWidth: 1, borderColor: 'rgba(0,0,0,0.10)',
+  },
 });
