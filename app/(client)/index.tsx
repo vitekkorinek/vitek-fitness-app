@@ -374,9 +374,13 @@ export default function HomeScreen() {
                     <View style={styles.tileContent}>
                       <View>
                         <Text style={styles.tileTitle}>Training</Text>
+                        {/* Same order as the tab bar itself — Training · Progress ·
+                            Appointments · Me. The bullets are a map of that bar, so
+                            they have to read in the same order or the tile teaches
+                            the wrong one. */}
                         <BulletRow label="Workouts & Routines" onPress={() => router.push('/(client)/(tabs)/train' as any)} />
-                        <BulletRow label="Appointments"        onPress={() => router.push('/(client)/(tabs)/schedule' as any)} />
                         <BulletRow label="Progress"            onPress={() => router.push('/(client)/(tabs)/progress' as any)} />
+                        <BulletRow label="Appointments"        onPress={() => router.push('/(client)/(tabs)/schedule' as any)} />
                         <BulletRow label="Me"                  onPress={() => router.push('/(client)/(tabs)/me' as any)} />
                       </View>
                       <SymbolView name="arrow.right" size={13} tintColor="rgba(255,255,255,0.4)" weight="medium" />

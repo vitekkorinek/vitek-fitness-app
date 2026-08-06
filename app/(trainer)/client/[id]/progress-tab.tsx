@@ -568,7 +568,9 @@ function ZoneBarCard({ title, currentValue, goalValue, segs, data, unit, clientI
 
 // ─── Plain Graph Card (no zone bands) ─────────────────────────────────────────
 
-function PlainGraphCard({ title, data, unit, hint }: { title: string; data: MeasPoint[]; unit: string; hint?: string }) {
+// Exported for the client Progress hub's Measurements folder — one graph card
+// implementation, so a tape site and a body-composition metric plot identically.
+export function PlainGraphCard({ title, data, unit, hint }: { title: string; data: MeasPoint[]; unit: string; hint?: string }) {
   const [range, setRange] = useState<MeasTimeRange>('all');
   const timeRanges: MeasTimeRange[] = ['1M', '3M', '6M', '1Y', 'all'];
   const rangeLabel: Record<MeasTimeRange, string> = {
@@ -594,7 +596,7 @@ function PlainGraphCard({ title, data, unit, hint }: { title: string; data: Meas
 
 // ─── Measurement Line Graph ────────────────────────────────────────────────────
 
-type MeasPoint = { date: string; value: number };
+export type MeasPoint = { date: string; value: number };
 
 function MeasurementGraph({
   data,
@@ -2330,16 +2332,24 @@ const str = StyleSheet.create({
 
 // ─── Progress Tab (main export) ───────────────────────────────────────────────
 
+export type ProgressSubTab = 'measurements' | 'strength';
+
 export default function ProgressTab({
   clientId,
   client,
   variant,
+  embeddedTab,
 }: {
   clientId: string;
   client: User | null;
   variant?: 'client' | 'glass';
+  /** Render ONE sub-tab with no tab bar at all. The client Progress hub opens each
+   *  folder as its own screen, so the switcher belongs to the hub's pentagon, not
+   *  inside the content. `'measurements'` IS Body composition — see the naming note
+   *  on MeasurementsSubTab. */
+  embeddedTab?: ProgressSubTab;
 }) {
-  type SubTab = 'measurements' | 'strength';
+  type SubTab = ProgressSubTab;
   const [subTab, setSubTab] = useState<SubTab>('measurements');
   // A sub-tab is mounted the first time it is opened and then stays mounted (hidden via
   // `display:'none'`), so switching costs nothing. Conditionally rendering them UNMOUNTED both
@@ -2352,6 +2362,13 @@ export default function ProgressTab({
     setSubTab(tab);
     setMounted(m => (m.includes(tab) ? m : [...m, tab]));
   }, []);
+
+  // Hub mode: one folder, no switcher. Mounted directly so it owns the screen.
+  if (embeddedTab) {
+    return embeddedTab === 'strength'
+      ? <StrengthSubTab clientId={clientId} active />
+      : <MeasurementsSubTab clientId={clientId} client={client} active />;
+  }
 
   return (
     <View>

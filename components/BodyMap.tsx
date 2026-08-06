@@ -64,11 +64,16 @@ function bandRect(
   return { x: x0 + band.from * w, y: y0 - 2, width: (band.to - band.from) * w, height: h + 4 };
 }
 
-export default function BodyMap({ side, scale, regions, colors = DEFAULT_COLORS }: {
+export default function BodyMap({ side, scale, regions, colors = DEFAULT_COLORS, baseFill }: {
   side: 'front' | 'back';
   scale: number;
   regions: BodyRegion[];
   colors?: [string, string];
+  /** Override the whole base body with one flat colour (face included), instead of
+   *  the two-tone SOFT_FILL. Used by the Progress landing, which stacks a second,
+   *  accent-filled copy of the body under a moving window to light the strip the
+   *  scan line is crossing. Leave unset for the normal body. */
+  baseFill?: string;
 }) {
   const uid = useId().replace(/[^a-zA-Z0-9]/g, '');
   const parts: BodyMapPart[] = side === 'front' ? BODY_FRONT : BODY_BACK;
@@ -110,7 +115,7 @@ export default function BodyMap({ side, scale, regions, colors = DEFAULT_COLORS 
       <G>
         {parts.map(part =>
           part.paths.map((path, i) => (
-            <Path key={`${part.slug}-${i}`} d={path.d} fill={SOFT_FILL[part.color] ?? part.color} />
+            <Path key={`${part.slug}-${i}`} d={path.d} fill={baseFill ?? SOFT_FILL[part.color] ?? part.color} />
           ))
         )}
       </G>

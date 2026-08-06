@@ -20,7 +20,11 @@ const MUTED  = '#999';
 
 // Routes inside the tab group that render their own header (so the shared
 // glass header must NOT overlay them).
-const NO_SHARED_HEADER = new Set(['all-workouts', 'all-routines']);
+// `progress` is here because it is a HUB: its header title changes with the open
+// folder and its back chevron returns to the landing, neither of which the shared
+// header can know. It renders its own LightHeader (which falls back to the default
+// session/rest chips, so nothing is lost by opting out).
+const NO_SHARED_HEADER = new Set(['all-workouts', 'all-routines', 'progress']);
 
 const TITLE_MAP: Record<string, string> = {
   overview: 'Overview',
@@ -206,13 +210,16 @@ export default function ClientTabsLayout() {
           <Label>Training</Label>
           <Icon sf={{ default: 'bolt', selected: 'bolt.fill' }} />
         </NativeTabs.Trigger>
-        <NativeTabs.Trigger name="schedule">
-          <Label>Appointments</Label>
-          <Icon sf="calendar" />
-        </NativeTabs.Trigger>
+        {/* Progress sits SECOND, mirroring the nutrition tabs where the Library
+            (the other animated landing) is second. Order: Training · Progress ·
+            Appointments · Me. */}
         <NativeTabs.Trigger name="progress">
           <Label>Progress</Label>
           <Icon sf={{ default: 'chart.line.uptrend.xyaxis', selected: 'chart.line.uptrend.xyaxis.circle.fill' }} />
+        </NativeTabs.Trigger>
+        <NativeTabs.Trigger name="schedule">
+          <Label>Appointments</Label>
+          <Icon sf="calendar" />
         </NativeTabs.Trigger>
         <NativeTabs.Trigger name="me">
           <Label>Me</Label>
