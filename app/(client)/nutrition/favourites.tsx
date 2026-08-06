@@ -1914,7 +1914,7 @@ const s = StyleSheet.create({
   recommTabText:      { fontSize: 20, fontWeight: '500', color: '#bbb' },
   recommTabTextActive:{ color: TEXT, fontWeight: '600' },
   // Tile grid — two per line, title only, no chevron (each tile opens a popup, not a screen).
-  recommGrid:     { flexDirection: 'row', flexWrap: 'wrap', gap: 10, paddingHorizontal: 16, paddingTop: 4 },
+  recommGrid:     { flexDirection: 'row', flexWrap: 'wrap', gap: 10, paddingHorizontal: 16, paddingTop: 14 },
   recommTile:     { height: 104, borderRadius: 16, overflow: 'hidden', justifyContent: 'flex-end', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.12, shadowRadius: 8, elevation: 4 },
   recommTileMark: { position: 'absolute', right: -6, top: -4 },
   recommTileName: { fontSize: 14, fontWeight: '700', color: '#fff', padding: 11, lineHeight: 18 },
