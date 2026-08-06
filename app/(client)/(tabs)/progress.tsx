@@ -20,6 +20,7 @@ import { LightHeader, HeaderIcon, HEADER_ICON, useHeaderHeight } from '@/compone
 import { useTabBarHeight } from '@/components/FloatingTabBar';
 import ProgressTab from '@/app/(trainer)/client/[id]/progress-tab';
 import TapeMeasurementsTab from '@/components/TapeMeasurementsTab';
+import ComparisonTab from '@/components/ComparisonTab';
 
 const BG     = '#faf9f7';
 const HEADER = '#244e43';
@@ -297,6 +298,8 @@ export default function ProgressScreen() {
   const tabBarH = useTabBarHeight();
 
   const [view, setView] = useState<ViewState>('landing');
+  // Frozen while the Comparison slider is being dragged — see ComparisonTab.
+  const [cmpLocked, setCmpLocked] = useState(false);
 
   const [hubOpen, setHubOpen] = useState(false);
   const scanAnim = useRef(new Animated.Value(0)).current;
@@ -553,12 +556,14 @@ export default function ProgressScreen() {
         </ScrollView>
       )}
       {view === 'comparison' && (
-        <ScrollView contentContainerStyle={{ paddingTop: headerH + 16, paddingBottom: tabBarH + 32 }}>
-          <EmptyFolder
-            symbolName="photo.on.rectangle.angled"
-            title="No photos yet"
-            body="Your own progress photos, front, side and back, so you can see the change the scale doesn't show. Private to you — Vitek sees nothing unless you share it."
-          />
+        <ScrollView
+          style={{ flex: 1 }}
+          contentContainerStyle={{ padding: 16, paddingTop: headerH + 8, paddingBottom: tabBarH + 32 }}
+          showsVerticalScrollIndicator={false}
+          scrollIndicatorInsets={{ top: headerH, bottom: tabBarH }}
+          scrollEnabled={!cmpLocked}
+        >
+          <ComparisonTab clientId={clientId} onScrollLock={setCmpLocked} />
         </ScrollView>
       )}
       {view === 'consistency' && (

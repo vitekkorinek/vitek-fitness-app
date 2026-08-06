@@ -18,7 +18,8 @@
       "appleTeamId": "SGZ83SR8YV",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
-        "NSSupportsLiveActivities": true
+        "NSSupportsLiveActivities": true,
+        "NSMotionUsageDescription": "Vitek Fitness uses the phone's motion sensors to tell you when you're holding the camera at the same angle as your last progress photo, so the two are comparable."
       },
       "entitlements": {
         "aps-environment": "production"
