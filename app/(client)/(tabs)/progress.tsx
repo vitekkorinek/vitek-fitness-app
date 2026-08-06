@@ -21,6 +21,7 @@ import { useTabBarHeight } from '@/components/FloatingTabBar';
 import ProgressTab from '@/app/(trainer)/client/[id]/progress-tab';
 import TapeMeasurementsTab from '@/components/TapeMeasurementsTab';
 import ComparisonTab from '@/components/ComparisonTab';
+import ConsistencyTab from '@/components/ConsistencyTab';
 
 const BG     = '#faf9f7';
 const HEADER = '#244e43';
@@ -263,32 +264,6 @@ const hub = StyleSheet.create({
   },
 });
 
-// ─── Folders not built yet ───────────────────────────────────────────────────
-// Honest empty states, not "coming soon" wallpaper: each says what it will hold
-// so the pentagon reads as a complete map of the tab from day one.
-
-function EmptyFolder({ symbolName, title, body }: { symbolName: any; title: string; body: string }) {
-  return (
-    <View style={ef.wrap}>
-      <View style={ef.mark}>
-        <SymbolView name={symbolName} size={40} tintColor="rgba(36,78,67,0.30)" />
-      </View>
-      <Text style={ef.title}>{title}</Text>
-      <Text style={ef.body}>{body}</Text>
-    </View>
-  );
-}
-
-const ef = StyleSheet.create({
-  wrap: { alignItems: 'center', paddingHorizontal: 34, paddingTop: 40 },
-  mark: {
-    width: 84, height: 84, borderRadius: 26, backgroundColor: CHIP_BG,
-    alignItems: 'center', justifyContent: 'center', marginBottom: 18,
-  },
-  title: { fontSize: 17, fontWeight: '700', color: TEXT, marginBottom: 8, textAlign: 'center' },
-  body:  { fontSize: 14, lineHeight: 21, color: MUTED, textAlign: 'center' },
-});
-
 // ─── Screen ──────────────────────────────────────────────────────────────────
 
 export default function ProgressScreen() {
@@ -298,7 +273,8 @@ export default function ProgressScreen() {
   const tabBarH = useTabBarHeight();
 
   const [view, setView] = useState<ViewState>('landing');
-  // Frozen while the Comparison slider is being dragged — see ComparisonTab.
+  // Frozen while a chart gesture is in flight (Comparison's slider, Consistency's
+  // month/year swipe) — a JS PanResponder cannot stop a native ScrollView alone.
   const [cmpLocked, setCmpLocked] = useState(false);
 
   const [hubOpen, setHubOpen] = useState(false);
@@ -567,12 +543,14 @@ export default function ProgressScreen() {
         </ScrollView>
       )}
       {view === 'consistency' && (
-        <ScrollView contentContainerStyle={{ paddingTop: headerH + 16, paddingBottom: tabBarH + 32 }}>
-          <EmptyFolder
-            symbolName="chart.bar.fill"
-            title="Coming next"
-            body="Every session you've done, your current streak, and how you're tracking against your weekly goal — the part of progress that's always in your hands."
-          />
+        <ScrollView
+          style={{ flex: 1 }}
+          contentContainerStyle={{ padding: 16, paddingTop: headerH + 8, paddingBottom: tabBarH + 32 }}
+          showsVerticalScrollIndicator={false}
+          scrollIndicatorInsets={{ top: headerH, bottom: tabBarH }}
+          scrollEnabled={!cmpLocked}
+        >
+          <ConsistencyTab clientId={clientId} onScrollLock={setCmpLocked} />
         </ScrollView>
       )}
 
