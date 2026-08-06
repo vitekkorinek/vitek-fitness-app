@@ -12,6 +12,7 @@ import {
   ActivityIndicator,
   RefreshControl,
   Alert,
+  Linking,
   Modal,
   Pressable,
   Image,
@@ -44,7 +45,8 @@ import {
   equipmentLabel,
   toAlphaSections,
 } from '@/lib/exerciseFilters';
-import { relativeTime } from '@/lib/utils';
+import { relativeTime, prettyLink } from '@/lib/utils';
+import { TIP_FOLDERS, FOLDER_GRAD, FOLDER_ICON, asFolder, type TipFolder } from '@/lib/tipFolders';
 import { ExerciseListThumb } from '@/components/ExerciseListThumb';
 import { CATEGORY_COLORS, CATEGORY_OPTIONS, STRETCHING_CATEGORIES } from '@/lib/workoutCategories';
 import type { WorkoutCategory } from '@/lib/workoutCategories';
@@ -482,22 +484,6 @@ const PAPER_SUB  = 'rgba(36,78,67,0.52)';
 const PAPER_ICON = 'rgba(36,78,67,0.30)';
 const CORAL = '#e05555';
 
-const DAILY_TIPS_LIB = [
-  { title: 'Protein first', body: "Start every meal with your protein source. It helps hit your targets and keeps you fuller longer." },
-  { title: 'Hydration = performance', body: "Even mild dehydration cuts strength output by up to 10%. Drink before you're thirsty." },
-  { title: 'Eat the rainbow', body: 'Aim for 5 different coloured vegetables per day — each colour brings different micronutrients.' },
-  { title: 'Pre-workout fuel', body: "Eat carbs 1–2 hours before training. They're your primary fuel for intense sessions." },
-  { title: 'The 20-minute rule', body: "It takes 20 minutes for fullness signals to reach your brain. Eat slowly and stop before you're stuffed." },
-  { title: 'Post-workout window', body: 'Consume protein within 60 minutes after training to maximise muscle protein synthesis.' },
-  { title: 'Cook more, eat better', body: 'Home-cooked meals have on average 50% fewer calories than restaurant equivalents.' },
-  { title: "Don't drink your calories", body: "Liquid calories don't trigger fullness the same way. Stick to water, herbal tea and black coffee." },
-  { title: 'Sleep & food choices', body: 'Poor sleep increases hunger hormones by 30%. Prioritise 7–9 hours for better nutrition decisions.' },
-  { title: 'Smart snacking', body: 'Pair carbs with protein or fat — this slows digestion and prevents energy crashes.' },
-  { title: 'Fibre is your friend', body: 'Aim for 25–35g of fibre per day from vegetables, legumes and whole grains.' },
-  { title: 'Mindful eating', body: 'Eating without screens leads to consuming 25% fewer calories. Give food your full attention.' },
-  { title: 'Meal prep = success', body: "Preparing meals in advance removes the \"what's for dinner?\" problem — the #1 cause of poor food choices." },
-  { title: 'Read food labels', body: 'Pay attention to serving sizes. What looks like 1 portion is often 2–3 on the nutrition label.' },
-];
 
 function makeUUID(): string {
   return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
@@ -506,7 +492,7 @@ function makeUUID(): string {
   });
 }
 
-type NutSubTab = 'recipes' | 'recommendations' | 'tips' | 'foods';
+type NutSubTab = 'recipes' | 'tips' | 'foods';
 
 function LibraryNutritionTab({
   trainerId,
@@ -526,10 +512,9 @@ function LibraryNutritionTab({
   recipesAddTick: number;
 }) {
   const NUT_TABS: { key: NutSubTab; label: string }[] = [
-    { key: 'recipes',         label: 'Recipes' },
-    { key: 'recommendations', label: 'Recomm.' },
-    { key: 'tips',            label: 'Tips' },
-    { key: 'foods',           label: 'Foods' },
+    { key: 'recipes', label: 'Recipes' },
+    { key: 'tips',    label: 'Tips' },
+    { key: 'foods',   label: 'Foods' },
   ];
 
   return (
@@ -545,11 +530,8 @@ function LibraryNutritionTab({
       {nutSubTab === 'recipes' && (
         <RecipesTab trainerId={trainerId} addTick={recipesAddTick} />
       )}
-      {nutSubTab === 'recommendations' && (
-        <NutritionTipsTab trainerId={trainerId} category="supplement" addTick={addTick} />
-      )}
       {nutSubTab === 'tips' && (
-        <NutritionTipsTab trainerId={trainerId} category="tip" addTick={addTick} />
+        <NutritionTipsTab trainerId={trainerId} addTick={addTick} />
       )}
       {nutSubTab === 'foods' && (
         <FoodsTab trainerId={trainerId} addTick={foodsAddTick} />
@@ -562,16 +544,17 @@ function LibraryNutritionTab({
 
 function NutritionTipsTab({
   trainerId,
-  category,
   addTick,
 }: {
   trainerId: string;
-  category: 'tip' | 'supplement';
   addTick: number;
 }) {
   const insets = useSafeAreaInsets();
   const tabBarH = useTabBarHeight();
 
+  // Which folder is showing. Both folders are loaded in ONE query and filtered in
+  // render, so switching folders never refires the fetch.
+  const [folder, setFolder]         = useState<TipFolder>('supplement');
   const [tips, setTips]             = useState<NutritionTip[]>([]);
   const [loading, setLoading]       = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -589,32 +572,18 @@ function NutritionTipsTab({
   // Confirm delete modal
   const [confirmDelete, setConfirmDelete] = useState<NutritionTip | null>(null);
 
-  // System tips hidden indices (tips category only)
-  const [hiddenSystemIndices, setHiddenSystemIndices] = useState<number[]>([]);
-  const [settingsId, setSettingsId] = useState<string | null>(null);
-
-  // Recommendations: search + read-only detail view
+  // Search + read-only detail view
   const [recSearch, setRecSearch] = useState('');
   const [recDetail, setRecDetail] = useState<NutritionTip | null>(null);
 
   const load = useCallback(async () => {
-    const [{ data: tipsData }, { data: settingsData }] = await Promise.all([
-      supabase
-        .from('nutrition_tips')
-        .select('*')
-        .eq('trainer_id', trainerId)
-        .eq('category', category)
-        .order('created_at', { ascending: false }),
-      category === 'tip'
-        ? supabase.from('trainer_settings').select('id, hidden_system_tip_indices').eq('trainer_id', trainerId).maybeSingle()
-        : Promise.resolve({ data: null }),
-    ]);
-    setTips((tipsData ?? []) as NutritionTip[]);
-    if (category === 'tip' && settingsData) {
-      setSettingsId((settingsData as any).id ?? null);
-      setHiddenSystemIndices((settingsData as any).hidden_system_tip_indices ?? []);
-    }
-  }, [trainerId, category]);
+    const { data } = await supabase
+      .from('nutrition_tips')
+      .select('*')
+      .eq('trainer_id', trainerId)
+      .order('created_at', { ascending: false });
+    setTips((data ?? []) as NutritionTip[]);
+  }, [trainerId]);
 
   useEffect(() => {
     setLoading(true);
@@ -697,7 +666,7 @@ function NutritionTipsTab({
       setTips(prev => prev.map(t => t.id === editId ? { ...t, ...patch } : t));
     } else {
       const id = makeUUID();
-      await supabase.from('nutrition_tips').insert({ id, trainer_id: trainerId, ...patch, category, is_published: true });
+      await supabase.from('nutrition_tips').insert({ id, trainer_id: trainerId, ...patch, category: folder, is_published: true });
       await load();
     }
     setSaving(false);
@@ -710,100 +679,65 @@ function NutritionTipsTab({
     await supabase.from('nutrition_tips').delete().eq('id', tip.id);
   };
 
-  const hideSystemTip = async (idx: number) => {
-    const next = [...hiddenSystemIndices, idx];
-    setHiddenSystemIndices(next);
-    if (settingsId) {
-      await supabase.from('trainer_settings').update({ hidden_system_tip_indices: next }).eq('id', settingsId);
-    } else {
-      const { data } = await supabase.from('trainer_settings')
-        .upsert({ trainer_id: trainerId, hidden_system_tip_indices: next })
-        .select('id').single();
-      if (data) setSettingsId((data as any).id);
-    }
-  };
-
-  const visibleSystemTips = DAILY_TIPS_LIB.map((t, i) => ({ ...t, _idx: i })).filter(t => !hiddenSystemIndices.includes(t._idx));
-  const filteredRecomm = category === 'supplement' && recSearch.trim()
-    ? tips.filter(t => t.title.toLowerCase().includes(recSearch.trim().toLowerCase()))
-    : tips;
+  const folderTips = tips.filter(t => asFolder(t.category) === folder);
+  const filteredRecomm = recSearch.trim()
+    ? folderTips.filter(t => t.title.toLowerCase().includes(recSearch.trim().toLowerCase()))
+    : folderTips;
 
   return (
     <View style={{ flex: 1 }}>
-      {/* Search bar — recommendations only */}
-      {category === 'supplement' && (
-        <View style={recStyles.searchBarWrap}>
-          <SymbolView name="magnifyingglass" size={14} tintColor="#aaa" />
-          <TextInput
-            style={recStyles.searchInput}
-            placeholder="Search recommendations…"
-            placeholderTextColor="#bbb"
-            value={recSearch}
-            onChangeText={setRecSearch}
-            autoCapitalize="none"
-            autoCorrect={false}
-            clearButtonMode="while-editing"
-          />
-        </View>
-      )}
+      {/* Folder switcher — underline bar, mirroring what the client sees inside
+          the Tips book so both sides read the same way. */}
+      <View style={nutStyles.folderBar}>
+        {TIP_FOLDERS.map(f => (
+          <TouchableOpacity
+            key={f.key}
+            style={[nutStyles.folderItem, folder === f.key && nutStyles.folderItemActive]}
+            onPress={() => setFolder(f.key)}
+            hitSlop={8}
+          >
+            <Text style={[nutStyles.folderText, folder === f.key && nutStyles.folderTextActive]}>{f.label}</Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+
+      <View style={recStyles.searchBarWrap}>
+        <SymbolView name="magnifyingglass" size={14} tintColor="#aaa" />
+        <TextInput
+          style={recStyles.searchInput}
+          placeholder="Search tips…"
+          placeholderTextColor="#bbb"
+          value={recSearch}
+          onChangeText={setRecSearch}
+          autoCapitalize="none"
+          autoCorrect={false}
+          clearButtonMode="while-editing"
+        />
+      </View>
       {loading ? (
         <ActivityIndicator color={ACCENT} size="large" style={styles.loader} />
       ) : (
         <ScrollView
           showsVerticalScrollIndicator={false}
-          contentContainerStyle={[nutStyles.listContent, { paddingBottom: tabBarH }]}
+          contentContainerStyle={[recStyles.listContent, { paddingBottom: tabBarH }]}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={ACCENT} />}
         >
-          {/* ── Tips: system tips section ─────────────────────────── */}
-          {category === 'tip' && visibleSystemTips.length > 0 && (
-            <>
-              <Text style={nutStyles.sectionLabel}>SYSTEM TIPS</Text>
-              {visibleSystemTips.map(tip => (
-                <View key={tip._idx} style={nutStyles.systemTipCard}>
-                  <View style={{ flex: 1 }}>
-                    <Text style={nutStyles.tipTitle}>{tip.title}</Text>
-                    {tip.body ? <Text style={nutStyles.tipBody}>{tip.body}</Text> : null}
-                  </View>
-                  <TouchableOpacity onPress={() => hideSystemTip(tip._idx)} hitSlop={8} style={nutStyles.hideTipBtn}>
-                    <SymbolView name="eye.slash" size={15} tintColor="#ccc" />
-                  </TouchableOpacity>
-                </View>
-              ))}
-              {tips.length > 0 && <Text style={[nutStyles.sectionLabel, { marginTop: 8 }]}>MY TIPS</Text>}
-            </>
-          )}
-
-          {/* ── Tips: trainer's own tips ─────────────────────────── */}
-          {category === 'tip' && tips.length === 0 && visibleSystemTips.length === 0 && (
+          {filteredRecomm.length === 0 && (
             <View style={styles.emptyWrap}>
-              <Text style={styles.emptyText}>No tips yet — tap + to create one</Text>
+              <Text style={styles.emptyText}>
+                {recSearch.trim()
+                  ? 'No tips match your search'
+                  : folder === 'supplement'
+                    ? 'No supplements yet — tap + to add one'
+                    : 'No healthy-eating tips yet — tap + to add one'}
+              </Text>
             </View>
           )}
-          {category === 'tip' && tips.map(tip => (
-            <TouchableOpacity key={tip.id} style={nutStyles.tipCard} onPress={() => openEdit(tip)} activeOpacity={0.85}>
-              <View style={{ flex: 1 }}>
-                <Text style={nutStyles.tipTitle} numberOfLines={1}>{tip.title}</Text>
-                {tip.body ? <Text style={nutStyles.tipBody} numberOfLines={2}>{tip.body}</Text> : null}
-              </View>
-              <View style={nutStyles.tipActions}>
-                <TouchableOpacity onPress={() => setConfirmDelete(tip)} hitSlop={8}>
-                  <SymbolView name="trash" size={15} tintColor="#ccc" />
-                </TouchableOpacity>
-                <SymbolView name="chevron.right" size={13} tintColor="#ccc" />
-              </View>
-            </TouchableOpacity>
-          ))}
-
-          {/* ── Recommendations: photo cards ────────────────────── */}
-          {category === 'supplement' && filteredRecomm.length === 0 && (
-            <View style={styles.emptyWrap}>
-              <Text style={styles.emptyText}>{recSearch.trim() ? 'No recommendations match your search' : 'No recommendations yet — tap + to add one'}</Text>
-            </View>
-          )}
-          {category === 'supplement' && filteredRecomm.map(tip => (
+          {filteredRecomm.map(tip => (
             <RecommendationCard
               key={tip.id}
               tip={tip}
+              folder={asFolder(tip.category)}
               onPress={() => setRecDetail(tip)}
               onDelete={() => setConfirmDelete(tip)}
             />
@@ -815,7 +749,7 @@ function NutritionTipsTab({
       <EditorSheet
         visible={editModal}
         onClose={() => setEditModal(false)}
-        title={`${editId ? 'Edit' : 'New'} ${category === 'supplement' ? 'Recommendation' : 'Tip'}`}
+        title={`${editId ? 'Edit' : 'New'} ${folder === 'supplement' ? 'Supplement' : 'Tip'}`}
         onSave={saveTip}
         canSave={!!editTitle.trim()}
         saving={saving}
@@ -825,26 +759,24 @@ function NutritionTipsTab({
         }
       >
           <ScrollView contentContainerStyle={nutStyles.fsContent} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
-            {/* Cover photo — supplement only */}
-            {category === 'supplement' && (
-              <TouchableOpacity style={nutStyles.coverPicker} onPress={pickCoverPhoto} activeOpacity={0.85} disabled={uploadingCover}>
-                {editCover ? (
-                  <Image source={{ uri: editCover }} style={StyleSheet.absoluteFill} resizeMode="cover" />
+            {/* Cover photo — both folders */}
+            <TouchableOpacity style={nutStyles.coverPicker} onPress={pickCoverPhoto} activeOpacity={0.85} disabled={uploadingCover}>
+              {editCover ? (
+                <Image source={{ uri: editCover }} style={StyleSheet.absoluteFill} resizeMode="cover" />
+              ) : (
+                <LinearGradient colors={FOLDER_GRAD[folder]} style={StyleSheet.absoluteFill} />
+              )}
+              <View style={nutStyles.coverPickerOverlay}>
+                {uploadingCover ? (
+                  <ActivityIndicator color="#fff" />
                 ) : (
-                  <LinearGradient colors={['#c87820', '#e89840']} style={StyleSheet.absoluteFill} />
+                  <>
+                    <SymbolView name={editCover ? ('photo.badge.arrow.down.fill' as any) : ('camera.fill' as any)} size={22} tintColor="#fff" />
+                    <Text style={nutStyles.coverPickerText}>{editCover ? 'Change Photo' : 'Add Cover Photo'}</Text>
+                  </>
                 )}
-                <View style={nutStyles.coverPickerOverlay}>
-                  {uploadingCover ? (
-                    <ActivityIndicator color="#fff" />
-                  ) : (
-                    <>
-                      <SymbolView name={editCover ? ('photo.badge.arrow.down.fill' as any) : ('camera.fill' as any)} size={22} tintColor="#fff" />
-                      <Text style={nutStyles.coverPickerText}>{editCover ? 'Change Photo' : 'Add Cover Photo'}</Text>
-                    </>
-                  )}
-                </View>
-              </TouchableOpacity>
-            )}
+              </View>
+            </TouchableOpacity>
 
             {/* Title */}
             <View style={nutStyles.fsField}>
@@ -853,43 +785,39 @@ function NutritionTipsTab({
                 style={nutStyles.fsInput}
                 value={editTitle}
                 onChangeText={setEditTitle}
-                placeholder={category === 'supplement' ? 'e.g. Omega-3 Fish Oil' : 'e.g. Protein timing matters'}
+                placeholder={folder === 'supplement' ? 'e.g. Omega-3 Fish Oil' : 'e.g. Protein timing matters'}
                 placeholderTextColor={MUTED}
-                autoFocus={category === 'tip'}
               />
             </View>
 
-            {/* Link URL — supplement only */}
-            {category === 'supplement' && (
-              <View style={nutStyles.fsField}>
-                <Text style={nutStyles.fsFieldLabel}>LINK URL (optional)</Text>
-                <TextInput
-                  style={nutStyles.fsInput}
-                  value={editLink}
-                  onChangeText={setEditLink}
-                  placeholder="https://..."
-                  placeholderTextColor={MUTED}
-                  keyboardType="url"
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                />
-              </View>
-            )}
+            {/* Link URL — e.g. the product you recommend */}
+            <View style={nutStyles.fsField}>
+              <Text style={nutStyles.fsFieldLabel}>LINK URL (optional)</Text>
+              <TextInput
+                style={nutStyles.fsInput}
+                value={editLink}
+                onChangeText={setEditLink}
+                placeholder="https://..."
+                placeholderTextColor={MUTED}
+                keyboardType="url"
+                autoCapitalize="none"
+                autoCorrect={false}
+              />
+            </View>
 
             {/* Body */}
             <View style={nutStyles.fsField}>
-              <Text style={nutStyles.fsFieldLabel}>{category === 'supplement' ? 'DESCRIPTION (optional)' : 'BODY'}</Text>
+              <Text style={nutStyles.fsFieldLabel}>DESCRIPTION (optional)</Text>
               <TextInput
                 style={[nutStyles.fsInput, nutStyles.fsBodyInput]}
                 value={editBody}
                 onChangeText={setEditBody}
-                placeholder={category === 'supplement'
+                placeholder={folder === 'supplement'
                   ? 'Dosage, benefits, when to take…'
                   : 'Explain the tip with context and reasoning…'}
                 placeholderTextColor={MUTED}
                 multiline
                 textAlignVertical="top"
-                autoFocus={category === 'supplement'}
               />
             </View>
           </ScrollView>
@@ -900,7 +828,7 @@ function NutritionTipsTab({
         <Pressable style={menuStyles.overlay} onPress={() => setConfirmDelete(null)}>
           <Pressable style={nutStyles.glassShadow} onPress={() => {}}>
             <GlassPanel style={nutStyles.glassBox}>
-            <Text style={nutStyles.editModalTitle}>Delete this {category === 'supplement' ? 'recommendation' : 'tip'}?</Text>
+            <Text style={nutStyles.editModalTitle}>Delete this {folder === 'supplement' ? 'supplement' : 'tip'}?</Text>
             <Text style={nutStyles.confirmSubOnGlass}>This cannot be undone.</Text>
             <TouchableOpacity style={[nutStyles.saveBtn, { backgroundColor: CORAL }]} onPress={() => confirmDelete && deleteTip(confirmDelete)} activeOpacity={0.8}>
               <Text style={nutStyles.saveBtnText}>Delete</Text>
@@ -921,14 +849,21 @@ function NutritionTipsTab({
               {recDetail.cover_photo_url ? (
                 <Image source={{ uri: recDetail.cover_photo_url }} style={recStyles.detailCover} resizeMode="cover" />
               ) : (
-                <LinearGradient colors={['#c87820', '#e89840']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={recStyles.detailCoverGrad}>
-                  <SymbolView name={'leaf.fill' as any} size={40} tintColor="rgba(255,255,255,0.6)" />
+                <LinearGradient colors={FOLDER_GRAD[asFolder(recDetail.category)]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={recStyles.detailCoverGrad}>
+                  <SymbolView name={FOLDER_ICON[asFolder(recDetail.category)] as any} size={40} tintColor="rgba(255,255,255,0.6)" />
                 </LinearGradient>
               )}
-              <ScrollView style={[recStyles.detailBody, { maxHeight: 420 }]} showsVerticalScrollIndicator={false}>
+              <ScrollView style={[recStyles.detailBody, { maxHeight: 420 }]} showsVerticalScrollIndicator indicatorStyle="black">
                 <Text style={recStyles.detailName}>{recDetail.title}</Text>
                 {recDetail.link_url ? (
-                  <Text style={recStyles.detailLink} numberOfLines={2}>{recDetail.link_url}</Text>
+                  <TouchableOpacity
+                    style={recStyles.detailLinkBtn}
+                    onPress={() => recDetail.link_url && Linking.openURL(recDetail.link_url)}
+                    activeOpacity={0.75}
+                  >
+                    <SymbolView name={'arrow.up.right.square.fill' as any} size={14} tintColor={ACCENT} />
+                    <Text style={recStyles.detailLink} numberOfLines={1}>{prettyLink(recDetail.link_url)}</Text>
+                  </TouchableOpacity>
                 ) : null}
                 {recDetail.body ? (
                   <Text style={recStyles.instructions}>{recDetail.body}</Text>
@@ -938,7 +873,7 @@ function NutritionTipsTab({
                   onPress={() => { const t = recDetail; close(() => openEdit(t)); }}
                   activeOpacity={0.8}
                 >
-                  <Text style={recStyles.editBtnText}>Edit Recommendation</Text>
+                  <Text style={recStyles.editBtnText}>{asFolder(recDetail.category) === 'supplement' ? 'Edit Supplement' : 'Edit Tip'}</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
                   style={[recStyles.editBtn, recStyles.deleteBtn]}
@@ -1605,14 +1540,19 @@ function RecipeCard({ recipe, isOwn, onPress }: { recipe: Recipe; isOwn: boolean
 
 // ─── RecommendationCard ───────────────────────────────────────────────────────
 
-function RecommendationCard({ tip, onPress, onDelete }: { tip: NutritionTip; onPress: () => void; onDelete: () => void }) {
+function RecommendationCard({ tip, folder, onPress, onDelete }: { tip: NutritionTip; folder: TipFolder; onPress: () => void; onDelete: () => void }) {
   return (
     <View style={recStyles.recOuter}>
       <View style={recStyles.recCard}>
         {tip.cover_photo_url ? (
           <Image source={{ uri: tip.cover_photo_url }} style={StyleSheet.absoluteFill} resizeMode="cover" />
         ) : (
-          <LinearGradient colors={['#c87820', '#e89840']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill} />
+          <>
+            <LinearGradient colors={FOLDER_GRAD[folder]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill} />
+            <View style={recStyles.recFolderMark}>
+              <SymbolView name={FOLDER_ICON[folder] as any} size={64} tintColor="rgba(255,255,255,0.16)" />
+            </View>
+          </>
         )}
         <LinearGradient
           colors={['transparent', 'rgba(0,0,0,0.65)']}
@@ -2979,7 +2919,8 @@ const recStyles = StyleSheet.create({
     backgroundColor: CARD, borderRadius: 16, overflow: 'hidden',
     maxHeight: '82%', marginHorizontal: 20,
   },
-  detailLink: { fontSize: 12, color: ACCENT, fontWeight: '500', marginBottom: 12 },
+  detailLinkBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'flex-start', marginBottom: 12 },
+  detailLink: { fontSize: 13, color: ACCENT, fontWeight: '700', flexShrink: 1 },
   detailCover: { width: '100%', height: 140 },
   detailCoverGrad: {
     width: '100%', height: 140,
@@ -3031,43 +2972,20 @@ const recStyles = StyleSheet.create({
   recBottom: { padding: 10 },
   recName: { fontSize: 14, fontWeight: '700', color: '#fff' },
   recSub:  { fontSize: 11, color: 'rgba(255,255,255,0.7)', marginTop: 2 },
+  // Watermark glyph on a photoless card, so the two folders read apart at a glance.
+  recFolderMark: { ...StyleSheet.absoluteFillObject, alignItems: 'flex-end', justifyContent: 'center', paddingRight: 14 },
 });
 
 // ─── Nutrition sub-tab styles ─────────────────────────────────────────────────
 
 const nutStyles = StyleSheet.create({
-  subTabRow: { paddingHorizontal: 16, paddingTop: 10, paddingBottom: 8 },
-  subTabBar: {
-    flexDirection: 'row', backgroundColor: '#d8d8d4', borderRadius: 100, padding: 3,
-  },
-  subTabItem: { flex: 1, alignItems: 'center', paddingVertical: 7, borderRadius: 100 },
-  subTabItemActive: { backgroundColor: CARD },
-  subTabText: { fontSize: 12, fontWeight: '600', color: MUTED },
-  subTabTextActive: { color: TEXT, fontWeight: '700' },
-
-  listContent: { paddingHorizontal: 16, paddingTop: 12, paddingBottom: 32, gap: 8 },
-
-  sectionLabel: { fontSize: 10, fontWeight: '700', color: MUTED, letterSpacing: 0.7, marginTop: 4, marginBottom: 4 },
-
-  // Trainer own tips
-  tipCard: {
-    flexDirection: 'row', alignItems: 'center', gap: 12,
-    backgroundColor: CARD, borderRadius: 12,
-    paddingHorizontal: 14, paddingVertical: 13,
-    shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.06, shadowRadius: 4, elevation: 2,
-  },
-  tipTitle:   { fontSize: 14, fontWeight: '600', color: TEXT },
-  tipBody:    { fontSize: 12, color: MUTED, marginTop: 3, lineHeight: 17 },
-  tipActions: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-
-  // System tips
-  systemTipCard: {
-    flexDirection: 'row', alignItems: 'flex-start', gap: 10,
-    backgroundColor: CARD, borderRadius: 12,
-    paddingHorizontal: 14, paddingVertical: 13,
-    shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.04, shadowRadius: 4, elevation: 1,
-  },
-  hideTipBtn: { paddingTop: 2 },
+  // Folder switcher inside the Tips sub-tab (underline bar — the third nesting
+  // level, so it stays lighter than the GlassToggle above it).
+  folderBar:        { flexDirection: 'row', justifyContent: 'center', gap: 28, paddingTop: 6, paddingBottom: 2 },
+  folderItem:       { paddingBottom: 6 },
+  folderItemActive: { borderBottomWidth: 2, borderBottomColor: ACCENT },
+  folderText:       { fontSize: 15, fontWeight: '600', color: '#bbb' },
+  folderTextActive: { color: TEXT, fontWeight: '700' },
 
   // Confirm / small modals
   editModal:      { backgroundColor: CARD, borderRadius: 16, padding: 22, width: '90%', alignSelf: 'center' },

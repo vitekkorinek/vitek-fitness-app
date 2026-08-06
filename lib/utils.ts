@@ -27,3 +27,12 @@ export function isInactiveClient(dateStr: string | null): boolean {
 export function nameInitial(name: string): string {
   return name.trim().charAt(0).toUpperCase();
 }
+
+/** Label for a link BUTTON: the bare host, no scheme, no `www.`, no path or query.
+ *  A supplement's product link is usually a tracking URL hundreds of characters long,
+ *  which as a label is unreadable and as a truncated line is meaningless. The full URL
+ *  is still what opens — only the label shrinks. */
+export function prettyLink(url: string): string {
+  const host = url.trim().replace(/^https?:\/\//i, '').replace(/^www\./i, '').split(/[/?#]/)[0];
+  return host || url;
+}

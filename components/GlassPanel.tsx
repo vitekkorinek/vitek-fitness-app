@@ -24,9 +24,18 @@ import { GlassView, isLiquidGlassAvailable } from 'expo-glass-effect';
 
 export const GLASS_SCRIM_OPACITY = 0.30;
 
-export default function GlassPanel({ style, children }: { style?: any; children: React.ReactNode }) {
+/** Scrim for a popup you READ rather than answer. 0.30 is tuned for a one-line confirm,
+ *  where see-through IS the point; a 900-character tip card is a different job — Vitek,
+ *  Aug 2026: *"im not sure if its not gonna be annyoing for the people to read and see the
+ *  green under it … white on white is fine just the green and yellow pops through."*
+ *  Saturated content behind (the amber/green tip cards) bleeds straight through 0.30.
+ *  Pass `scrim={GLASS_SCRIM_READABLE}` for long-form panels ONLY — do not raise the
+ *  app-wide default, that number has its own tuning history above. */
+export const GLASS_SCRIM_READABLE = 0.72;
+
+export default function GlassPanel({ style, scrim = GLASS_SCRIM_OPACITY, children }: { style?: any; scrim?: number; children: React.ReactNode }) {
   const textScrim = (
-    <View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: `rgba(255,255,255,${GLASS_SCRIM_OPACITY})` }]} />
+    <View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: `rgba(255,255,255,${scrim})` }]} />
   );
   if (isLiquidGlassAvailable()) {
     return (

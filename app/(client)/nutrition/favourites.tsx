@@ -6,6 +6,7 @@ import {
   Image,
   InputAccessoryView,
   KeyboardAvoidingView,
+  Linking,
   Modal,
   Platform,
   Pressable,
@@ -32,9 +33,11 @@ import type { FoodLogEntry } from '@/lib/nutritionInsights';
 import type { FoodConfirmResult } from '@/components/FoodSearchModal';
 import EditPortionSheet from '@/components/EditPortionSheet';
 import { BottomSheet } from '@/components/BottomSheet';
-import GlassPanel from '@/components/GlassPanel';
+import GlassPanel, { GLASS_SCRIM_READABLE } from '@/components/GlassPanel';
 import { useTabBarHeight } from '@/components/FloatingTabBar';
 import { LightHeader, HeaderIcon, HEADER_ICON, useHeaderHeight } from '@/components/LightHeader';
+import { prettyLink } from '@/lib/utils';
+import { TIP_FOLDERS, FOLDER_GRAD, FOLDER_BAR, FOLDER_ICON, asFolder } from '@/lib/tipFolders';
 import type { FoodResult } from '@/lib/foodApi';
 
 const BG     = '#faf9f7';
@@ -1606,7 +1609,7 @@ export default function FavouritesScreen() {
                     hitSlop={8}
                   >
                     <Text style={[s.recommTabText, recommTab === tab && s.recommTabTextActive]}>
-                      {tab === 'supplement' ? 'Supplements' : 'Tips'}
+                      {TIP_FOLDERS.find(f => f.key === tab)?.label}
                     </Text>
                   </TouchableOpacity>
                 ))}
@@ -1617,7 +1620,7 @@ export default function FavouritesScreen() {
                 if (items.length === 0) return (
                   <View style={s.emptyScroll}>
                     <SymbolView
-                      name={recommTab === 'supplement' ? 'pills.fill' : 'lightbulb.fill'}
+                      name={FOLDER_ICON[recommTab] as any}
                       size={40}
                       tintColor={MUTED}
                     />
@@ -1627,31 +1630,47 @@ export default function FavouritesScreen() {
                     <Text style={s.emptySubtitle}>Your trainer will add these here</Text>
                   </View>
                 );
+                /* TILES, not list rows (Aug 2026, Vitek: "perhaps only small tiles with
+                   titles … so its like buttons?"). A chevron promises a screen push; every
+                   one of these opens a popup, so the row shape was lying about what happens.
+                   Two per line, title only — the body preview went with it, which is why the
+                   titles were shortened to carry the card on their own. */
+                const tileW = (Dimensions.get('window').width - 32 - 10) / 2;
                 return (
-                  <View style={s.list}>
+                  <View style={s.recommGrid}>
                     {items.map(r => (
-                  <TouchableOpacity
-                    key={r.id}
-                    style={s.recommCard}
-                    onPress={() => setSelectedRecomm(r)}
-                    activeOpacity={0.85}
-                  >
-                    <LinearGradient
-                      colors={recommTab === 'supplement' ? ['#c87820', '#e89840'] : ['#3a7d6b', '#244e43']}
-                      style={s.recommThumb}
-                    >
-                      <SymbolView
-                        name={recommTab === 'supplement' ? 'pills.fill' : 'lightbulb.fill'}
-                        size={20}
-                        tintColor="rgba(255,255,255,0.9)"
-                      />
-                    </LinearGradient>
-                    <View style={s.recommInfo}>
-                      <Text style={s.recommName} numberOfLines={1}>{r.title}</Text>
-                      {!!r.body && <Text style={s.recommBody} numberOfLines={2}>{r.body}</Text>}
-                    </View>
-                    <SymbolView name="chevron.right" size={14} tintColor={MUTED} />
-                  </TouchableOpacity>
+                      <TouchableOpacity
+                        key={r.id}
+                        style={[s.recommTile, { width: tileW }]}
+                        onPress={() => setSelectedRecomm(r)}
+                        activeOpacity={0.85}
+                      >
+                        {r.cover_photo_url ? (
+                          <Image source={{ uri: r.cover_photo_url }} style={StyleSheet.absoluteFill} resizeMode="cover" />
+                        ) : (
+                          <LinearGradient
+                            colors={FOLDER_GRAD[recommTab]}
+                            start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
+                            style={StyleSheet.absoluteFill}
+                          />
+                        )}
+                        {/* Scrim only over a PHOTO — over the flat gradient it would just mud it. */}
+                        {!!r.cover_photo_url && (
+                          <LinearGradient
+                            colors={['rgba(0,0,0,0.15)', 'rgba(0,0,0,0.7)']}
+                            start={{ x: 0.5, y: 0 }} end={{ x: 0.5, y: 1 }}
+                            style={StyleSheet.absoluteFill}
+                          />
+                        )}
+                        <View style={s.recommTileMark} pointerEvents="none">
+                          <SymbolView
+                            name={FOLDER_ICON[recommTab] as any}
+                            size={46}
+                            tintColor="rgba(255,255,255,0.16)"
+                          />
+                        </View>
+                        <Text style={s.recommTileName} numberOfLines={3}>{r.title}</Text>
+                      </TouchableOpacity>
                     ))}
                   </View>
                 );
@@ -1663,29 +1682,54 @@ export default function FavouritesScreen() {
 
       {/* ── Recommendation detail modal ──────────────────────────────── */}
       <Modal visible={!!selectedRecomm} transparent animationType="fade" onRequestClose={() => setSelectedRecomm(null)}>
-        <Pressable style={s.overlay} onPress={() => setSelectedRecomm(null)}>
-          <Pressable style={s.glassShadow} onPress={() => {}}>
-          <GlassPanel style={[s.glassBox, { padding: 0 }]}>
+        {/* ⚠️ The dismiss backdrop is a SIBLING of the card, not its parent, and the
+            card wrapper is a plain View. Wrapping the card in `<Pressable onPress={()=>{}}>`
+            — the pattern every other glass popup uses — makes the Pressable claim the touch
+            and refuse to hand the responder over, so the ScrollView inside NEVER scrolls
+            (taps still work, which is why it looked fine until a tip got long enough to
+            clip). Any glass popup with a scrolling body needs this shape. */}
+        <View style={s.overlay}>
+          <Pressable style={StyleSheet.absoluteFill} onPress={() => setSelectedRecomm(null)} />
+          <View style={s.glassShadow}>
+          {/* Heavier scrim than the app default — this is a panel you READ, not a confirm
+              you answer, and the coloured tip tiles behind it bleed through at 0.30. */}
+          <GlassPanel style={[s.glassBox, { padding: 0 }]} scrim={GLASS_SCRIM_READABLE}>
             <LinearGradient
-              colors={selectedRecomm?.category === 'supplement' ? ['#c87820', '#e89840'] : ['#3a7d6b', '#244e43']}
+              colors={FOLDER_GRAD[asFolder(selectedRecomm?.category)]}
               style={s.recommModalTop}
             >
               <SymbolView
-                name={selectedRecomm?.category === 'supplement' ? 'pills.fill' : 'lightbulb.fill'}
+                name={FOLDER_ICON[asFolder(selectedRecomm?.category)] as any}
                 size={28}
                 tintColor="rgba(255,255,255,0.9)"
               />
             </LinearGradient>
-            <View style={{ height: 4, backgroundColor: selectedRecomm?.category === 'supplement' ? AMBER : ACCENT }} />
-            <View style={{ padding: 20 }}>
+            <View style={{ height: 4, backgroundColor: FOLDER_BAR[asFolder(selectedRecomm?.category)] }} />
+            {/* Scrolls — a tip body can run to several paragraphs. Indicator ON: with the
+                content cut mid-sentence and no scrollbar, nothing says it can be dragged. */}
+            <ScrollView
+              style={{ maxHeight: Math.min(460, Dimensions.get('window').height * 0.48) }}
+              contentContainerStyle={{ padding: 20 }}
+              showsVerticalScrollIndicator
+              indicatorStyle="black"
+            >
               <Text style={[s.modalTitle, { textAlign: 'left', marginBottom: 8 }]}>{selectedRecomm?.title}</Text>
-              {!!selectedRecomm?.link_url && (
-                <Text style={{ fontSize: 13, color: ACCENT, marginBottom: 8 }} numberOfLines={1}>{selectedRecomm.link_url}</Text>
-              )}
               {!!selectedRecomm?.body && (
                 <Text style={{ fontSize: 14, color: '#1f2823', fontWeight: '600', lineHeight: 20 }}>{selectedRecomm.body}</Text>
               )}
-            </View>
+            </ScrollView>
+            {/* The link is a real BUTTON pinned below the scroll, not a line of blue text
+                inside it — it must stay reachable without scrolling to find it. */}
+            {!!selectedRecomm?.link_url && (
+              <TouchableOpacity
+                style={s.recommLinkBtn}
+                onPress={() => selectedRecomm?.link_url && Linking.openURL(selectedRecomm.link_url)}
+                activeOpacity={0.75}
+              >
+                <SymbolView name={'arrow.up.right.square.fill' as any} size={15} tintColor={ACCENT} />
+                <Text style={s.recommLinkText} numberOfLines={1}>{prettyLink(selectedRecomm.link_url)}</Text>
+              </TouchableOpacity>
+            )}
             <TouchableOpacity
               style={{ borderTopWidth: 1, borderTopColor: 'rgba(0,0,0,0.08)', paddingVertical: 14, alignItems: 'center' }}
               onPress={() => setSelectedRecomm(null)}
@@ -1693,8 +1737,8 @@ export default function FavouritesScreen() {
               <Text style={{ fontSize: 15, fontWeight: '600', color: '#414b45' }}>Close</Text>
             </TouchableOpacity>
           </GlassPanel>
-          </Pressable>
-        </Pressable>
+          </View>
+        </View>
       </Modal>
 
       {/* ── Toasts ──────────────────────────────────────────────────── */}
@@ -1869,12 +1913,15 @@ const s = StyleSheet.create({
   recommTabItemActive:{ borderBottomWidth: 2, borderBottomColor: ACCENT },
   recommTabText:      { fontSize: 20, fontWeight: '500', color: '#bbb' },
   recommTabTextActive:{ color: TEXT, fontWeight: '600' },
-  recommCard:  { flexDirection: 'row', alignItems: 'center', backgroundColor: CARD, borderRadius: 14, padding: 12, gap: 12, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 8, elevation: 3 },
-  recommThumb: { width: 52, height: 52, borderRadius: 10, justifyContent: 'center', alignItems: 'center' },
-  recommInfo:  { flex: 1 },
-  recommName:  { fontSize: 14, fontWeight: '600', color: TEXT, marginBottom: 3 },
-  recommBody:  { fontSize: 11, color: MUTED, lineHeight: 15 },
+  // Tile grid — two per line, title only, no chevron (each tile opens a popup, not a screen).
+  recommGrid:     { flexDirection: 'row', flexWrap: 'wrap', gap: 10, paddingHorizontal: 16, paddingTop: 4 },
+  recommTile:     { height: 104, borderRadius: 16, overflow: 'hidden', justifyContent: 'flex-end', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.12, shadowRadius: 8, elevation: 4 },
+  recommTileMark: { position: 'absolute', right: -6, top: -4 },
+  recommTileName: { fontSize: 14, fontWeight: '700', color: '#fff', padding: 11, lineHeight: 18 },
+
   recommModalTop: { height: 100, justifyContent: 'center', alignItems: 'center' },
+  recommLinkBtn:  { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, paddingVertical: 13, paddingHorizontal: 20, borderTopWidth: 1, borderTopColor: 'rgba(0,0,0,0.08)' },
+  recommLinkText: { fontSize: 14, fontWeight: '700', color: ACCENT, flexShrink: 1 },
 
   list: { paddingHorizontal: 16, paddingTop: 4, gap: 10 },
 
