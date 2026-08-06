@@ -1908,7 +1908,7 @@ const s = StyleSheet.create({
   filterPillText: { fontSize: 13, fontWeight: '600', color: MUTED },
   filterPillTextActive: { color: '#fff' },
 
-  recommTabBar:       { flexDirection: 'row', justifyContent: 'center', gap: 32, paddingTop: 20, paddingBottom: 6, backgroundColor: BG },
+  recommTabBar:       { flexDirection: 'row', justifyContent: 'center', gap: 32, paddingTop: 10, paddingBottom: 6, backgroundColor: BG },
   recommTabItem:      { paddingBottom: 8 },
   recommTabItemActive:{ borderBottomWidth: 2, borderBottomColor: ACCENT },
   recommTabText:      { fontSize: 20, fontWeight: '500', color: '#bbb' },
