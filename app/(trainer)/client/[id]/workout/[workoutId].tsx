@@ -84,6 +84,7 @@ import {
   FlatList,
   PanResponder,
   Switch,
+  Easing,
 } from 'react-native';
 import Svg, { Circle, Line as SvgLine, Polyline as SvgPolyline, Text as SvgLabel, Path as SvgPath } from 'react-native-svg';
 import DraggableFlatList from 'react-native-draggable-flatlist';
@@ -389,6 +390,11 @@ const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 // running-look and starts manually via the header timer pill. Flip to false to
 // return to the old scroll-away header. Not used for past-session view.
 const FIXED_HEADER = true;
+
+// How far the running-rest pill slides down out of the bar's timer slot to
+// uncover the session clock. Lands it just under the bar's bottom edge; tune on
+// device if it crowds the first card.
+const REST_PILL_DROP = 48;
 
 /**
  * How long Finish waits for the upload before saying the session is saved on the phone.
@@ -723,20 +729,14 @@ export default function TrainerWorkoutSessionScreen() {
   const restRemaining = restTick?.remaining ?? 0;
   const restOvertimeSecs = restTick?.overtime ?? 0;
   const restTotalSecs = restTick?.totalSecs ?? 60;
-  // Running-rest pill drag: offset from its default bottom-right spot. Taps (< 6px move)
-  // fall through to the pill's touchables; a real move steals the responder and drags.
-  // The chosen spot persists for the rest of the session (ref-held ValueXY).
-  const restPillDrag = useRef(new Animated.ValueXY({ x: 0, y: 0 })).current;
-  const restPillPanResponder = useRef(
-    PanResponder.create({
-      onMoveShouldSetPanResponder: (_e, g) => Math.abs(g.dx) > 6 || Math.abs(g.dy) > 6,
-      onMoveShouldSetPanResponderCapture: (_e, g) => Math.abs(g.dx) > 6 || Math.abs(g.dy) > 6,
-      onPanResponderGrant: () => { restPillDrag.extractOffset(); },
-      onPanResponderMove: Animated.event([null, { dx: restPillDrag.x, dy: restPillDrag.y }], { useNativeDriver: false }),
-      onPanResponderRelease: () => { restPillDrag.flattenOffset(); },
-      onPanResponderTerminate: () => { restPillDrag.flattenOffset(); },
-    })
-  ).current;
+  // Running-rest pill position (Aug 7 2026, Vitek). The pill lives in the pinned
+  // bar's timer slot, sitting OVER the session clock; tapping it slides it DOWN so
+  // the session clock is readable again, and tapping the session clock pulls it
+  // back up. The old draggable bottom-right pill is gone — with the pill in the
+  // bar it overlaps nothing, so there is nothing to drag it out of the way of, and
+  // its PanResponder + the `kbHeight === 0` keyboard gate went with it.
+  const [restRevealed, setRestRevealed] = useState(false);
+  const restPillY = useRef(new Animated.Value(0)).current;
   const [exercisePhotos, setExercisePhotos] = useState<Map<string, string[]>>(new Map());
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const activeSessionIdRef = useRef<string | null>(null);
@@ -2031,11 +2031,61 @@ export default function TrainerWorkoutSessionScreen() {
   };
 
   // Cancel the countdown outright. Closing the panel no longer does this — only
-  // "Stop" (in the panel) or the ✕ on the running-rest pill.
+  // "Stop" (in the panel) or a tap on the pill once it has gone red (overtime).
   const stopRest = () => {
     stopRestTimer();
     setRestVisible(false);
   };
+
+  // ── The bar pill's two taps (Aug 7 2026, Vitek's spec) ────────────────────────
+  // Every rest starts and ends at the pinned bar now: the card toolbar's wide
+  // "Rest timer" button is gone, so the session clock IS the button.
+  //   session clock  → no rest running: open a fresh setup sheet
+  //                  → rest running (and slid down): pull it back up over the clock
+  //   rest pill      → red/overtime: dismiss it (it has done its job)
+  //                  → counting, sitting over the clock: slide down, reveal the clock
+  //                  → counting, already down: open the panel (pause / stop / ±15s)
+  // The slid-down state is a PEEK, not a mode: closing the panel puts the pill back
+  // over the clock (Vitek — "i wont need it separated anymore"). So the only way to
+  // be left with two pills is to tap once and walk away, which is the one case where
+  // you actually asked to see both.
+  const handleSessionPillPress = () => {
+    if (restRunning) { setRestRevealed(false); return; }
+    startRest();
+  };
+
+  const handleRestPillPress = () => {
+    if (restOvertimeSecs > 0) { stopRest(); return; }
+    if (!restRevealed) { setRestRevealed(true); return; }
+    setRestVisible(true);
+  };
+
+  // Every way out of the panel — Hide, drag-down, overlay tap, hardware back —
+  // also ends the peek and sends the pill home over the session clock.
+  const closeRestPanel = () => {
+    setRestVisible(false);
+    setRestRevealed(false);
+  };
+
+  // Slide between the two spots. Starting is handled in `beginCountdown`; this only
+  // catches the timer ENDING (Stop, the red dismiss, finishing the session), so the
+  // next rest opens over the clock rather than wherever the last one was left.
+  useEffect(() => { if (!restRunning) setRestRevealed(false); }, [restRunning]);
+  useEffect(() => {
+    // ⚠️ `restPillY` is ref-held, so it SURVIVES the pill unmounting when a rest
+    // ends — and a native-driven value comes back holding the old offset. Left to
+    // `[restRevealed]` alone, the next rest mounted already slid down with no state
+    // change to animate it away, so it just sat there (Vitek, twice). Hard-reset the
+    // offset whenever no rest is on screen, and re-assert it on every mount by
+    // depending on `restRunning` too.
+    if (!restRunning) { restPillY.setValue(0); return; }
+    Animated.timing(restPillY, {
+      toValue: restRevealed ? REST_PILL_DROP : 0,
+      duration: 240,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: true,
+    }).start();
+  }, [restRevealed, restRunning]);
 
   // Pause freezes the countdown where it is; Resume picks it back up. Stop is the
   // only thing that cancels. The clock itself (and the end-of-rest buzz) live in
@@ -2052,6 +2102,11 @@ export default function TrainerWorkoutSessionScreen() {
     if (isNaN(secs) || secs <= 0) return;
     if (restApplyAll) setPreferredRestSecs(secs);
     startRestTimer(secs);
+    // A rest ALWAYS begins over the session clock — that is its home (Vitek). This
+    // has to be set here rather than off `restRunning` flipping: starting a fresh
+    // rest from the slid-down pill never stops the old one first, so the timer is
+    // already running and that flag never changes.
+    setRestRevealed(false);
   };
 
   const handleEditBeforeStart = () => {
@@ -4195,7 +4250,9 @@ export default function TrainerWorkoutSessionScreen() {
       <Text style={styles.editDoneBtnText}>Done</Text>
     </TouchableOpacity>
   ) : isRunning && !pastSession ? (
-    <GlassPill>
+    /* Since Aug 7 2026 the running clock is also the rest timer's door: tap to
+       start one, or to pull a running one back over the clock. */
+    <GlassPill onPress={handleSessionPillPress}>
       <Text style={styles.combinedPillTimerText}>{formatTimer(elapsed)}</Text>
     </GlassPill>
   ) : null;
@@ -4351,7 +4408,38 @@ export default function TrainerWorkoutSessionScreen() {
                 </View>
               </TouchableOpacity>
             </Animated.View>
-            {barTimerControl}
+            {/* Timer slot. The session clock and the running-rest pill are STACKED
+                here (Aug 7 2026): the rest pill is absolute inside this wrapper, so
+                `right: 0` lines their right edges up exactly and it covers the clock
+                — no magic offset to keep in sync with the bar's padding. Rendered
+                only when it holds something, or the row's `gap` leaves a stray 8px
+                pre-start. */}
+            {(barTimerControl || (restRunning && !isEditMode)) && (
+              <View style={{ position: 'relative' }}>
+                {barTimerControl}
+                {/* Running-rest pill — green while counting, red in overtime, icon
+                    flips to pause.fill when paused. Tapping slides it down by
+                    REST_PILL_DROP to uncover the session clock. Hidden in edit
+                    mode, where the slot belongs to the Done button. */}
+                {restRunning && !isEditMode && (
+                  <Animated.View
+                    style={[styles.barRestPillWrap, { transform: [{ translateY: restPillY }] }]}
+                    pointerEvents="box-none"
+                  >
+                    <TouchableOpacity
+                      style={[styles.barRestPill, restOvertimeSecs > 0 && styles.barRestPillOver]}
+                      onPress={handleRestPillPress}
+                      activeOpacity={0.85}
+                    >
+                      <SymbolView name={restPaused ? 'pause.fill' : 'timer'} size={13} tintColor="#fff" style={{ width: 15, height: 15 }} />
+                      <Text style={styles.barRestPillText}>
+                        {restOvertimeSecs > 0 ? `+${formatRestTimer(restOvertimeSecs)}` : formatRestTimer(restRemaining)}
+                      </Text>
+                    </TouchableOpacity>
+                  </Animated.View>
+                )}
+              </View>
+            )}
             <View style={{ position: 'relative', marginLeft: 8 }}>
               <GlassIconBtn onPress={() => setDotsMenuOpen(true)}>
                 <SymbolView name="ellipsis" size={18} tintColor="#fff" />
@@ -4982,24 +5070,9 @@ export default function TrainerWorkoutSessionScreen() {
         </Animated.View>
       )}
 
-      {/* ── Running-rest pill — the panel was dismissed but the clock kept going ── */}
-      {restRunning && !restVisible && !isEditMode && kbHeight === 0 && (
-        <Animated.View
-          style={[styles.restPillWrap, { bottom: insets.bottom + 16, zIndex: 90, transform: restPillDrag.getTranslateTransform() }]}
-          {...restPillPanResponder.panHandlers}
-        >
-          <TouchableOpacity style={[styles.restPill, restOvertimeSecs > 0 && styles.restPillOver]} onPress={() => setRestVisible(true)} activeOpacity={0.85}>
-            <SymbolView name={restPaused ? 'pause.fill' : 'timer'} size={16} tintColor="#fff" style={{ width: 18, height: 18 }} />
-            <Text style={styles.restPillText}>
-              {restOvertimeSecs > 0 ? `+${formatRestTimer(restOvertimeSecs)}` : formatRestTimer(restRemaining)}
-            </Text>
-            <View style={styles.restPillSep} />
-            <TouchableOpacity onPress={stopRest} hitSlop={12} activeOpacity={0.6}>
-              <SymbolView name="xmark" size={13} tintColor="rgba(255,255,255,0.85)" />
-            </TouchableOpacity>
-          </TouchableOpacity>
-        </Animated.View>
-      )}
+      {/* (The floating bottom-right running-rest pill lived here until Aug 7 2026.
+          It moved into the pinned bar's timer slot — see the pill rendered inside
+          `pinBar` above.) */}
 
       {/* ── Banner photo full-screen peek (long-press on the header photo) ── */}
       {/* ── Exercise-list dropdown (tap the pinned bar's name/meta) — a small
@@ -5172,7 +5245,7 @@ export default function TrainerWorkoutSessionScreen() {
           onPause={pauseRest}
           onResume={resumeRest}
           onStop={stopRest}
-          onClose={() => setRestVisible(false)}
+          onClose={closeRestPanel}
         />
       )}
 
@@ -6356,19 +6429,19 @@ function ExerciseCard({
             )}
 
             {/* One row (Aug 2026, same as the client): Info (solid = look at
-                something) · Rest timer (the wide one — what you reach for
-                mid-set) · camera (dashed = adds something: a session photo).
+                something) · camera (dashed = adds something: a session photo).
                 The old + menu moved into the set rows — each row's + adds sets
                 of that row's kind. */}
             <View style={styles.iconToolbar}>
-              <TouchableOpacity style={[styles.iconBtn, styles.iconBtnSquare]} onPress={onOpenInfo} activeOpacity={0.7}>
+              <TouchableOpacity style={styles.iconBtn} onPress={onOpenInfo} activeOpacity={0.7}>
                 <SymbolView name="info.circle" size={17} tintColor={ACCENT} style={{ width: 20, height: 20 }} />
               </TouchableOpacity>
-              <TouchableOpacity style={[styles.iconBtn, styles.restTimerBtnInline]} onPress={() => onStartRest()} activeOpacity={0.7}>
-                <SymbolView name="timer" size={15} tintColor={ACCENT} style={{ width: 18, height: 18 }} />
-                <Text style={styles.restTimerBtnText}>{en.doMode.restTimer}</Text>
-              </TouchableOpacity>
-              <DashedBtnWrapper style={[styles.iconBtn, styles.iconBtnSquare]} onPress={onCameraPress} activeOpacity={0.7}>
+              {/* The wide "Rest timer" button sat here until Aug 7 2026 — resting
+                  is started from the pinned bar's session clock now, so the
+                  toolbar is down to two buttons and both stretch. Its styles
+                  (`restTimerBtnInline`/`restTimerBtnText`/`iconBtnSquare`) are
+                  kept so putting it back is a one-block change. */}
+              <DashedBtnWrapper style={styles.iconBtn} onPress={onCameraPress} activeOpacity={0.7}>
                 <SymbolView name="camera" size={17} tintColor={ACCENT} style={{ width: 20, height: 20 }} />
               </DashedBtnWrapper>
             </View>
@@ -8780,6 +8853,15 @@ const styles = StyleSheet.create({
   // ACCENT link + chevron so it reads as tappable (muted grey read as a caption).
   restHideRow: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingVertical: 2 },
   restHideText: { fontSize: 14, fontWeight: '600', color: ACCENT },
+  // In-bar running-rest pill (Aug 7 2026). Absolute inside the timer slot: top/bottom
+  // 0 + centered matches the session clock's box, `right: 0` its right edge — so it
+  // covers the clock exactly and needs no knowledge of the bar's padding. Same
+  // capsule geometry as `combinedPillGlass`, inverted: ACCENT fill, white ink.
+  barRestPillWrap: { position: 'absolute', top: 0, bottom: 0, right: 0, alignItems: 'flex-end', justifyContent: 'center' },
+  barRestPill: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: ACCENT, borderRadius: 20, paddingHorizontal: 14, paddingVertical: 7, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.22, shadowRadius: 8, elevation: 4 },
+  barRestPillOver: { backgroundColor: '#e53935' },
+  barRestPillText: { fontSize: 13, color: '#fff', fontVariant: ['tabular-nums'], letterSpacing: 0.4, ...fd(800) },
+
   restPillWrap: { position: 'absolute', right: 16, alignItems: 'flex-end' },
   // Green filled + bigger (was white w/ green text) — needs to stand out; drag it anywhere. Overtime flips the pill red.
   restPill: { flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: ACCENT, borderRadius: 100, paddingLeft: 16, paddingRight: 14, paddingVertical: 12, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.22, shadowRadius: 8, elevation: 5 },
