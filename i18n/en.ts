@@ -778,6 +778,8 @@ const en = {
     bright: 'Bright green',
     shadow: 'Shadow',
     mint: 'Mint',
+    paper: 'Paper',
+    ink: 'Ink',
   },
 } as const;
 

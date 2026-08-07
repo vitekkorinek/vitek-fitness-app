@@ -92,6 +92,14 @@
           {
             "name": "Mint",
             "ios": "./assets/app-icons/icon-mint.png"
+          },
+          {
+            "name": "Paper",
+            "ios": "./assets/app-icons/icon-paper.png"
+          },
+          {
+            "name": "Ink",
+            "ios": "./assets/app-icons/icon-ink.png"
           }
         ]
       ]
