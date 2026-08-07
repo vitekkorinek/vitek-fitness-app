@@ -29,7 +29,11 @@ import type { BodyRegion, BodyRegionBand } from '@/lib/muscleSilhouette';
 
 export type { BodyRegion, BodyRegionBand };
 
-const DEFAULT_COLORS: [string, string] = ['#b8ede0', '#24ac88'];
+// Two steps: secondary (light mint) and primary (strong green). Callers may pass a
+// LONGER ramp and index into it with higher intensities — the Strength scan sends
+// five, one per heat step. The fill lookup below already clamps to the palette's
+// own length, so nothing else needs to know how many steps there are.
+const DEFAULT_COLORS: string[] = ['#b8ede0', '#24ac88'];
 
 // Softened body palette (Aug 1 2026, Vitek: "make the body a bit more soft").
 // The artwork bakes exactly two fills: #3f3f3f (muscles/hair/hands) and #bebebe
@@ -64,11 +68,19 @@ function bandRect(
   return { x: x0 + band.from * w, y: y0 - 2, width: (band.to - band.from) * w, height: h + 4 };
 }
 
-export default function BodyMap({ side, scale, regions, colors = DEFAULT_COLORS, baseFill }: {
+export default function BodyMap({ side, scale, regions, colors = DEFAULT_COLORS, baseFill, onPressMuscle }: {
   side: 'front' | 'back';
   scale: number;
   regions: BodyRegion[];
-  colors?: [string, string];
+  /** Intensity ramp, coldest first. Any length; `intensity` clamps into it. */
+  colors?: string[];
+  /** Makes the body itself tappable, reporting the muscle under the finger and —
+   *  for a paired muscle — which side of the PERSON it belongs to (null when the
+   *  muscle is unpaired or the side cannot be told apart).
+   *  ⚠️ Both the base paths AND the highlight paths carry it — the highlights are
+   *  drawn on top, so wiring only the base would leave every LIT muscle (exactly
+   *  the ones worth tapping) swallowing its own touch. */
+  onPressMuscle?: (slug: string, bodySide: 'left' | 'right' | null) => void;
   /** Override the whole base body with one flat colour (face included), instead of
    *  the two-tone SOFT_FILL. Used by the Progress landing, which stacks a second,
    *  accent-filled copy of the body under a moving window to light the strip the
@@ -84,15 +96,29 @@ export default function BodyMap({ side, scale, regions, colors = DEFAULT_COLORS,
   // Secondary first, primary last, so primary paints over shared overlap.
   const ordered = [...regions].sort((a, b) => a.intensity - b.intensity);
 
+  // Which of a paired muscle's paths belong to the PERSON's left or right.
+  // ⚠️ The front view is a mirror: a path drawn left of the midline is the viewer's
+  // left, which is the person's RIGHT. The back view is not mirrored. Getting this
+  // backwards silently swaps every left/right reading, and nothing about the picture
+  // would look wrong.
+  const personSideOf = (p: BodyMapPath): 'left' | 'right' => {
+    const cx = (p.bbox[0] + p.bbox[2]) / 2;
+    const drawnLeft = cx < midlineX;
+    return side === 'front' ? (drawnLeft ? 'right' : 'left') : (drawnLeft ? 'left' : 'right');
+  };
+  const pathsForSide = (part: BodyMapPart, bodySide?: 'left' | 'right') =>
+    bodySide ? part.paths.filter(p => personSideOf(p) === bodySide) : part.paths;
+
   const clips: React.ReactNode[] = [];
   const highlights: React.ReactNode[] = [];
   ordered.forEach((region, ri) => {
     const part = bySlug.get(region.slug);
     if (!part) return;
     const fill = colors[Math.min(Math.max(region.intensity, 1), colors.length) - 1];
-    part.paths.forEach((path, pi) => {
+    const press = onPressMuscle ? () => onPressMuscle(region.slug, region.bodySide ?? null) : undefined;
+    pathsForSide(part, region.bodySide).forEach((path, pi) => {
       if (!region.band) {
-        highlights.push(<Path key={`h${ri}-${pi}`} d={path.d} fill={fill} />);
+        highlights.push(<Path key={`h${ri}-${pi}`} d={path.d} fill={fill} onPress={press} />);
         return;
       }
       const r = bandRect(path, region.band, midlineX);
@@ -104,7 +130,7 @@ export default function BodyMap({ side, scale, regions, colors = DEFAULT_COLORS,
         </ClipPath>
       );
       highlights.push(
-        <Path key={`h${ri}-${pi}`} d={path.d} fill={fill} clipPath={`url(#${clipId})`} />
+        <Path key={`h${ri}-${pi}`} d={path.d} fill={fill} clipPath={`url(#${clipId})`} onPress={press} />
       );
     });
   });
@@ -115,7 +141,12 @@ export default function BodyMap({ side, scale, regions, colors = DEFAULT_COLORS,
       <G>
         {parts.map(part =>
           part.paths.map((path, i) => (
-            <Path key={`${part.slug}-${i}`} d={path.d} fill={baseFill ?? SOFT_FILL[part.color] ?? part.color} />
+            <Path
+              key={`${part.slug}-${i}`}
+              d={path.d}
+              fill={baseFill ?? SOFT_FILL[part.color] ?? part.color}
+              onPress={onPressMuscle ? () => onPressMuscle(part.slug, personSideOf(path)) : undefined}
+            />
           ))
         )}
       </G>

@@ -13,6 +13,8 @@ import {
   KeyboardAvoidingView,
   Platform,
   Alert,
+  Animated,
+  Easing,
 } from 'react-native';
 import Swipeable from 'react-native-gesture-handler/Swipeable';
 import Svg, {
@@ -28,6 +30,10 @@ import { SymbolView } from 'expo-symbols';
 import { useFocusEffect } from 'expo-router';
 import { useAuth } from '@/context/AuthContext';
 import { supabase } from '@/lib/supabase';
+import BodyCompRing, { type RingItem } from '@/components/BodyCompRing';
+import BodyMap from '@/components/BodyMap';
+import MuscleScanCard from '@/components/MuscleScanCard';
+import type { BodyRegion } from '@/lib/muscleSilhouette';
 import { BottomSheet } from '@/components/BottomSheet';
 import GlassPanel from '@/components/GlassPanel';
 import { GlassToggle } from '@/components/GlassToggle';
@@ -404,77 +410,57 @@ function ZoneGraph({ data, segs, goal, range, unit }: {
 
 // ─── Goal-edit Modal Styles ────────────────────────────────────────────────────
 
-const goalModalStyles = StyleSheet.create({
-  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.52)', justifyContent: 'center', paddingHorizontal: 32 },
-  glassShadow: { borderRadius: 38, shadowColor: '#000', shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.22, shadowRadius: 28, elevation: 12 },
-  glassBox: { borderRadius: 38, overflow: 'hidden', padding: 24, alignItems: 'center', gap: 12 },
-  title: { fontSize: 15, fontWeight: '700', color: TEXT },
-  inputOnGlass: { alignSelf: 'stretch', backgroundColor: 'rgba(255,255,255,0.6)', borderWidth: 1, borderColor: 'rgba(0,0,0,0.12)', borderRadius: 10, paddingHorizontal: 14, paddingVertical: 10, fontSize: 16, color: TEXT, textAlign: 'center' },
-  saveBtn: { backgroundColor: ACCENT, borderRadius: 100, paddingVertical: 13, alignSelf: 'stretch', alignItems: 'center' },
-  saveBtnText: { color: '#fff', fontWeight: '700', fontSize: 15 },
-  cancelOnGlass: { fontSize: 14, color: '#414b45', fontWeight: '600' },
-});
-
 // ─── Zone Bar Card ─────────────────────────────────────────────────────────────
 
 interface MetricSubTab {
   label: string;
   currentValue: number | null;
   overrideZone?: ZoneKey | null;
+  /** Value is worked out rather than measured — prefixes it with ≈. */
+  approx?: boolean;
   segs: ZoneSegment[] | null;
   data: MeasPoint[];
   unit: string;
   metricKey: string;
-  goalValue: number | null;
 }
 
-function ZoneBarCard({ title, currentValue, goalValue, segs, data, unit, clientId, metricKey, onGoalSaved, subTabs }: {
-  title: string; currentValue: number | null; goalValue: number | null;
+function ZoneBarCard({ title, currentValue, segs, data, unit, subTabs, bare }: {
+  title: string; currentValue: number | null;
   segs: ZoneSegment[] | null; data: MeasPoint[]; unit: string;
-  clientId: string; metricKey: string;
-  onGoalSaved: (metric: string, val: number | null) => void;
   subTabs?: MetricSubTab[];
+  /** Drops the header — title, current value and zone word — leaving the scale and
+   *  the chart. Used by the client, where the badge above already says all three.
+   *  Vitek, Aug 7: *"clicking on the badge is enough we dont have to repeat the same
+   *  thing in the graph, so i would display only the scale line and the graph"*.
+   *  ⚠️ GOALS ARE GONE FROM BOTH SIDES — *"for now i would not use goals because
+   *  that is hard to do with metrics"*, extended to the trainer on his say-so the
+   *  same day. `client_goals` still exists in the database, unread. The goal marker
+   *  wiring in ZoneBar/ZoneGraph is kept and simply fed null, so restoring the
+   *  feature is a UI job rather than a rebuild. */
+  bare?: boolean;
 }) {
-  const { profile } = useAuth();
   const [activeSubIdx, setActiveSubIdx] = useState(0);
   const [range, setRange] = useState<MeasTimeRange>('all');
-  const [editingGoal, setEditingGoal] = useState(false);
-  const [goalInput, setGoalInput] = useState('');
-  const [savingGoal, setSavingGoal] = useState(false);
 
   const activeSub = subTabs?.[activeSubIdx];
-  const displayValue    = activeSub?.currentValue    ?? currentValue;
-  const displaySegs     = activeSub?.segs            ?? segs;
-  const displayData     = activeSub?.data            ?? data;
-  const displayUnit     = activeSub?.unit            ?? unit;
-  const displayMetric   = activeSub?.metricKey       ?? metricKey;
-  const displayGoal     = activeSub?.goalValue       ?? goalValue;
+  // ⚠️ A SUB-TAB'S OWN VALUES WIN OUTRIGHT — never `?? theCardsValue` (Aug 7 2026).
+  // `??` cannot tell "this sub-tab didn't say" from "this sub-tab says NOTHING", and
+  // every sub-tab always says. The old fallthrough produced two wrong readings at
+  // once on the Fat kg tab: with no fat-kg recorded it fell back to the card's fat
+  // PERCENTAGE and printed it as "16.9 kg", and because that tab sets `segs: null`
+  // on purpose it inherited the percentage zone bar and plotted the kg figure on
+  // it — landing "Athletic". Vitek: *"it makes no sense i didnt put fat kg in total
+  // and what shows is just my percentage 16.9% in kg"*.
+  const displayValue    = activeSub ? activeSub.currentValue : currentValue;
+  const displaySegs     = activeSub ? activeSub.segs         : segs;
+  const displayData     = activeSub ? activeSub.data         : data;
+  const displayUnit     = activeSub ? activeSub.unit         : unit;
+  // `metricKey` survives on MetricSubTab only as the sub-tab's React key — the goal
+  // save that used to need it is gone.
 
   const currentZone: ZoneKey | null = activeSub?.overrideZone !== undefined
     ? (activeSub.overrideZone ?? null)
     : (displayValue != null && displaySegs ? zoneOf(displayValue, displaySegs) : null);
-
-  const openGoalEdit = () => {
-    setGoalInput(displayGoal != null ? `${displayGoal}` : '');
-    setEditingGoal(true);
-  };
-
-  const saveGoal = async () => {
-    const val = parseFloat(goalInput);
-    setSavingGoal(true);
-    if (isNaN(val)) {
-      await supabase.from('client_goals').delete().eq('client_id', clientId).eq('metric', displayMetric);
-      onGoalSaved(displayMetric, null);
-    } else {
-      await supabase.from('client_goals').upsert(
-        { client_id: clientId, metric: displayMetric, goal_value: val, created_by: profile!.id },
-        { onConflict: 'client_id,metric' },
-      );
-      onGoalSaved(displayMetric, val);
-    }
-    setSavingGoal(false);
-    setEditingGoal(false);
-  };
 
   const timeRanges: MeasTimeRange[] = ['1M', '3M', '6M', '1Y', 'all'];
   const rangeLabel: Record<MeasTimeRange, string> = {
@@ -498,25 +484,24 @@ function ZoneBarCard({ title, currentValue, goalValue, segs, data, unit, clientI
       )}
 
       {/* Header */}
-      <View style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 10 }}>
-        <View style={{ flex: 1 }}>
-          <Text style={s.graphTitle}>{title}</Text>
-          {displayValue != null && (
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 3, flexWrap: 'wrap' }}>
-              {currentZone && <ZoneBadge zone={currentZone} />}
-              <Text style={{ fontSize: 16, fontWeight: '700', color: TEXT }}>{displayValue}{displayUnit}</Text>
-            </View>
-          )}
+      {!bare && (
+        <View style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 10 }}>
+          <View style={{ flex: 1 }}>
+            <Text style={s.graphTitle}>{title}</Text>
+            {displayValue != null && (
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 3, flexWrap: 'wrap' }}>
+                {currentZone && <ZoneBadge zone={currentZone} />}
+                <Text style={{ fontSize: 16, fontWeight: '700', color: TEXT }}>
+                {activeSub?.approx ? '≈' : ''}{displayValue}{displayUnit}
+              </Text>
+              </View>
+            )}
+          </View>
         </View>
-        <TouchableOpacity onPress={openGoalEdit} hitSlop={8} style={{ marginLeft: 8, marginTop: 2 }}>
-          {displayGoal != null
-            ? <Text style={{ fontSize: 12, color: ACCENT, fontWeight: '600' }}>Goal: {displayGoal}{displayUnit}</Text>
-            : <Text style={{ fontSize: 12, color: '#bbb' }}>{t.clientProfile.progress.setGoal}</Text>}
-        </TouchableOpacity>
-      </View>
+      )}
 
       {/* Zone bar — only when segs available; key resets tooltip state on sub-tab change */}
-      {displaySegs && <ZoneBar key={activeSubIdx} segs={displaySegs} current={displayValue} goal={displayGoal} />}
+      {displaySegs && <ZoneBar key={activeSubIdx} segs={displaySegs} current={displayValue} goal={null} />}
 
       {/* Time range */}
       <View style={[s.rangeRow, { marginTop: 12, marginBottom: 4 }]}>
@@ -529,39 +514,10 @@ function ZoneBarCard({ title, currentValue, goalValue, segs, data, unit, clientI
 
       {/* Graph — zone-colored when segs available, plain otherwise */}
       {displaySegs
-        ? <ZoneGraph data={displayData} segs={displaySegs} goal={displayGoal} range={range} unit={displayUnit} />
+        ? <ZoneGraph data={displayData} segs={displaySegs} goal={null} range={range} unit={displayUnit} />
         : <MeasurementGraph data={displayData} range={range} unit={displayUnit} />
       }
 
-      {/* Goal edit modal */}
-      <Modal visible={editingGoal} transparent animationType="fade" onRequestClose={() => setEditingGoal(false)}>
-        <View style={goalModalStyles.overlay}>
-          <Pressable style={StyleSheet.absoluteFill} onPress={() => setEditingGoal(false)} />
-          <View style={goalModalStyles.glassShadow}>
-          <GlassPanel style={goalModalStyles.glassBox}>
-            <Text style={goalModalStyles.title}>{t.clientProfile.progress.goalTitle(title)}</Text>
-            <TextInput
-              style={goalModalStyles.inputOnGlass}
-              value={goalInput}
-              onChangeText={setGoalInput}
-              keyboardType="decimal-pad"
-              placeholder={`e.g. 20${displayUnit}`}
-              placeholderTextColor="#8a938e"
-              autoFocus
-            />
-            <TouchableOpacity style={[goalModalStyles.saveBtn, savingGoal && { opacity: 0.6 }]}
-              onPress={saveGoal} disabled={savingGoal} activeOpacity={0.85}>
-              <Text style={goalModalStyles.saveBtnText}>
-                {savingGoal ? t.clientProfile.progress.goalSaving : t.clientProfile.progress.goalSaveButton}
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity onPress={() => setEditingGoal(false)} hitSlop={8}>
-              <Text style={goalModalStyles.cancelOnGlass}>{t.common.cancel}</Text>
-            </TouchableOpacity>
-          </GlassPanel>
-          </View>
-        </View>
-      </Modal>
     </View>
   );
 }
@@ -570,7 +526,7 @@ function ZoneBarCard({ title, currentValue, goalValue, segs, data, unit, clientI
 
 // Exported for the client Progress hub's Measurements folder — one graph card
 // implementation, so a tape site and a body-composition metric plot identically.
-export function PlainGraphCard({ title, data, unit, hint }: { title: string; data: MeasPoint[]; unit: string; hint?: string }) {
+export function PlainGraphCard({ title, data, unit, hint, bare }: { title: string; data: MeasPoint[]; unit: string; hint?: string; bare?: boolean }) {
   const [range, setRange] = useState<MeasTimeRange>('all');
   const timeRanges: MeasTimeRange[] = ['1M', '3M', '6M', '1Y', 'all'];
   const rangeLabel: Record<MeasTimeRange, string> = {
@@ -580,8 +536,8 @@ export function PlainGraphCard({ title, data, unit, hint }: { title: string; dat
   };
   return (
     <View style={s.card}>
-      <Text style={s.graphTitle}>{title}</Text>
-      {hint && <Text style={s.noSexHint}>{hint}</Text>}
+      {!bare && <Text style={s.graphTitle}>{title}</Text>}
+      {hint && !bare && <Text style={s.noSexHint}>{hint}</Text>}
       <View style={[s.rangeRow, { marginTop: 8, marginBottom: 4 }]}>
         {timeRanges.map(r => (
           <TouchableOpacity key={r} style={[s.rangeBtn, range === r && s.rangeBtnActive]} onPress={() => setRange(r)} activeOpacity={0.7}>
@@ -835,6 +791,61 @@ function QuickEditModal({
   );
 }
 
+/**
+ * Weight + height in one box — the client's own two numbers, the only ones they
+ * can change (Aug 7 2026). Weight is saved as a measurement THEY authored; height
+ * lives on their profile. Both are things a person can find out at home, which is
+ * the whole test for what belongs here: everything else on this screen comes off
+ * the trainer's Tanita.
+ */
+function BodyStatsModal({
+  weight, height, onSave, onClose,
+}: {
+  weight: string; height: string;
+  onSave: (weight: string, height: string) => void; onClose: () => void;
+}) {
+  const [w, setW] = useState(weight);
+  const [h, setH] = useState(height);
+  return (
+    <Modal visible transparent animationType="fade" onRequestClose={onClose}>
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
+        <View style={qStyles.overlay}>
+          <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
+          <View style={qStyles.glassShadow}>
+            <GlassPanel style={qStyles.glassBox}>
+              <Text style={qStyles.title}>Your weight and height</Text>
+              <Text style={bsStyles.fieldLabel}>Weight (kg)</Text>
+              <TextInput
+                style={qStyles.inputOnGlass}
+                value={w} onChangeText={setW}
+                keyboardType="decimal-pad" placeholder="—" placeholderTextColor="#8a938e"
+                autoFocus returnKeyType="done"
+              />
+              <Text style={bsStyles.fieldLabel}>Height (cm)</Text>
+              <TextInput
+                style={qStyles.inputOnGlass}
+                value={h} onChangeText={setH}
+                keyboardType="decimal-pad" placeholder="—" placeholderTextColor="#8a938e"
+                returnKeyType="done"
+              />
+              <TouchableOpacity style={qStyles.saveBtn} onPress={() => onSave(w, h)} activeOpacity={0.85}>
+                <Text style={qStyles.saveBtnText}>{t.clientProfile.progress.formSave}</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={onClose} hitSlop={8}>
+                <Text style={qStyles.cancelOnGlass}>{t.common.cancel}</Text>
+              </TouchableOpacity>
+            </GlassPanel>
+          </View>
+        </View>
+      </KeyboardAvoidingView>
+    </Modal>
+  );
+}
+
+const bsStyles = StyleSheet.create({
+  fieldLabel: { alignSelf: 'flex-start', fontSize: 11, fontWeight: '700', color: '#414b45', letterSpacing: 0.3 },
+});
+
 const qStyles = StyleSheet.create({
   overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.52)', justifyContent: 'center', paddingHorizontal: 36 },
   glassShadow: { borderRadius: 38, shadowColor: '#000', shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.22, shadowRadius: 28, elevation: 12 },
@@ -861,14 +872,30 @@ function getImbalance(v1: number | null, v2: number | null): { dominantSide: 1 |
   return { dominantSide: v1 >= v2 ? 1 : 2, color: pct >= 10 ? '#ef4444' : '#f59e0b' };
 }
 
-function SegCard({ label, value, dot, onPress }: { label: string; value: string; dot?: { color: string } | null; onPress?: () => void }) {
+/** Change against the previous measurement of the SAME segment. */
+type SegTrend = { text: string; good: boolean };
+
+function SegCard({ label, value, dot, trend, selected, onPress }: {
+  label: string; value: string; dot?: { color: string } | null;
+  trend?: SegTrend | null; selected?: boolean; onPress?: () => void;
+}) {
   const inner = (
-    <View style={[bStyles.segCard, onPress && bStyles.segCardTappable]}>
+    <View style={[
+      bStyles.segCard,
+      onPress && bStyles.segCardTappable,
+      selected && bStyles.segCardSelected,
+      // Selected AND flagged: the outline matches the dot, so the card and the body
+      // say the same thing at the same time.
+      selected && dot ? { borderColor: dot.color, backgroundColor: dot.color === '#ef4444' ? '#fdeceb' : '#fdf3e2' } : null,
+    ]}>
       <Text style={bStyles.segLabel}>{label}</Text>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
         <Text style={bStyles.segValue}>{value}</Text>
         {dot && <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: dot.color }} />}
       </View>
+      {trend && (
+        <Text style={[bStyles.segTrend, { color: trend.good ? ACCENT : '#d9695e' }]}>{trend.text}</Text>
+      )}
     </View>
   );
   if (!onPress) return inner;
@@ -879,17 +906,83 @@ const SILO_FILL = '#9eaab8';
 
 type SiloDecorator = 'visceral_ring' | 'scale' | 'fire' | 'water_drop';
 
+// Which muscles on the front view make up each measured segment. The scale reports
+// arm / leg / trunk, so these group the drawing's muscles to match what it measures.
+const SEG_TORSO_SLUGS = ['chest', 'abs', 'obliques'];
+const SEG_ARM_SLUGS   = ['biceps', 'triceps', 'forearm'];
+const SEG_LEG_SLUGS   = ['quadriceps', 'calves', 'adductors'];
+// measured · heavier side >5% · heavier side >10% — the dots' own amber and red.
+const SEG_COLORS = ['#b8ded1', '#f0b45f', '#e8776c', ACCENT];
+
+// Bigger than the old 0.5 — Vitek asked for the figures to grow so taps land more
+// easily (*"maybe we can make the silhouettes a tiny bigger everywhere"*).
+const SEG_FIG_SCALE = 0.62;
+
+type SegPos = 'torso' | 'r_arm' | 'l_arm' | 'r_leg' | 'l_leg';
+const SEG_POS_SLUGS: Record<SegPos, string[]> = {
+  torso: SEG_TORSO_SLUGS,
+  r_arm: SEG_ARM_SLUGS, l_arm: SEG_ARM_SLUGS,
+  r_leg: SEG_LEG_SLUGS, l_leg: SEG_LEG_SLUGS,
+};
+
+
+const segStyles = StyleSheet.create({
+  scanLine: {
+    position: 'absolute', top: 0, left: -14, right: -14, height: 2,
+    borderRadius: 2, backgroundColor: ACCENT,
+    shadowColor: ACCENT, shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.8, shadowRadius: 6,
+  },
+});
+
 function BodySilhouette({
-  latest, segMode, showSegCards = true, decorator, weightValue, onSegPress,
+  latest, segMode, showSegCards = true, decorator, weightValue, onSegPress, history,
 }: {
   latest: Measurement | null;
   segMode: SegMode;
+  /** All measurements, newest first — for the ▲▼ against the previous reading. */
+  history?: Measurement[];
   showSegCards?: boolean;
   decorator?: SiloDecorator;
   weightValue?: string;
   onSegPress?: (dbField: string, label: string, unit: string, currentVal: number | null) => void;
 }) {
+  // ⚠️ Hooks before the `!showSegCards` early return below, not after it.
+  const segSweep = useRef(new Animated.Value(0)).current;
+  // ⚠️ Tapping the body SELECTS a part — for BOTH roles. The zones used to exist
+  // only when the trainer's edit handler was passed, so on the client's screen the
+  // body was completely inert: *"the body composition silhouette per body part
+  // doesnt work at all the tap"*. Editing still belongs to the CARD (trainer only);
+  // the body answers "which one is this", which is a question either of them can ask.
+  const [selSeg, setSelSeg] = useState<SegPos | null>(null);
+  useEffect(() => {
+    segSweep.setValue(0);
+    Animated.timing(segSweep, {
+      toValue: 1, duration: 900, delay: 120,
+      easing: Easing.bezier(0.35, 0, 0.25, 1), useNativeDriver: true,
+    }).start();
+  }, [segSweep, segMode]);
+
   const kg = (v: number | null): string => v != null ? `${v} kg` : '—';
+
+  // ── ▲▼ against the previous reading of that same segment ──────────────────
+  // ⚠️ Per FIELD, not per row: segments arrive in whatever entry the trainer made,
+  // and a client's weight-only entry sits between them. The comparison is with the
+  // last measurement that actually recorded THIS body part, on an earlier DATE —
+  // same-date rows are one reading split across two entries, never a change.
+  const trendFor = (field: keyof Measurement): SegTrend | null => {
+    if (!history || history.length < 2) return null;
+    const withField = history.filter(m => m[field] != null);
+    if (withField.length < 2) return null;
+    const newest = withField[0];
+    const prev = withField.find(m => m.date !== newest.date);
+    if (!prev) return null;
+    const diff = +((newest[field] as number) - (prev[field] as number)).toFixed(1);
+    if (diff === 0) return null;
+    // Down is progress for fat, up is progress for muscle.
+    const good = segMode === 'fat' ? diff < 0 : diff > 0;
+    return { text: `${diff > 0 ? '▲' : '▼'} ${Math.abs(diff)} kg`, good };
+  };
 
   const rightArmV = segMode === 'fat' ? (latest?.fat_right_arm_kg ?? null) : segMode === 'muscle' ? (latest?.muscle_right_arm_kg ?? null) : null;
   const leftArmV  = segMode === 'fat' ? (latest?.fat_left_arm_kg ?? null)  : segMode === 'muscle' ? (latest?.muscle_left_arm_kg ?? null)  : null;
@@ -906,7 +999,7 @@ function BodySilhouette({
   const leftLegDot  = legImb?.dominantSide === 2 ? { color: legImb.color } : null;
 
   const hasImbalance = armImb != null || legImb != null;
-  const bodyW = 100; const bodyH = 258;
+  const bodyW = 200 * SEG_FIG_SCALE; const bodyH = 400 * SEG_FIG_SCALE;
 
   const dbFieldName = (pos: 'torso' | 'r_arm' | 'l_arm' | 'r_leg' | 'l_leg'): string => {
     const map = {
@@ -922,20 +1015,106 @@ function BodySilhouette({
     return () => onSegPress(f, `${segMode === 'fat' ? 'Fat' : 'Muscle'} ${pos === 'torso' ? 'Torso' : pos.replace('_', ' ').replace(/\b\w/g, c => c.toUpperCase())}`, 'kg', val);
   };
 
+  // ── What the body shows ────────────────────────────────────────────────────
+  // ⚠️ THE TINT MEANS IMBALANCE, NOT SIZE. Colouring each limb by how many kg it
+  // holds would paint the trunk hottest on every human alive — a torso weighing more
+  // than an arm is anatomy, not information. What the trainer cannot see by eye is
+  // one side outweighing the other, so a measured segment lights a flat mint and
+  // only the HEAVIER half of an uneven pair takes amber (>5%) or red (>10%) — the
+  // same two thresholds, and the same two colours, as the dots on the cards.
+  // The trunk is never tinted: it has no opposite side to differ from.
+  const segRegions: BodyRegion[] = [];
+  const addSeg = (slugs: string[], intensity: number, bodySide?: 'left' | 'right') => {
+    for (const slug of slugs) segRegions.push({ slug, intensity, bodySide });
+  };
+  const pairLevel = (
+    imb: { dominantSide: number; color: string } | null,
+    side: 'left' | 'right',
+  ): number => {
+    if (!imb) return 1;
+    // getImbalance's side 1 is its FIRST argument, which is always the right limb.
+    const dominant = imb.dominantSide === 1 ? 'right' : 'left';
+    if (side !== dominant) return 1;
+    return imb.color === '#ef4444' ? 3 : 2;
+  };
+  const posLevel = (pos: SegPos): number => {
+    const lvl = pos === 'torso' ? 1
+      : pos === 'r_arm' ? pairLevel(armImb, 'right')
+      : pos === 'l_arm' ? pairLevel(armImb, 'left')
+      : pos === 'r_leg' ? pairLevel(legImb, 'right')
+      : pairLevel(legImb, 'left');
+    return lvl > 1 ? lvl : 4;
+  };
+
+  if (selSeg) {
+    // Tapped: that part alone, so the tap visibly did something. ⚠️ An IMBALANCED
+    // part keeps its amber/red rather than turning accent green — Vitek: *"if there
+    // is a imbalance tapping on that part can stay yellow?"*. Selecting is a way of
+    // asking about something, and it must not overwrite what the thing is telling
+    // you. Only a balanced part takes the accent.
+    addSeg(
+      SEG_POS_SLUGS[selSeg],
+      posLevel(selSeg),
+      selSeg === 'torso' ? undefined : (selSeg.startsWith('r_') ? 'right' : 'left'),
+    );
+  } else {
+  if (torsoV != null)    addSeg(SEG_TORSO_SLUGS, 1);
+  if (rightArmV != null) addSeg(SEG_ARM_SLUGS, pairLevel(armImb, 'right'), 'right');
+  if (leftArmV != null)  addSeg(SEG_ARM_SLUGS, pairLevel(armImb, 'left'), 'left');
+  if (rightLegV != null) addSeg(SEG_LEG_SLUGS, pairLevel(legImb, 'right'), 'right');
+  if (leftLegV != null)  addSeg(SEG_LEG_SLUGS, pairLevel(legImb, 'left'), 'left');
+  }
+
+  // ⚠️ TAPS GO THROUGH GENEROUS OVERLAY ZONES, NOT THROUGH THE SVG SHAPES.
+  // Wiring `onPress` onto each muscle path looked right and failed on device —
+  // Vitek: *"doesnt work the tapping"*, and on the Strength figure *"not responsive
+  // sometimes … especially calves"*. A path only registers a hit inside its exact
+  // outline, and a calf at this scale is a few points wide, so the finger keeps
+  // landing in the gap between shapes. Five rectangles over the anatomy are
+  // deliberately coarser than the drawing and hit every time. They are approximate
+  // by design — do not "fix" them to follow the silhouette.
+  const zone = (
+    pos: SegPos,
+    box: { left: string; top: string; width: string; height: string },
+  ) => (
+    <Pressable
+      key={pos}
+      onPress={() => setSelSeg(prev => (prev === pos ? null : pos))}
+      style={[{ position: 'absolute' }, box as any]}
+    />
+  );
+
   const siloFigure = (
-    <Svg width={bodyW} height={bodyH} viewBox="0 0 100 258">
-      <SvgEllipse cx="50" cy="18" rx="12" ry="15" fill={SILO_FILL} />
-      <SvgPath d="M46 32 L54 32 L54 42 L46 42 Z" fill={SILO_FILL} />
-      <SvgPath d="M30 42 L70 42 L68 118 L32 118 Z" fill={SILO_FILL} />
-      <SvgPath d="M16 43 L30 43 L29 113 L15 113 Z" fill={SILO_FILL} />
-      <SvgPath d="M70 43 L84 43 L85 113 L71 113 Z" fill={SILO_FILL} />
-      <SvgPath d="M32 120 L49 120 L48 250 L31 250 Z" fill={SILO_FILL} />
-      <SvgPath d="M51 120 L68 120 L69 250 L52 250 Z" fill={SILO_FILL} />
+    <View style={{ width: bodyW, alignItems: 'center' }}>
+      <BodyMap side="front" scale={SEG_FIG_SCALE} regions={segRegions} colors={SEG_COLORS} />
+
+      {/* Viewer's LEFT is the person's RIGHT — a figure facing you. */}
+      {zone('torso', { left: '26%', top: '17%', width: '48%', height: '38%' })}
+      {zone('r_arm', { left: '0%',  top: '18%', width: '27%', height: '42%' })}
+      {zone('l_arm', { left: '73%', top: '18%', width: '27%', height: '42%' })}
+      {zone('r_leg', { left: '24%', top: '55%', width: '26%', height: '45%' })}
+      {zone('l_leg', { left: '50%', top: '55%', width: '26%', height: '45%' })}
+      {/* The reading being taken. Replays when you switch fat ↔ muscle, because
+          that genuinely is a different reading off the same body. */}
+      <Animated.View
+        pointerEvents="none"
+        style={[
+          segStyles.scanLine,
+          {
+            opacity: segSweep.interpolate({ inputRange: [0, 0.05, 0.9, 1], outputRange: [0, 1, 1, 0] }),
+            transform: [{
+              translateY: segSweep.interpolate({ inputRange: [0, 1], outputRange: [-16, bodyH + 16] }),
+            }],
+          },
+        ]}
+      />
       {decorator === 'visceral_ring' && (
-        <SvgEllipse cx="50" cy="90" rx="24" ry="15"
-          fill="none" stroke="#f59e0b" strokeWidth="2.5" strokeDasharray="5,3" />
+        <Svg width={bodyW} height={bodyH} style={{ position: 'absolute', top: 0, left: 0 }} viewBox="0 0 100 200">
+          <SvgEllipse cx="50" cy="78" rx="24" ry="15"
+            fill="none" stroke="#f59e0b" strokeWidth="2.5" strokeDasharray="5,3" />
+        </Svg>
       )}
-    </Svg>
+    </View>
   );
 
   if (!showSegCards) {
@@ -961,18 +1140,21 @@ function BodySilhouette({
 
   return (
     <View style={bStyles.container}>
+      {/* Named again here on Vitek's ask: this card is far enough down the screen
+          that the badge you tapped to get it is off-screen. */}
+      <Text style={bStyles.segTitle}>{segMode === 'fat' ? 'Fat' : 'Muscle'} by body part</Text>
       <View style={bStyles.torsoWrap}>
-        <SegCard label={t.clientProfile.progress.segTorso} value={torsoStr} onPress={tap('torso', torsoV)} />
+        <SegCard label={t.clientProfile.progress.segTorso} value={torsoStr} selected={selSeg === 'torso'} trend={trendFor(dbFieldName('torso') as keyof Measurement)} onPress={tap('torso', torsoV)} />
       </View>
       <View style={bStyles.midRow}>
-        <SegCard label={t.clientProfile.progress.segRightArm} value={kg(rightArmV)} dot={rightArmDot} onPress={tap('r_arm', rightArmV)} />
+        <SegCard label={t.clientProfile.progress.segRightArm} value={kg(rightArmV)} dot={rightArmDot} selected={selSeg === 'r_arm'} trend={trendFor(dbFieldName('r_arm') as keyof Measurement)} onPress={tap('r_arm', rightArmV)} />
         {siloFigure}
-        <SegCard label={t.clientProfile.progress.segLeftArm} value={kg(leftArmV)} dot={leftArmDot} onPress={tap('l_arm', leftArmV)} />
+        <SegCard label={t.clientProfile.progress.segLeftArm} value={kg(leftArmV)} dot={leftArmDot} selected={selSeg === 'l_arm'} trend={trendFor(dbFieldName('l_arm') as keyof Measurement)} onPress={tap('l_arm', leftArmV)} />
       </View>
       <View style={bStyles.bottomRow}>
-        <SegCard label={t.clientProfile.progress.segRightLeg} value={kg(rightLegV)} dot={rightLegDot} onPress={tap('r_leg', rightLegV)} />
+        <SegCard label={t.clientProfile.progress.segRightLeg} value={kg(rightLegV)} dot={rightLegDot} selected={selSeg === 'r_leg'} trend={trendFor(dbFieldName('r_leg') as keyof Measurement)} onPress={tap('r_leg', rightLegV)} />
         <View style={{ width: bodyW }} />
-        <SegCard label={t.clientProfile.progress.segLeftLeg} value={kg(leftLegV)} dot={leftLegDot} onPress={tap('l_leg', leftLegV)} />
+        <SegCard label={t.clientProfile.progress.segLeftLeg} value={kg(leftLegV)} dot={leftLegDot} selected={selSeg === 'l_leg'} trend={trendFor(dbFieldName('l_leg') as keyof Measurement)} onPress={tap('l_leg', leftLegV)} />
       </View>
       {hasImbalance && (
         <View style={bStyles.imbalanceLegend}>
@@ -994,15 +1176,20 @@ const bStyles = StyleSheet.create({
   container: { alignItems: 'center', paddingVertical: 12 },
   torsoWrap: { marginBottom: 8 },
   midRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  bottomRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 8, marginTop: 6 },
+  // Negative so the leg cards sit beside the THIGHS rather than under the feet
+  // (*"you move the leg values a bit too low"*). Tune this, not the figure height.
+  bottomRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 8, marginTop: -52 },
   segCard: {
     backgroundColor: CARD, borderRadius: 12,
     paddingHorizontal: 12, paddingVertical: 9, minWidth: 76, alignItems: 'center',
     shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.06, shadowRadius: 6, elevation: 2,
   },
   segCardTappable: { borderWidth: 1, borderColor: ACCENT },
+  segCardSelected: { backgroundColor: '#eef6f3', borderWidth: 1.5, borderColor: ACCENT },
   segLabel: { fontSize: 9, fontWeight: '700', color: ACCENT, textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 4 },
   segValue: { fontSize: 14, fontWeight: '700', color: TEXT },
+  segTrend: { fontSize: 10, fontWeight: '700', marginTop: 2 },
+  segTitle: { fontSize: 13, fontWeight: '700', color: TEXT, alignSelf: 'flex-start', marginBottom: 10 },
   imbalanceLegend: { flexDirection: 'row', gap: 14, marginTop: 10 },
   legendItem: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   legendDot: { width: 7, height: 7, borderRadius: 4 },
@@ -1266,12 +1453,15 @@ function MeasDetailModal({
   onClose,
   onDelete,
   isTrainer,
+  trainerName,
 }: {
   measurement: Measurement;
   clientName: string;
   onClose: () => void;
   onDelete: () => void;
   isTrainer: boolean;
+  /** Null on the trainer's side, where it is never needed. */
+  trainerName: string | null;
 }) {
   const row = (label: string, val: number | null, unit: string) =>
     val != null ? (
@@ -1284,9 +1474,7 @@ function MeasDetailModal({
   const hasSegFat = [measurement.fat_trunk_kg, measurement.fat_left_arm_kg, measurement.fat_right_arm_kg, measurement.fat_left_leg_kg, measurement.fat_right_leg_kg].some(v => v != null);
   const hasSegMuscle = [measurement.muscle_trunk_kg, measurement.muscle_left_arm_kg, measurement.muscle_right_arm_kg, measurement.muscle_left_leg_kg, measurement.muscle_right_leg_kg].some(v => v != null);
 
-  const addedBy = measurement.created_by_role === 'client'
-    ? t.clientProfile.progress.addedByClient(clientName)
-    : t.clientProfile.progress.addedByTrainer;
+  const addedBy = describeAuthor(measurement, isTrainer, clientName, trainerName);
 
   return (
     <BottomSheet onClose={onClose}>{close => (
@@ -1385,7 +1573,81 @@ function StatBox({ label, value, zone, onPress }: { label: string; value: string
 
 type ActiveMetric = 'weight' | 'fat' | 'muscle' | 'water' | 'visceral' | 'bmr';
 
-function MeasurementsSubTab({ clientId, client, active }: { clientId: string; client: User | null; active: boolean }) {
+/** Body-fat / muscle percentage worked out from its kg value and a body weight.
+ *  Module scope so the graph series (built early) and the badges (built later) can
+ *  both use it — a `const` inside the component would be in its own dead zone. */
+const pctFromKg = (kg: number | null | undefined, weight: number | null | undefined): number | null =>
+  kg != null && weight != null && weight > 0 ? +((kg / weight) * 100).toFixed(1) : null;
+
+/**
+ * Is it worth naming who entered this reading?
+ *
+ * ⚠️ ONLY WHERE THERE IS GENUINELY A CHOICE — which today means WEIGHT and nothing
+ * else. Vitek, Aug 7 2026: *"since now they cant add their values it makes it look
+ * like someone else could add the values"*. Crediting a body-fat reading to the
+ * trainer invites the question "who else might have put this here?", and for every
+ * metric except weight the answer is nobody. So the caption is just the date, and
+ * gains "· by …" only for weight — the one reading a client can record themselves.
+ *
+ * The second clause is defensive: any row a client actually authored keeps its
+ * credit whatever the metric, so historical or hand-fixed data can never quietly
+ * present a client's number as the trainer's.
+ */
+function showAuthor(metric: ActiveMetric, m: Measurement): boolean {
+  return metric === 'weight' || m.created_by_role === 'client';
+}
+
+/**
+ * Who entered this measurement, from the point of view of whoever is READING it.
+ *
+ * ⚠️ The old version said "Added by you" for every trainer-entered row, which is
+ * only true on the trainer's side — the client saw his own scan credited to
+ * himself (Vitek: *"it says added by you, it shoudl say added by Vitek"*). The
+ * label is what separates a bathroom-scale weight from a body scan, so it has to be
+ * right from BOTH ends. `trainerName` comes from the `get_trainer_name` RPC because
+ * a client cannot read the trainer's row directly.
+ */
+function describeAuthor(
+  m: Measurement,
+  viewerIsTrainer: boolean,
+  clientName: string | null,
+  trainerName: string | null,
+): string {
+  const enteredByClient = m.created_by_role === 'client';
+  const mine = viewerIsTrainer ? !enteredByClient : enteredByClient;
+  if (mine) return t.clientProfile.progress.addedByYou;
+  return t.clientProfile.progress.addedByClient(
+    (viewerIsTrainer ? clientName : trainerName) ?? (viewerIsTrainer ? 'Client' : 'your trainer'),
+  );
+}
+
+/** Total fat mass from the five segmental fat readings — only when all five are
+ *  present, since a missing limb would silently under-report the total. */
+const sumSegmentalFat = (m: Measurement): number | null => {
+  const parts = [m.fat_trunk_kg, m.fat_left_arm_kg, m.fat_right_arm_kg, m.fat_left_leg_kg, m.fat_right_leg_kg];
+  if (parts.some(v => v == null)) return null;
+  const total = (parts as number[]).reduce((sum, v) => sum + v, 0);
+  return +total.toFixed(1);
+};
+
+/**
+ * Total fat in kg — typed in if it was, otherwise worked out.
+ *
+ * ⚠️ Vitek's Tanita does not print a total fat mass; it prints the percentage and
+ * the five segments. Both routes back to kg are exact arithmetic on measured
+ * numbers, and on his first real scan they agreed to the decimal: the segments sum
+ * to 13.7 kg and 16.9% of 81 kg is 13.7 kg. The segment sum is preferred because it
+ * is measured mass rather than a product of two readings, so it survives a stale
+ * weight. This is NOT the same kind of derivation as the muscle percentage (see the
+ * muscle case) — there the two quantities were different things; here they are the
+ * same quantity by definition.
+ */
+const fatKgOf = (m: Measurement): number | null =>
+  m.body_fat_kg
+  ?? sumSegmentalFat(m)
+  ?? (m.body_fat_pct != null && m.weight_kg != null ? +((m.body_fat_pct / 100) * m.weight_kg).toFixed(1) : null);
+
+function MeasurementsSubTab({ clientId, client, active, addTick }: { clientId: string; client: User | null; active: boolean; addTick?: number }) {
   const { profile } = useAuth();
   const isTrainer = profile?.role === 'trainer';
 
@@ -1394,23 +1656,37 @@ function MeasurementsSubTab({ clientId, client, active }: { clientId: string; cl
   const [addOpen, setAddOpen] = useState(false);
   const [detailMeas, setDetailMeas] = useState<Measurement | null>(null);
   const [activeMetric, setActiveMetric] = useState<ActiveMetric>('weight');
-  const [goals, setGoals] = useState<Record<string, number>>({});
 
   type ConfirmState = { title: string; message?: string; onConfirm: () => void };
   const [confirmModal, setConfirmModal] = useState<ConfirmState | null>(null);
 
   type QuickEdit = { label: string; dbField: string; unit: string; currentVal: number | null };
   const [quickEdit, setQuickEdit] = useState<QuickEdit | null>(null);
+  const [weightEntryOpen, setWeightEntryOpen] = useState(false);
+  const [heightOverride, setHeightOverride] = useState<number | null>(null);
+  // Only the client needs this: they cannot read the trainer's row, so the name for
+  // "Added by …" comes from an RPC. The trainer already knows who he is.
+  const [trainerName, setTrainerName] = useState<string | null>(null);
+  useEffect(() => {
+    if (isTrainer) return;
+    let cancelled = false;
+    supabase.rpc('get_trainer_name').then(({ data }) => {
+      if (!cancelled && typeof data === 'string') setTrainerName(data);
+    });
+    return () => { cancelled = true; };
+  }, [isTrainer]);
+
+  // The screen header's + opens the Add Measurement form. ⚠️ Mount-time guard, not
+  // `> 0` — see the matching note in ProgressTab.
+  const addTickAtMount = useRef(addTick ?? 0);
+  useEffect(() => {
+    if (isTrainer && addTick != null && addTick > addTickAtMount.current) setAddOpen(true);
+  }, [addTick, isTrainer]);
 
   const load = useCallback(async () => {
-    const [{ data: mData }, { data: gData }] = await Promise.all([
-      supabase.from('measurements').select('*').eq('client_id', clientId).order('date', { ascending: false }),
-      supabase.from('client_goals').select('metric, goal_value').eq('client_id', clientId),
-    ]);
+    const { data: mData } = await supabase
+      .from('measurements').select('*').eq('client_id', clientId).order('date', { ascending: false });
     setMeasurements((mData ?? []) as Measurement[]);
-    const gMap: Record<string, number> = {};
-    for (const g of (gData ?? []) as any[]) gMap[g.metric] = Number(g.goal_value);
-    setGoals(gMap);
     setLoading(false);
   }, [clientId]);
 
@@ -1425,27 +1701,32 @@ function MeasurementsSubTab({ clientId, client, active }: { clientId: string; cl
     await supabase.from('measurements').delete().eq('id', id);
   };
 
-  const handleGoalSaved = useCallback((metric: string, val: number | null) => {
-    setGoals(prev => {
-      const next = { ...prev };
-      if (val == null) delete next[metric];
-      else next[metric] = val;
-      return next;
-    });
-  }, []);
-
   const handleQuickSave = useCallback(async (dbField: string, valStr: string) => {
     setQuickEdit(null);
     const val = parseFloat(valStr.replace(',', '.'));
     if (isNaN(val)) return;
-    const current = measurements[0];
-    if (current) {
-      await supabase.from('measurements').update({ [dbField]: val }).eq('id', current.id);
-      setMeasurements(prev => prev.map(m => m.id === current.id ? { ...m, [dbField]: val } : m));
+    // ⚠️ THE TRAINER NEVER WRITES INTO A CLIENT-AUTHORED ROW (Aug 7 2026).
+    // This used to edit `measurements[0]` outright. The client can now log their own
+    // weight, so the newest row is often theirs — and Vitek's whole Tanita scan
+    // (fat %, muscle kg, five segmental values) landed inside it, leaving the screen
+    // reading "Added by Adam Test" for numbers the client never took. The history's
+    // who-measured-this label is the only thing separating a bathroom scale from a
+    // body scan, so it has to stay true. The edit goes to the newest TRAINER row on
+    // that date instead, creating one if there is none; the display merges the two
+    // rows anyway, so a shared date costs nothing.
+    const newest = measurements[0] ?? null;
+    const date = newest?.date ?? todayIso();
+    const target = measurements.find(m => m.date === date && m.created_by_role !== 'client') ?? null;
+    if (target) {
+      await supabase.from('measurements').update({ [dbField]: val }).eq('id', target.id);
+      setMeasurements(prev => prev.map(m => (m.id === target.id ? { ...m, [dbField]: val } : m)));
     } else {
-      const row = { id: newId(), client_id: clientId, date: todayIso(), [dbField]: val, created_by: profile!.id, created_by_role: 'trainer' as const };
+      const row = { id: newId(), client_id: clientId, date, [dbField]: val, created_by: profile!.id, created_by_role: 'trainer' as const };
       const { data } = await supabase.from('measurements').insert(row).select().single();
-      if (data) setMeasurements([data as Measurement]);
+      if (data) {
+        setMeasurements(prev =>
+          [data as Measurement, ...prev].sort((a, b) => b.date.localeCompare(a.date)));
+      }
     }
   }, [measurements, clientId, profile]);
 
@@ -1453,13 +1734,100 @@ function MeasurementsSubTab({ clientId, client, active }: { clientId: string; cl
     setQuickEdit({ dbField, label, unit, currentVal });
   }, []);
 
+  // ── A client logging their OWN weigh-in (Aug 7 2026, Vitek: "weight is
+  //    something that the person could edit himself coz they can weight
+  //    themselves") ────────────────────────────────────────────────────────────
+  // ⚠️ This ALWAYS writes a row the client authored — it never edits the trainer's.
+  // A client may only change a measurement whose `created_by` is their own id, so
+  // updating the latest row (usually the trainer's Tanita entry) would match zero
+  // rows and fail silently, which is the exact bug this whole gate came from. It
+  // also keeps the two sources honestly separate: the history list already labels
+  // rows by who entered them, so a bathroom-scale weight never masquerades as a
+  // Tanita reading.
+  const myWeightToday = measurements.find(m => m.date === todayIso() && m.created_by === profile?.id) ?? null;
+
+  const saveMyStats = useCallback(async (weightStr: string, heightStr: string) => {
+    setWeightEntryOpen(false);
+    if (!profile) return;
+
+    // Height lives on their own profile row, which they are allowed to update.
+    const h = parseFloat(heightStr.replace(',', '.'));
+    if (!isNaN(h) && h > 0) {
+      await supabase.from('users').update({ height_cm: h }).eq('id', profile.id);
+      setHeightOverride(h);
+    }
+
+    const val = parseFloat(weightStr.replace(',', '.'));
+    if (isNaN(val)) return;
+    const today = todayIso();
+    const mine = measurements.find(m => m.date === today && m.created_by === profile.id);
+    if (mine) {
+      await supabase.from('measurements').update({ weight_kg: val }).eq('id', mine.id);
+      setMeasurements(prev => prev.map(m => (m.id === mine.id ? { ...m, weight_kg: val } : m)));
+      return;
+    }
+    const row = {
+      id: newId(), client_id: clientId, date: today, weight_kg: val,
+      created_by: profile.id, created_by_role: 'client' as const,
+    };
+    const { data } = await supabase.from('measurements').insert(row).select().single();
+    if (data) {
+      setMeasurements(prev =>
+        [data as Measurement, ...prev].sort((a, b) => b.date.localeCompare(a.date)));
+    }
+  }, [measurements, clientId, profile]);
+
   const latest = measurements[0] ?? null;
+
+  // ⚠️ EVERY DISPLAYED VALUE COMES FROM `current`, NOT FROM `latest` (Aug 7 2026).
+  // A measurement row is not a full picture: the client can now log a weight on its
+  // own, and that row becomes the newest one while holding nothing else. Reading
+  // the newest row alone therefore blanked fat, muscle, water, visceral and BMR the
+  // instant Vitek logged a weight as a client — *"when clicking on save
+  // measurements from weight everything goes -"*. `current` is a synthetic row of
+  // the most recent NON-NULL value for each field, so a reading only disappears
+  // when it has genuinely never been taken. The same is true of a partial Tanita
+  // entry, so this is right on the trainer's side too.
+  // `latest` survives for the "Measured <date> · added by <who>" caption, which is
+  // about a row rather than a value.
+  const current = React.useMemo<Measurement | null>(() => {
+    if (!measurements.length) return null;
+    const SKIP = new Set(['id', 'client_id', 'date', 'notes', 'created_by', 'created_by_role', 'created_at']);
+    const out: any = { ...measurements[0] };
+    for (const key of Object.keys(out)) {
+      if (SKIP.has(key) || out[key] != null) continue;
+      // `measurements` is ordered date-descending, so the first hit is the newest.
+      const found = measurements.find(m => (m as any)[key] != null);
+      if (found) out[key] = (found as any)[key];
+    }
+    return out as Measurement;
+  }, [measurements]);
+
+  /** The row a given reading actually came from — for a per-metric "measured on". */
+  const sourceOf = useCallback(
+    (field: keyof Measurement) => measurements.find(m => m[field] != null) ?? null,
+    [measurements],
+  );
+
+  // Since readings can now come from different days, one "Measured on" line for the
+  // whole screen would be wrong. The client's caption follows the SELECTED reading.
+  const METRIC_FIELDS: Record<ActiveMetric, (keyof Measurement)[]> = {
+    weight:   ['weight_kg'],
+    fat:      ['body_fat_pct', 'body_fat_kg'],
+    muscle:   ['muscle_mass_pct', 'muscle_mass_kg'],
+    water:    ['body_water_pct'],
+    visceral: ['visceral_fat'],
+    bmr:      ['bmr_kcal', 'bmr'],
+  };
 
   // Graph data
   const weightData    = measurements.filter(m => m.weight_kg != null).map(m => ({ date: m.date, value: m.weight_kg! })).reverse();
-  const fatPctData    = measurements.filter(m => m.body_fat_pct != null).map(m => ({ date: m.date, value: m.body_fat_pct! })).reverse();
-  const fatKgData     = measurements.filter(m => m.body_fat_kg != null).map(m => ({ date: m.date, value: m.body_fat_kg! })).reverse();
-  const musclePctData = measurements.filter(m => m.muscle_mass_pct != null).map(m => ({ date: m.date, value: m.muscle_mass_pct! })).reverse();
+  // The % series falls back to kg ÷ that ROW's own weight, so a client who only
+  // ever records kg still gets a percentage trend. Per row, never mixing one day's
+  // kg with another day's weight.
+  const fatPctData    = measurements.map(m => ({ date: m.date, value: m.body_fat_pct ?? pctFromKg(m.body_fat_kg, m.weight_kg) })).filter(p => p.value != null).map(p => ({ date: p.date, value: p.value! })).reverse();
+  const fatKgData     = measurements.map(m => ({ date: m.date, value: fatKgOf(m) })).filter(p => p.value != null).map(p => ({ date: p.date, value: p.value! })).reverse();
+  const musclePctData = measurements.map(m => ({ date: m.date, value: m.muscle_mass_pct ?? pctFromKg(m.muscle_mass_kg, m.weight_kg) })).filter(p => p.value != null).map(p => ({ date: p.date, value: p.value! })).reverse();
   const muscleKgData  = measurements.filter(m => m.muscle_mass_kg != null).map(m => ({ date: m.date, value: m.muscle_mass_kg! })).reverse();
   const waterData     = measurements.filter(m => m.body_water_pct != null).map(m => ({ date: m.date, value: m.body_water_pct! })).reverse();
   const icwData       = measurements.filter(m => m.icw_kg != null).map(m => ({ date: m.date, value: m.icw_kg! })).reverse();
@@ -1471,68 +1839,102 @@ function MeasurementsSubTab({ clientId, client, active }: { clientId: string; cl
   const sex = client?.sex ?? null;
   const dob = client?.date_of_birth ?? null;
   const age = dob ? getAge(dob) : null;
-  const heightCm = client?.height_cm ?? null;
+  // A client may edit their own height (their `users` row is theirs to update), and
+  // the row this screen was handed is a prop the parent will not refetch — so the
+  // freshly saved value has to win locally.
+  const heightCm = heightOverride ?? client?.height_cm ?? null;
   const sexBinary: 'male' | 'female' | null = sex === 'other' ? 'male' : sex;
   const fatSegs      = sexBinary ? getFatSegs(sexBinary, age ?? 35) : null;
-  const muscleSegs   = sexBinary ? getMuscleSegs(sexBinary, age ?? 35) : null;
   const waterSegs    = sexBinary ? getWaterSegs(sexBinary) : null;
   const visceralSegs = getVisceralSegs();
   const ecwTbwSegs   = getEcwTbwSegs();
-  const bmiSegs      = getBmiSegs();
 
-  // BMI computation (requires height_cm + weight_kg)
-  const latestBmi = heightCm && latest?.weight_kg
-    ? +( latest.weight_kg / ((heightCm / 100) ** 2) ).toFixed(1)
-    : null;
-  const bmiData: MeasPoint[] = heightCm
-    ? weightData.map(p => ({ date: p.date, value: +(p.value / ((heightCm / 100) ** 2)).toFixed(1) }))
-    : [];
+  // ── Percentage falls back to a calculation from kg (Aug 7 2026) ──────────────
+  // Both numbers are TYPED IN — nothing has ever been computed from the other, and
+  // a Tanita prints both, so normally both are present. But the percentage is the
+  // one that carries the healthy ranges and the one on the badge (Vitek: *"i think
+  // its enough to have percentage in the main badges … percentage is more important
+  // then kg"*), so an entry with only kg used to show a dash while its graph had
+  // data. Now the percentage is worked out from kg ÷ weight where it is missing.
+  // ⚠️ A calculated percentage is marked with `≈` wherever it is shown — a measured
+  // number and an inferred one must never look alike. The reverse is deliberately
+  // NOT done: kg is secondary, and inventing it would put a second unmeasured
+  // number on screen for no gain.
+  const fatPctShown    = current?.body_fat_pct ?? pctFromKg(current?.body_fat_kg, current?.weight_kg);
+  const musclePctShown = current?.muscle_mass_pct ?? pctFromKg(current?.muscle_mass_kg, current?.weight_kg);
+  const fatPctCalc     = current?.body_fat_pct == null && fatPctShown != null;
 
   // Derived zones
-  const bmiZone      = latestBmi != null ? zoneOf(latestBmi, bmiSegs) : null;
-  const fatZone      = fatSegs && latest?.body_fat_pct != null ? zoneOf(latest.body_fat_pct, fatSegs) : null;
-  const muscleZone   = muscleSegs && latest?.muscle_mass_pct != null ? zoneOf(latest.muscle_mass_pct, muscleSegs) : null;
-  const waterZone    = waterSegs && latest?.body_water_pct != null ? zoneOf(latest.body_water_pct, waterSegs) : null;
-  const ecwTbwZone   = latest?.ecw_tbw_ratio != null ? zoneOf(latest.ecw_tbw_ratio, ecwTbwSegs) : null;
-  const visceralZone = latest?.visceral_fat != null ? zoneOf(latest.visceral_fat, visceralSegs) : null;
+  const fatZone      = fatSegs && fatPctShown != null ? zoneOf(fatPctShown, fatSegs) : null;
+  const waterZone    = waterSegs && current?.body_water_pct != null ? zoneOf(current.body_water_pct, waterSegs) : null;
+  const ecwTbwZone   = current?.ecw_tbw_ratio != null ? zoneOf(current.ecw_tbw_ratio, ecwTbwSegs) : null;
+  const visceralZone = current?.visceral_fat != null ? zoneOf(current.visceral_fat, visceralSegs) : null;
 
-  // Fat kg — derive zone from fat%
-  const derivedFatPct = latest?.body_fat_kg != null && latest?.weight_kg
-    ? (latest.body_fat_kg / latest.weight_kg) * 100 : null;
-  const fatKgZone = derivedFatPct != null && fatSegs ? zoneOf(derivedFatPct, fatSegs) : null;
+  const addedBy = (m: Measurement) => describeAuthor(m, isTrainer, client?.name ?? null, trainerName);
 
-  // Muscle kg — derive zone from muscle%
-  const derivedMusclePct = latest?.muscle_mass_kg != null && latest?.weight_kg
-    ? (latest.muscle_mass_kg / latest.weight_kg) * 100 : null;
-  const muscleKgZone = derivedMusclePct != null && muscleSegs ? zoneOf(derivedMusclePct, muscleSegs) : null;
-
-  const addedBy = (m: Measurement) => m.created_by_role === 'client'
-    ? t.clientProfile.progress.addedByClient(client?.name ?? 'Client')
-    : t.clientProfile.progress.addedByTrainer;
-
-  const bmrRaw = latest?.bmr_kcal ?? latest?.bmr ?? null;
+  const bmrRaw = current?.bmr_kcal ?? current?.bmr ?? null;
 
   // ── Metric tab definitions ──────────────────────────────────────────────────
   type MetricTab = { key: ActiveMetric; label: string; displayVal: string; unit: string; dbField: string; zone: ZoneKey | null; rawVal: number | null };
   const metricTabs: MetricTab[] = [
-    { key: 'weight',   label: 'WEIGHT',   displayVal: latest?.weight_kg != null ? `${latest.weight_kg}` : '—',         unit: 'kg',   dbField: 'weight_kg',      zone: bmiZone,     rawVal: latest?.weight_kg ?? null },
-    { key: 'fat',      label: 'FAT',      displayVal: latest?.body_fat_pct != null ? `${latest.body_fat_pct}` : '—',    unit: '%',    dbField: 'body_fat_pct',   zone: fatZone,     rawVal: latest?.body_fat_pct ?? null },
-    { key: 'muscle',   label: 'MUSCLE',   displayVal: latest?.muscle_mass_pct != null ? `${latest.muscle_mass_pct}` : '—', unit: '%', dbField: 'muscle_mass_pct', zone: muscleZone, rawVal: latest?.muscle_mass_pct ?? null },
-    { key: 'water',    label: 'WATER',    displayVal: latest?.body_water_pct != null ? `${latest.body_water_pct}` : '—', unit: '%',   dbField: 'body_water_pct', zone: waterZone,   rawVal: latest?.body_water_pct ?? null },
-    { key: 'visceral', label: 'VISCERAL', displayVal: latest?.visceral_fat != null ? `${latest.visceral_fat}` : '—',    unit: '',     dbField: 'visceral_fat',   zone: visceralZone, rawVal: latest?.visceral_fat ?? null },
+    { key: 'weight',   label: 'WEIGHT',   displayVal: current?.weight_kg != null ? `${current.weight_kg}` : '—',         unit: 'kg',   dbField: 'weight_kg',      zone: null,     rawVal: current?.weight_kg ?? null },
+    // ⚠️ `rawVal` stays the STORED percentage even when a calculated one is shown —
+    // the quick edit must open empty rather than pre-filled with a number nobody
+    // measured, or confirming it would silently turn an estimate into a record.
+    { key: 'fat',      label: 'FAT',      displayVal: fatPctShown != null ? `${fatPctCalc ? '≈' : ''}${fatPctShown}` : '—',       unit: '%',    dbField: 'body_fat_pct',   zone: fatZone,     rawVal: current?.body_fat_pct ?? null },
+    { key: 'muscle',   label: 'MUSCLE',   displayVal: current?.muscle_mass_kg != null ? `${current.muscle_mass_kg}` : '—', unit: 'kg', dbField: 'muscle_mass_kg', zone: null, rawVal: current?.muscle_mass_kg ?? null },
+    { key: 'water',    label: 'WATER',    displayVal: current?.body_water_pct != null ? `${current.body_water_pct}` : '—', unit: '%',   dbField: 'body_water_pct', zone: waterZone,   rawVal: current?.body_water_pct ?? null },
+    { key: 'visceral', label: 'VISCERAL', displayVal: current?.visceral_fat != null ? `${current.visceral_fat}` : '—',    unit: '',     dbField: 'visceral_fat',   zone: visceralZone, rawVal: current?.visceral_fat ?? null },
     { key: 'bmr',      label: 'BMR',      displayVal: bmrRaw != null ? `${bmrRaw}` : '—',                               unit: 'kcal', dbField: 'bmr_kcal',       zone: null,        rawVal: bmrRaw },
   ];
 
+  // ⚠️ Tapping the active tile opens the quick edit — TRAINER ONLY (Aug 7 2026).
+  // The client screen offered it to everyone, and for a client it silently did
+  // nothing: they may only change a measurement they entered themselves, and every
+  // one of these was entered by the trainer, so the write matched zero rows and
+  // reported no error. Vitek hit it while testing and believed he had edited the
+  // values. An affordance for a write that cannot land is worse than no affordance.
+  // (He has since raised letting a client log their own WEIGHT — that needs its own
+  // row authored by them, not an edit of the trainer's, and is not this gate.)
   const handleTabPress = (tab: MetricTab) => {
     if (tab.key === activeMetric) {
-      openQuickEdit(tab.dbField, tab.label, tab.unit, tab.rawVal);
+      if (isTrainer) openQuickEdit(tab.dbField, tab.label, tab.unit, tab.rawVal);
     } else {
       setActiveMetric(tab.key);
     }
   };
 
+  // ⚠️ ONE FILE, DIFFERENT TOP (Vitek's decision, Aug 7 2026). This screen serves
+  // both sides, and they do opposite jobs: the trainer arrives from the Tanita with
+  // fifteen numbers to type and wants a dense grid to fill and scan; the client
+  // wants to understand one number and reads a body better than a table. So only
+  // the picker differs — the graphs, the history, the add form and the quick edit
+  // below are shared and untouched. Chosen because it is the REVERSIBLE option: if
+  // he prefers the ring for entry too, this conditional is what goes.
+  // Five badges, in slot order: left-top, right-top, left-bottom, right-bottom,
+  // centre-below — so MUSCLE · FAT, then WATER · VISCERAL, with BMR centred at the
+  // bottom (Vitek's arrangement, Aug 7 2026; his first pass had BMR top-left).
+  // WEIGHT is not here at all — it moved into the stats pill above the figure,
+  // paired with height, because those two are the numbers the client owns.
+  const ringByKey = new Map(metricTabs.map(tab => [tab.key, tab]));
+  const ringItems: RingItem[] = (['muscle', 'fat', 'water', 'visceral', 'bmr'] as ActiveMetric[])
+    .map(key => {
+      const tab = ringByKey.get(key)!;
+      return {
+        key: tab.key,
+        label: tab.label,
+        value: tab.displayVal,
+        unit: tab.unit,
+        zone: tab.zone ? ZONE_LABEL[tab.zone] : null,
+      };
+    });
+
   // ── Active graph ────────────────────────────────────────────────────────────
-  const renderActiveGraph = () => {
+  // `bare` = the client view: no card headers (the badge above already says the
+  // name, the number and the zone). BMI and goals are gone from BOTH sides now, so
+  // `bare` no longer governs either — see the notes on ZoneBarCard and on the
+  // weight case below.
+  const renderActiveGraph = (bare = false) => {
     const noData = (
       <View style={[s.card, { alignItems: 'center', paddingVertical: 20 }]}>
         <Text style={s.emptyText}>{t.clientProfile.progress.noMeasurements}</Text>
@@ -1540,96 +1942,186 @@ function MeasurementsSubTab({ clientId, client, active }: { clientId: string; cl
     );
 
     switch (activeMetric) {
-      case 'weight': {
-        if (!weightData.length) return noData;
-        if (heightCm && bmiData.length) {
-          return (
-            <ZoneBarCard
-              title="BMI (from weight)"
-              currentValue={latestBmi}
-              goalValue={goals['bmi'] ?? null}
-              segs={bmiSegs}
-              data={bmiData}
-              unit=""
-              clientId={clientId}
-              metricKey="bmi"
-              onGoalSaved={handleGoalSaved}
-            />
-          );
-        }
-        return <PlainGraphCard title={t.clientProfile.progress.graphWeight} data={weightData} unit=" kg" hint={heightCm ? undefined : 'Add height in Info tab to enable BMI zones'} />;
-      }
+      // ⚠️ BMI IS GONE FROM BOTH SIDES (Aug 7 2026) — Vitek: *"we dont show BMI
+      // because i dont believe in that (its outdated)"*, extended to the trainer on
+      // his say-so the same day. Weight therefore has no zones and is always a plain
+      // trend line. `getBmiSegs` is left in place unused; do not re-wire it without
+      // asking him.
+      case 'weight':
+        return weightData.length
+          ? <PlainGraphCard title={t.clientProfile.progress.graphWeight} data={weightData} unit=" kg" bare={bare} />
+          : noData;
 
       case 'fat': {
         const hasFat = fatPctData.length > 0 || fatKgData.length > 0;
         if (!hasFat) return noData;
-        if (!fatSegs) return <PlainGraphCard title={t.clientProfile.progress.graphFat} data={fatPctData.length ? fatPctData : fatKgData} unit={fatPctData.length ? '%' : ' kg'} hint={t.clientProfile.progress.noSexSet} />;
+        if (!fatSegs) return <PlainGraphCard title={t.clientProfile.progress.graphFat} data={fatPctData.length ? fatPctData : fatKgData} unit={fatPctData.length ? '%' : ' kg'} hint={t.clientProfile.progress.noSexSet} bare={bare} />;
         const fatSubTabs: MetricSubTab[] = [
-          { label: t.clientProfile.progress.subTabFatPct, currentValue: latest?.body_fat_pct ?? null, segs: fatSegs, data: fatPctData, unit: '%', metricKey: 'fat_pct', goalValue: goals['fat_pct'] ?? null },
-          { label: t.clientProfile.progress.subTabFatKg, currentValue: latest?.body_fat_kg ?? null, overrideZone: fatKgZone, segs: null, data: fatKgData, unit: ' kg', metricKey: 'fat_kg', goalValue: goals['fat_kg'] ?? null },
+          { label: t.clientProfile.progress.subTabFatPct, currentValue: fatPctShown, segs: fatSegs, data: fatPctData, unit: '%', metricKey: 'fat_pct'},
+          { label: t.clientProfile.progress.subTabFatKg, currentValue: current ? fatKgOf(current) : null, approx: current?.body_fat_kg == null, overrideZone: fatZone, segs: null, data: fatKgData, unit: ' kg', metricKey: 'fat_kg'},
         ];
         return (
           <ZoneBarCard title={t.clientProfile.progress.graphFat}
-            currentValue={latest?.body_fat_pct ?? null} goalValue={goals['fat_pct'] ?? null}
-            segs={fatSegs} data={fatPctData} unit="%" clientId={clientId} metricKey="fat_pct"
-            onGoalSaved={handleGoalSaved} subTabs={fatSubTabs} />
+            currentValue={fatPctShown}
+            segs={fatSegs} data={fatPctData} unit="%" subTabs={fatSubTabs} bare={bare} />
         );
       }
 
+      // ⚠️ MUSCLE IS SHOWN IN KG AND HAS NO HEALTHY RANGE (Aug 7 2026). Vitek's
+      // Tanita reports muscle mass in KG ONLY — no percentage — and the two are not
+      // interchangeable. Tanita's "muscle mass" is essentially everything that is
+      // neither fat nor bone, so as a share of body weight it lands around 70–75%
+      // (his own figures: 77kg at 22% fat ≈ 57kg muscle ≈ 74%). The bands in
+      // `getMuscleSegs` are 33–40% "normal" because they describe SKELETAL muscle
+      // percentage, a different quantity. Feeding one into the other reads
+      // "Athletic" forever and runs off the end of the bar.
+      // ⚠️ NO EXTRA INPUT FIXES THIS. He asked whether water % and fat kg would let
+      // us derive the percentage — they would not, and they were never the missing
+      // piece: muscle % is just muscle kg ÷ weight, which we could always compute.
+      // The mismatch is a DEFINITION, not a shortage of data, and converting Tanita
+      // muscle mass to skeletal muscle mass needs raw impedance and a validated
+      // equation the app does not have. Do not "improve" this by inventing one.
+      // The % sub-tab therefore stays — it is a true share of body weight, and
+      // labelled as such — but it is never judged against a range.
       case 'muscle': {
         const hasMuscle = musclePctData.length > 0 || muscleKgData.length > 0;
         if (!hasMuscle) return noData;
-        if (!muscleSegs) return <PlainGraphCard title={t.clientProfile.progress.graphMuscle} data={musclePctData.length ? musclePctData : muscleKgData} unit={musclePctData.length ? '%' : ' kg'} hint={t.clientProfile.progress.noSexSet} />;
         const muscleSubTabs: MetricSubTab[] = [
-          { label: t.clientProfile.progress.subTabMusclePct, currentValue: latest?.muscle_mass_pct ?? null, segs: muscleSegs, data: musclePctData, unit: '%', metricKey: 'muscle_pct', goalValue: goals['muscle_pct'] ?? null },
-          { label: t.clientProfile.progress.subTabMuscleKg, currentValue: latest?.muscle_mass_kg ?? null, overrideZone: muscleKgZone, segs: null, data: muscleKgData, unit: ' kg', metricKey: 'muscle_kg', goalValue: goals['muscle_kg'] ?? null },
+          { label: t.clientProfile.progress.subTabMuscleKg, currentValue: current?.muscle_mass_kg ?? null, segs: null, data: muscleKgData, unit: ' kg', metricKey: 'muscle_kg' },
+          { label: t.clientProfile.progress.subTabMusclePctOfWeight, currentValue: musclePctShown, segs: null, data: musclePctData, unit: '%', metricKey: 'muscle_pct' },
         ];
         return (
           <ZoneBarCard title={t.clientProfile.progress.graphMuscle}
-            currentValue={latest?.muscle_mass_pct ?? null} goalValue={goals['muscle_pct'] ?? null}
-            segs={muscleSegs} data={musclePctData} unit="%" clientId={clientId} metricKey="muscle_pct"
-            onGoalSaved={handleGoalSaved} subTabs={muscleSubTabs} />
+            currentValue={current?.muscle_mass_kg ?? null}
+            segs={null} data={muscleKgData} unit=" kg"
+            // ⚠️ NO "% of weight" tab for the CLIENT (Vitek, Aug 7 2026: *"remove the
+            // percentage from the muscle, it makes no sense to be there"*). It is a
+            // true share of body weight, but it has no reference range and it MOVES
+            // WHEN FAT MOVES — lose fat and your muscle percentage rises on a day you
+            // gained no muscle. Useful to a trainer reading it knowingly, misleading
+            // to the person it is about. The trainer keeps it.
+            subTabs={bare ? undefined : muscleSubTabs} bare={bare} />
         );
       }
 
       case 'water': {
         const hasWater = waterData.length > 0 || ecwTbwData.length > 0 || icwData.length > 0;
         if (!hasWater) return noData;
-        const waterSubTabs: MetricSubTab[] = [
-          { label: t.clientProfile.progress.subTabWaterPct, currentValue: latest?.body_water_pct ?? null, segs: waterSegs, data: waterData, unit: '%', metricKey: 'water_pct', goalValue: goals['water_pct'] ?? null },
-          { label: t.clientProfile.progress.subTabIcwKg, currentValue: latest?.icw_kg ?? null, segs: null, data: icwData, unit: ' kg', metricKey: 'icw_kg', goalValue: goals['icw_kg'] ?? null },
-          { label: t.clientProfile.progress.subTabEcwTbw, currentValue: latest?.ecw_tbw_ratio ?? null, overrideZone: ecwTbwZone, segs: ecwTbwSegs, data: ecwTbwData, unit: '', metricKey: 'ecw_tbw', goalValue: goals['ecw_tbw'] ?? null },
-        ];
+        // ⚠️ A tab appears only if that reading actually exists. Vitek's Tanita runs
+        // TWO scans — the full one for gym members, a limited one for outside
+        // visitors that reports total water and nothing else — so the same trainer
+        // has clients with all three readings and clients with one. Fixed tabs meant
+        // permanently empty tabs for half of them. Sub-tabs elsewhere are not
+        // filtered, because their partners are always derivable (fat kg from fat %,
+        // muscle % from muscle kg); these two cannot be derived from anything.
+        const waterSubTabs: MetricSubTab[] = ([
+          { label: t.clientProfile.progress.subTabWaterPct, currentValue: current?.body_water_pct ?? null, segs: waterSegs, data: waterData, unit: '%', metricKey: 'water_pct'},
+          { label: t.clientProfile.progress.subTabIcwKg, currentValue: current?.icw_kg ?? null, segs: null, data: icwData, unit: ' kg', metricKey: 'icw_kg'},
+          { label: t.clientProfile.progress.subTabEcwTbw, currentValue: current?.ecw_tbw_ratio ?? null, overrideZone: ecwTbwZone, segs: ecwTbwSegs, data: ecwTbwData, unit: '', metricKey: 'ecw_tbw'},
+        ] as MetricSubTab[]).filter(st => st.data.length > 0 || st.currentValue != null);
         return (
           <ZoneBarCard title="Water"
-            currentValue={latest?.body_water_pct ?? null} goalValue={goals['water_pct'] ?? null}
-            segs={waterSegs} data={waterData} unit="%" clientId={clientId} metricKey="water_pct"
-            onGoalSaved={handleGoalSaved} subTabs={waterSubTabs} />
+            currentValue={current?.body_water_pct ?? null}
+            segs={waterSegs} data={waterData} unit="%"
+            // ⚠️ The CLIENT sees total water only (Vitek, Aug 7 2026: *"i never
+            // understood why its important to differientiate"*). ICW and ECW/TBW are
+            // clinical readings — ECW/TBW is the useful one, a rising share of water
+            // OUTSIDE the cells meaning fluid retention or unresolved inflammation —
+            // but they need reading in context, and neither is something a client can
+            // act on. The trainer keeps all three; the fields and the data are
+            // untouched, so this is a display decision and reversible.
+            subTabs={bare ? undefined : waterSubTabs} bare={bare} />
         );
       }
 
       case 'visceral':
         return visceralData.length
           ? <ZoneBarCard title={t.clientProfile.progress.visceralFat}
-              currentValue={latest?.visceral_fat ?? null} goalValue={goals['visceral'] ?? null}
-              segs={visceralSegs} data={visceralData} unit="" clientId={clientId} metricKey="visceral"
-              onGoalSaved={handleGoalSaved} />
+              currentValue={current?.visceral_fat ?? null}
+              segs={visceralSegs} data={visceralData} unit="" bare={bare} />
           : noData;
 
       case 'bmr':
-        return bmrData.length ? <PlainGraphCard title="BMR (kcal)" data={bmrData} unit=" kcal" /> : noData;
+        return bmrData.length ? <PlainGraphCard title="BMR (kcal)" data={bmrData} unit=" kcal" bare={bare} /> : noData;
     }
   };
 
   // ── Active silhouette (only for fat and muscle) ─────────────────────────────
   const renderActiveSilhouette = (): React.ReactNode => {
-    if (!latest) return null;
-    if (activeMetric === 'fat')    return <BodySilhouette latest={latest} segMode="fat"    showSegCards onSegPress={openQuickEdit} />;
-    if (activeMetric === 'muscle') return <BodySilhouette latest={latest} segMode="muscle" showSegCards onSegPress={openQuickEdit} />;
+    if (!current) return null;
+    // Same trainer-only rule as the metric tiles above — a client tapping a limb
+    // opened an editor whose save could never land.
+    if (activeMetric === 'fat')    return <BodySilhouette latest={current} segMode="fat"    showSegCards history={measurements} onSegPress={isTrainer ? openQuickEdit : undefined} />;
+    if (activeMetric === 'muscle') return <BodySilhouette latest={current} segMode="muscle" showSegCards history={measurements} onSegPress={isTrainer ? openQuickEdit : undefined} />;
     return null;
   };
 
   if (loading) return <ActivityIndicator color={ACCENT} style={{ marginTop: 40 }} />;
+
+  if (!isTrainer) {
+    return (
+      <View>
+        <BodyCompRing
+          items={ringItems}
+          active={activeMetric}
+          onSelect={key => setActiveMetric(key as ActiveMetric)}
+          weight={current?.weight_kg != null ? `${current.weight_kg} kg` : '—'}
+          height={heightCm != null ? `${heightCm} cm` : '—'}
+          weightActive={activeMetric === 'weight'}
+          onSelectWeight={() => setActiveMetric('weight')}
+          onEditStats={() => setWeightEntryOpen(true)}
+        />
+
+        {(() => {
+          const src = METRIC_FIELDS[activeMetric].map(f => sourceOf(f)).find(Boolean) ?? null;
+          return src ? (
+            <Text style={s.metricTabHint}>
+              {t.clientProfile.progress.latestMeasurement(fmtDate(src.date))}
+            {showAuthor(activeMetric, src) ? ` · ${addedBy(src)}` : ''}
+            </Text>
+          ) : null;
+        })()}
+
+        {/* The tapped reading's graph, right under the body it came off — headerless,
+            because the badge above already said the name, the number and the zone. */}
+        <React.Fragment key={activeMetric}>
+          {renderActiveGraph(true)}
+        </React.Fragment>
+
+        {current && (activeMetric === 'fat' || activeMetric === 'muscle') && (
+          <View style={s.card}>{renderActiveSilhouette()}</View>
+        )}
+
+        {measurements.length > 0 && (
+          <>
+            <Text style={s.sectionLabel}>{t.clientProfile.progress.historyLabel}</Text>
+            <View style={s.card}>
+              {measurements.map((m, idx) => (
+                <React.Fragment key={m.id}>
+                  {idx > 0 && <View style={s.divider} />}
+                  <HistoryRow measurement={m} isTrainer={isTrainer} onPress={() => setDetailMeas(m)} onDelete={() => {}} />
+                </React.Fragment>
+              ))}
+            </View>
+          </>
+        )}
+
+        {weightEntryOpen && (
+          <BodyStatsModal
+            weight={myWeightToday?.weight_kg != null ? `${myWeightToday.weight_kg}` : ''}
+            height={heightCm != null ? `${heightCm}` : ''}
+            onSave={saveMyStats}
+            onClose={() => setWeightEntryOpen(false)}
+          />
+        )}
+
+        {detailMeas && (
+          <MeasDetailModal measurement={detailMeas} clientName={client?.name ?? 'Client'} trainerName={trainerName}
+            onClose={() => setDetailMeas(null)} onDelete={() => {}} isTrainer={isTrainer} />
+        )}
+      </View>
+    );
+  }
 
   return (
     <View>
@@ -1658,7 +2150,7 @@ function MeasurementsSubTab({ clientId, client, active }: { clientId: string; cl
                   }
                 </View>
               )}
-              {latest && tab.displayVal !== '—' && !isActive && (
+              {isTrainer && current && tab.displayVal !== '—' && !isActive && (
                 <View style={s.metricTabEditHint} />
               )}
             </TouchableOpacity>
@@ -1666,11 +2158,17 @@ function MeasurementsSubTab({ clientId, client, active }: { clientId: string; cl
         })}
       </View>
 
-      {latest && (
-        <Text style={s.metricTabHint}>
-          {t.clientProfile.progress.latestMeasurement(fmtDate(latest.date))} · {addedBy(latest)}
-        </Text>
-      )}
+      {/* Follows the selected reading, not the newest ROW — different readings can
+          now come from different days, so one date for the whole screen would lie. */}
+      {(() => {
+        const src = METRIC_FIELDS[activeMetric].map(f => sourceOf(f)).find(Boolean) ?? null;
+        return src ? (
+          <Text style={s.metricTabHint}>
+            {t.clientProfile.progress.latestMeasurement(fmtDate(src.date))}
+            {showAuthor(activeMetric, src) ? ` · ${addedBy(src)}` : ''}
+          </Text>
+        ) : null;
+      })()}
 
       {/* Active metric graph — key forces unmount/remount on metric change, clearing tooltip state */}
       <React.Fragment key={activeMetric}>
@@ -1678,16 +2176,16 @@ function MeasurementsSubTab({ clientId, client, active }: { clientId: string; cl
       </React.Fragment>
 
       {/* Active metric silhouette — only for fat and muscle */}
-      {latest && (activeMetric === 'fat' || activeMetric === 'muscle') && (
+      {current && (activeMetric === 'fat' || activeMetric === 'muscle') && (
         <View style={s.card}>
           {renderActiveSilhouette()}
         </View>
       )}
 
       {/* Set-sex hint */}
-      {measurements.length > 0 && !sex && (activeMetric === 'fat' || activeMetric === 'muscle' || activeMetric === 'water') && (
+      {measurements.length > 0 && !sex && (activeMetric === 'fat' || activeMetric === 'water') && (
         <View style={s.sexHintCard}>
-          <Text style={s.sexHintText}>Set client sex in the Info tab to enable zone-based tracking (Fat %, Muscle %, Water %).</Text>
+          <Text style={s.sexHintText}>Set client sex in the Info tab to enable zone-based tracking (Fat %, Water %).</Text>
         </View>
       )}
 
@@ -1712,12 +2210,12 @@ function MeasurementsSubTab({ clientId, client, active }: { clientId: string; cl
         </>
       )}
 
-      {/* Add button */}
-      {isTrainer && (
-        <TouchableOpacity style={s.addMeasBtn} onPress={() => setAddOpen(true)} activeOpacity={0.85}>
-          <Text style={s.addMeasBtnText}>+ {t.clientProfile.progress.addMeasurement}</Text>
-        </TouchableOpacity>
-      )}
+      {/* ⚠️ NO in-screen Add button — the screen header's + is the one way in
+          (Aug 7 2026). It used to sit below the ENTIRE measurement history, which is
+          why Vitek could not find it at all and entered a whole Tanita scan through
+          the quick-edit tiles instead: *"ok wow i missed that haha"*, then *"make the
+          plus in the header to be that button … we dont need it then at all in the
+          screen"*. An action buried under an unbounded list is not discoverable. */}
 
       <AddMeasurementModal visible={addOpen} clientId={clientId} client={client} onClose={() => setAddOpen(false)} onSaved={load} />
 
@@ -1732,7 +2230,7 @@ function MeasurementsSubTab({ clientId, client, active }: { clientId: string; cl
       )}
 
       {detailMeas && (
-        <MeasDetailModal measurement={detailMeas} clientName={client?.name ?? 'Client'}
+        <MeasDetailModal measurement={detailMeas} clientName={client?.name ?? 'Client'} trainerName={trainerName}
           onClose={() => setDetailMeas(null)}
           onDelete={() => setConfirmModal({
             title: t.clientProfile.progress.confirmDeleteTitle,
@@ -2339,10 +2837,13 @@ export default function ProgressTab({
   client,
   variant,
   embeddedTab,
+  addTick,
 }: {
   clientId: string;
   client: User | null;
   variant?: 'client' | 'glass';
+  /** Bumped by the screen header's + to open the Add Measurement form. */
+  addTick?: number;
   /** Render ONE sub-tab with no tab bar at all. The client Progress hub opens each
    *  folder as its own screen, so the switcher belongs to the hub's pentagon, not
    *  inside the content. `'measurements'` IS Body composition — see the naming note
@@ -2363,11 +2864,26 @@ export default function ProgressTab({
     setMounted(m => (m.includes(tab) ? m : [...m, tab]));
   }, []);
 
+  // ⚠️ Compared against its MOUNT-TIME value, never `> 0`. A tick never resets, so a
+  // bare `addTick > 0` fires on every later MOUNT rather than on the press — which
+  // is precisely how a shared counter once made a Library sub-tab unreachable
+  // (CLAUDE.md §2). Leaving Progress and coming back would reopen the form.
+  const addTickAtMount = useRef(addTick ?? 0);
+  useEffect(() => {
+    // The + adds a MEASUREMENT, so make sure that is the sub-tab you land on.
+    if (addTick != null && addTick > addTickAtMount.current) selectSubTab('measurements');
+  }, [addTick, selectSubTab]);
+
   // Hub mode: one folder, no switcher. Mounted directly so it owns the screen.
   if (embeddedTab) {
     return embeddedTab === 'strength'
-      ? <StrengthSubTab clientId={clientId} active />
-      : <MeasurementsSubTab clientId={clientId} client={client} active />;
+      ? (
+        <>
+          <MuscleScanCard clientId={clientId} />
+          <StrengthSubTab clientId={clientId} active />
+        </>
+      )
+      : <MeasurementsSubTab clientId={clientId} client={client} active addTick={addTick} />;
   }
 
   return (
@@ -2416,11 +2932,16 @@ export default function ProgressTab({
 
       {mounted.includes('measurements') && (
         <View style={subTab === 'measurements' ? undefined : s.subTabHidden}>
-          <MeasurementsSubTab clientId={clientId} client={client} active={subTab === 'measurements'} />
+          <MeasurementsSubTab clientId={clientId} client={client} active={subTab === 'measurements'} addTick={addTick} />
         </View>
       )}
       {mounted.includes('strength') && (
         <View style={subTab === 'strength' ? undefined : s.subTabHidden}>
+          {/* ⚠️ Mounted here rather than by each screen, so the trainer and the
+              client get the same card from one place. It scans once on mount, and
+              this sub-tab is only mounted the first time it is opened — so the
+              animation plays when it is first seen, not while hidden. */}
+          <MuscleScanCard clientId={clientId} />
           <StrengthSubTab clientId={clientId} active={subTab === 'strength'} />
         </View>
       )}

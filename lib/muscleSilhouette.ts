@@ -33,6 +33,16 @@ export type BodyRegion = {
   slug: string;
   intensity: number; // 1 = secondary (light mint), 2 = primary (strong green)
   band?: BodyRegionBand;
+  /**
+   * Light only ONE side of a paired muscle — the PERSON's side, not the viewer's.
+   * Added Aug 2026 for the body-composition limb view, where a heavier left arm has
+   * to be visibly heavier than the right.
+   *
+   * ⚠️ On the FRONT view the person's right arm is drawn on the VIEWER's left; on
+   * the back view they coincide. BodyMap owns that flip — callers always say which
+   * side of the BODY they mean and never think about the drawing.
+   */
+  bodySide?: 'left' | 'right';
 };
 
 type RegionDef = { slug: Slug; band?: BodyRegionBand };

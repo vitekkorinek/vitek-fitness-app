@@ -47,103 +47,63 @@ const FOLDER_TITLE: Record<Folder, string> = {
   consistency:  'Consistency',
 };
 
-// ─── ScanHub — the body gets scanned, the readings fly off it ────────────────
-// The Library's centre object opens; this one is scanned. The rule both obey is
-// the same, and it is the one three rejected versions of the book got wrong:
+// ─── BodyHub — the body stands, the readings bloom off it ───────────────────
+// The Library's centre object opens; this one simply gives its readings up. The
+// rule both obey is the one three rejected versions of the book got wrong:
 // NOTHING FADES IN FROM NOWHERE. A reading exists at the instant it detaches
 // from the body, at the point on the body it was taken from.
 //
-// ⚠️ The lit band must travel CLEAR OF THE SILHOUETTE at both ends. Stopping it
-// level with the feet leaves them lit for as long as the figure is on screen —
-// Vitek, on the mockup: "the scan finished at his feet so they stay light green,
-// like shoes haha". It starts a full band-height above the crown and ends a full
-// band-height below the feet, so at rest it is off the body in both directions
-// and needs no opacity animation of its own.
+// ⚠️ THE LANDING DOES NOT SCAN, AND MUST NOT (Aug 7 2026). It did until now — a
+// line swept the figure and lit the strip it crossed — and the animation was
+// liked. It came out anyway, on Vitek's own argument: a scan should mean a
+// reading is being TAKEN, and nothing is measured here. The scan belongs to the
+// Strength folder, where the body is genuinely being read for what was trained.
+// Spend it here and it stops meaning anything there. What is left is the part
+// that was always carrying the idea: five pulse rings leaving the body in order,
+// each with its badge. Deleted, not disabled — the lit-band copy of the figure
+// and the glowing line are gone, along with `BodyMap`'s `baseFill` being needed.
 //
-// Deliberately 2D — translate + scale + opacity only. None of the rotateY /
-// perspective / coplanar-flicker traps that cost nine device rounds on the book
-// can occur here, because no layer is ever 3D-transformed.
+// ⚠️ AND IT MUST NOT SPIN. Proposed in the same breath as dropping the scan; two
+// reasons it is worse. BodyMap is two FLAT SVGs (front and back), so a "spin" can
+// only ever be a front→back flip — and that flip is the mechanic Strength needs
+// to show the posterior chain, so spending it here costs the same thing the scan
+// did. Second, this whole hub is deliberately 2D — translate + scale + opacity
+// only — so none of the rotateY / perspective / coplanar-flicker traps that cost
+// nine device rounds on the book can occur. A spin buys every one of them back.
 
 const FIG_SCALE = 0.50;                    // BodyMap renders 200×400 at scale 1
 const FIG_W = 200 * FIG_SCALE;             // 100
 const FIG_H = 400 * FIG_SCALE;             // 200
-const BAND_H = 30;                         // the lit strip the scan line drags
 
 // Where each reading comes off the body, as a fraction of the figure's height.
-// Crown, hands, feet — which is also the order the scan reaches them, so the
-// folders arrive in priority order for free.
+// Crown, hands, feet — which is also the order they bloom, so the folders arrive
+// in priority order for free.
 const ANCHOR_Y = { crown: 0.04, hands: 0.63, feet: 0.97 } as const;
 const HAND_DX = FIG_W * 0.33;              // hands hang this far off centre
 const FOOT_DX = FIG_W * 0.11;
 
-// Fraction of the sweep at which the line reaches each anchor. The band travels
-// -BAND_H → FIG_H + BAND_H, so the crossing point is offset by one band height.
-const crossAt = (fy: number) => (fy * FIG_H + BAND_H) / (FIG_H + BAND_H * 2);
+// Lead-in / lead-out on the bloom clock, in figure pixels: the crown must not
+// fire on frame 0 nor the feet on the last frame. Carried over UNCHANGED from the
+// scan band's height, which is where this rhythm was tuned on device — the line
+// is gone, the cadence it produced is not, and that cadence is the part Vitek
+// liked. Do not "simplify" this to a bare `fy`; it snaps both ends flat.
+const BLOOM_PAD = 30;
+const bloomAt = (fy: number) => (fy * FIG_H + BLOOM_PAD) / (FIG_H + BLOOM_PAD * 2);
 
-const SWEEP_MS  = 700;
-const SWEEP_DELAY = 180;
+const BLOOM_MS = 700;
+const BLOOM_DELAY = 180;
 const FLIGHT_MS = 820;
 const PAIR_STAGGER = 45;
 
-function ScanHub({ anim, onPress }: { anim: Animated.Value; onPress: () => void }) {
-  // The window that reveals the accent copy, and its counter-translate so the
-  // body inside it stays registered with the body underneath.
-  const bandY = anim.interpolate({
-    inputRange: [0, 1],
-    outputRange: [-BAND_H, FIG_H + BAND_H],
-  });
-  const lineY = anim.interpolate({
-    inputRange: [0, 1],
-    outputRange: [-BAND_H / 2, FIG_H + BAND_H / 2],
-  });
-
+function BodyHub({ onPress }: { onPress: () => void }) {
+  // Nothing animated left on the figure itself: it stands, and the readings leave
+  // it. The tap target is the whole figure, which is what re-plays the bloom.
   return (
     <Pressable onPress={onPress} style={{ width: FIG_W, height: FIG_H }}>
-      {/* base body */}
       <BodyMap side="front" scale={FIG_SCALE} regions={[]} />
-
-      {/* the strip the scan is crossing, lit */}
-      <Animated.View
-        pointerEvents="none"
-        style={[sc.band, { transform: [{ translateY: bandY }] }]}
-      >
-        <Animated.View style={{ transform: [{ translateY: Animated.multiply(bandY, -1) }] }}>
-          <BodyMap side="front" scale={FIG_SCALE} regions={[]} baseFill={ACCENT} />
-        </Animated.View>
-      </Animated.View>
-
-      {/* the scan line — visible only while it is actually crossing the body */}
-      <Animated.View
-        pointerEvents="none"
-        style={[
-          sc.line,
-          {
-            opacity: anim.interpolate({
-              inputRange: [0, 0.04, 0.9, 1],
-              outputRange: [0, 1, 1, 0],
-            }),
-            transform: [{ translateY: lineY }],
-          },
-        ]}
-      />
     </Pressable>
   );
 }
-
-const sc = StyleSheet.create({
-  band: {
-    position: 'absolute', left: 0, top: 0,
-    width: FIG_W, height: BAND_H,
-    overflow: 'hidden',
-  },
-  line: {
-    position: 'absolute', top: 0,
-    left: -22, right: -22, height: 2.5,
-    borderRadius: 2, backgroundColor: ACCENT,
-    shadowColor: ACCENT, shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.85, shadowRadius: 7, elevation: 0,
-  },
-});
 
 // ─── ReadingChip — a measurement taken off the body ──────────────────────────
 // The Library's badge is PAGE-shaped because it is literally a page of the book.
@@ -213,8 +173,8 @@ function ReadingChip({
 // The ring left behind at the point a reading came off — the beat that says
 // "this was taken from here" rather than "this flew past here".
 function Pulse({ anim, x, y, delay }: { anim: Animated.Value; x: number; y: number; delay: number }) {
-  // `anim` is the shared 0→1 sweep clock; the ring lives in the window that
-  // starts when the line reaches this anchor.
+  // `anim` is the shared 0→1 bloom clock; the ring lives in the window that
+  // starts when this anchor's turn comes round.
   // ⚠️ Clamped INSIDE (0,1): an interpolation inputRange must be strictly
   // increasing, and the feet anchor sits late enough that an unclamped
   // `start + 0.22` lands exactly on 1 and duplicates the final stop, which
@@ -278,7 +238,7 @@ export default function ProgressScreen() {
   const [cmpLocked, setCmpLocked] = useState(false);
 
   const [hubOpen, setHubOpen] = useState(false);
-  const scanAnim = useRef(new Animated.Value(0)).current;
+  const bloomAnim = useRef(new Animated.Value(0)).current;
   const chipAnims = useRef(FOLDER_KEYS.map(() => new Animated.Value(0))).current;
 
   // Same pentagon as the Library, stretched vertically: the book is wide and
@@ -335,20 +295,22 @@ export default function ProgressScreen() {
   const animateHub = useCallback((to: 0 | 1) => {
     setHubOpen(to === 1);
     if (to === 1) {
-      Animated.timing(scanAnim, {
+      // The clock the pulses run on. It no longer moves anything ON the body —
+      // it is what staggers the rings crown → hands → feet.
+      Animated.timing(bloomAnim, {
         toValue: 1,
-        duration: SWEEP_MS,
-        delay: SWEEP_DELAY,
+        duration: BLOOM_MS,
+        delay: BLOOM_DELAY,
         easing: Easing.bezier(0.42, 0, 0.30, 1),
         useNativeDriver: true,
       }).start();
-      // Each reading sets off when the line actually reaches its anchor, so the
-      // sweep and the flights are one event rather than two that happen to overlap.
+      // Each reading sets off exactly when its own ring leaves the body, so the
+      // pulse and the flight are one event rather than two that happen to overlap.
       const fly = (i: number, fy: number, pair: 0 | 1) =>
         Animated.timing(chipAnims[i], {
           toValue: 1,
           duration: FLIGHT_MS,
-          delay: SWEEP_DELAY + SWEEP_MS * crossAt(fy) + pair * PAIR_STAGGER,
+          delay: BLOOM_DELAY + BLOOM_MS * bloomAt(fy) + pair * PAIR_STAGGER,
           // The settle from the mock — each reading overshoots its spot a little
           // and eases back, rather than arriving and stopping dead.
           easing: Easing.bezier(0.2, 1.25, 0.4, 1),
@@ -362,7 +324,7 @@ export default function ProgressScreen() {
         fly(4, ANCHOR_Y.feet,  1),
       ]).start();
     } else {
-      // Closing: readings go back into the body first, then the scan resets under
+      // Closing: readings go back into the body first, then the clock resets under
       // them. No bounce on the way in — a reading wobbling as it lands back in the
       // body reads wrong, same reason the book's pages come home without one.
       Animated.stagger(
@@ -373,10 +335,10 @@ export default function ProgressScreen() {
       ).start();
       Animated.sequence([
         Animated.delay(260),
-        Animated.timing(scanAnim, { toValue: 0, duration: 1, useNativeDriver: true }),
+        Animated.timing(bloomAnim, { toValue: 0, duration: 1, useNativeDriver: true }),
       ]).start();
     }
-  }, [scanAnim, chipAnims]);
+  }, [bloomAnim, chipAnims]);
 
   const toggleHub = () => animateHub(hubOpen ? 0 : 1);
 
@@ -389,10 +351,10 @@ export default function ProgressScreen() {
       return () => {
         clearTimeout(timer);
         setHubOpen(false);
-        scanAnim.setValue(0);
+        bloomAnim.setValue(0);
         chipAnims.forEach(a => a.setValue(0));
       };
-    }, [animateHub, scanAnim, chipAnims])
+    }, [animateHub, bloomAnim, chipAnims])
   );
 
   const clientId = profile?.id ?? '';
@@ -418,7 +380,7 @@ export default function ProgressScreen() {
     <View style={s.root}>
       <StatusBar barStyle="dark-content" />
 
-      {/* ── Landing: the body is scanned, the readings fly off it ── */}
+      {/* ── Landing: the body stands, the readings bloom off it ── */}
       {view === 'landing' && (
         <ScrollView
           contentInsetAdjustmentBehavior="never"
@@ -438,16 +400,16 @@ export default function ProgressScreen() {
             {/* The figure is rendered FIRST so every reading draws ABOVE it — a
                 reading has to come off the front of the body, not out from behind. */}
             <View style={{ position: 'absolute', left: hubW / 2 - FIG_W / 2, top: hubCy - FIG_H / 2 }}>
-              <ScanHub anim={scanAnim} onPress={toggleHub} />
+              <BodyHub onPress={toggleHub} />
             </View>
 
             {FOLDER_KEYS.map(k => (
               <Pulse
                 key={`p-${k}`}
-                anim={scanAnim}
+                anim={bloomAnim}
                 x={hubW / 2 + anchor[k].x}
                 y={hubCy + anchor[k].y}
-                delay={crossAt(
+                delay={bloomAt(
                   k === 'composition' ? ANCHOR_Y.crown
                     : k === 'strength' || k === 'measurements' ? ANCHOR_Y.hands
                     : ANCHOR_Y.feet

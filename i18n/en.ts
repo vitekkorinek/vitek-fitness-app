@@ -208,7 +208,10 @@ const en = {
       addMeasurement: 'Add Measurement',
       noMeasurements: 'No measurements yet',
       latestMeasurement: (date: string) => `Measured ${date}`,
-      addedByTrainer: 'Added by you',
+      // ⚠️ "Added by you" is whoever is LOOKING, not whoever is the trainer. The same
+      // measurement reads "Added by you" to the person who entered it and
+      // "Added by <their name>" to the other one — see `describeAuthor`.
+      addedByYou: 'Added by you',
       addedByClient: (name: string) => `Added by ${name}`,
       byTrainer: 'By trainer',
       byClient: 'By client',
@@ -240,8 +243,11 @@ const en = {
 
       // Graph section headers
       graphWeight: 'Weight (kg)',
-      graphFat: 'Body Fat %',
-      graphMuscle: 'Muscle Mass (kg)',
+      graphFat: 'Body Fat',
+      // ⚠️ No unit in these two titles — both cards have a kg/% toggle, so a unit in
+      // the heading contradicts whichever tab you are not on ("BODY FAT %" over a
+      // kg figure).
+      graphMuscle: 'Muscle Mass',
 
       // Time ranges
       range1M: '1M',
@@ -288,6 +294,11 @@ const en = {
       subTabFatPct: 'Fat %',
       subTabFatKg: 'Fat kg',
       subTabMusclePct: 'Muscle %',
+      // Deliberately NOT "Muscle %": the scale measures muscle in kg only, so this
+      // is kg ÷ body weight — a true share of weight, but not the skeletal-muscle
+      // percentage that health ranges are written for. The label is what stops it
+      // being read as the latter.
+      subTabMusclePctOfWeight: '% of weight',
       subTabMuscleKg: 'Muscle kg',
       subTabWaterPct: 'Total %',
       subTabIcwKg: 'ICW kg',

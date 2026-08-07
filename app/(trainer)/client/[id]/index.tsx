@@ -95,6 +95,9 @@ export default function ClientProfileScreen() {
 
   // Add popup state
   const [addModal, setAddModal] = useState(false);
+  // Bumped by the header + while the Progress tab is open; ProgressTab opens the
+  // Add Measurement form. A counter rather than a boolean so pressing + twice works.
+  const [measAddTick, setMeasAddTick] = useState(0);
   const [headerPlanOpen, setHeaderPlanOpen] = useState(false);
   const [templateModal, setTemplateModal] = useState(false);
   const [templates, setTemplates] = useState<{ id: string; name: string; equipment_list: string[]; muscle_groups: string[] }[]>([]);
@@ -378,6 +381,7 @@ export default function ClientProfileScreen() {
                 clientId={id}
                 client={client}
                 variant="glass"
+                addTick={measAddTick}
               />
             )}
             {activeTab === 'info' && (
@@ -440,8 +444,14 @@ export default function ClientProfileScreen() {
           </HeaderIcon>
         }
         title={client?.name ?? ''}
+        // ⚠️ The + means "add the thing this tab is about". On Progress that is a
+        // MEASUREMENT, not a session — Vitek, Aug 7 2026, after failing to find the
+        // Add Measurement button buried under the whole history list: *"ok wow i
+        // missed that haha"*, then *"make the plus in the header to be that button,
+        // that is much better, we dont need it then at all in the screen"*. Every
+        // other tab keeps the Add Session sheet.
         right={
-          <HeaderIcon onPress={() => setAddModal(true)}>
+          <HeaderIcon onPress={() => (activeTab === 'progress' ? setMeasAddTick(n => n + 1) : setAddModal(true))}>
             <SymbolView name="plus" size={22} tintColor={HEADER_ICON} weight="semibold" />
           </HeaderIcon>
         }
