@@ -31,16 +31,22 @@ try {
 }
 
 /** Keys match the plugin's PascalCase icon names; null = the default icon. */
-export type AppIconKey = null | 'Dark' | 'Bright' | 'Shadow' | 'Mint' | 'Paper' | 'Ink';
+export type AppIconKey =
+  | null | 'Dark' | 'Bright' | 'Shadow' | 'Ghost' | 'Mint'
+  | 'Paper' | 'Ink' | 'InkWhite' | 'AccentWhite' | 'AccentPaper';
 
 export const APP_ICON_OPTIONS: { key: AppIconKey; label: string; preview: number }[] = [
   { key: null,     label: t.appIcon.classic, preview: require('@/assets/app-icons/preview-classic.png') },
   { key: 'Dark',   label: t.appIcon.dark,    preview: require('@/assets/app-icons/preview-dark.png') },
   { key: 'Bright', label: t.appIcon.bright,  preview: require('@/assets/app-icons/preview-bright.png') },
   { key: 'Shadow', label: t.appIcon.shadow,  preview: require('@/assets/app-icons/preview-shadow.png') },
+  { key: 'Ghost',  label: t.appIcon.ghost,   preview: require('@/assets/app-icons/preview-ghost.png') },
   { key: 'Mint',   label: t.appIcon.mint,    preview: require('@/assets/app-icons/preview-mint.png') },
   { key: 'Paper',  label: t.appIcon.paper,   preview: require('@/assets/app-icons/preview-paper.png') },
   { key: 'Ink',    label: t.appIcon.ink,     preview: require('@/assets/app-icons/preview-ink.png') },
+  { key: 'InkWhite', label: t.appIcon.inkWhite, preview: require('@/assets/app-icons/preview-inkwhite.png') },
+  { key: 'AccentWhite', label: t.appIcon.accentWhite, preview: require('@/assets/app-icons/preview-accentwhite.png') },
+  { key: 'AccentPaper', label: t.appIcon.accentPaper, preview: require('@/assets/app-icons/preview-accentpaper.png') },
 ];
 
 export const appIconsSupported: boolean = !!native?.supportsAlternateIcons;

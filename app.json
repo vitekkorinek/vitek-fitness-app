@@ -100,6 +100,22 @@
           {
             "name": "Ink",
             "ios": "./assets/app-icons/icon-ink.png"
+          },
+          {
+            "name": "InkWhite",
+            "ios": "./assets/app-icons/icon-inkwhite.png"
+          },
+          {
+            "name": "Ghost",
+            "ios": "./assets/app-icons/icon-ghost.png"
+          },
+          {
+            "name": "AccentWhite",
+            "ios": "./assets/app-icons/icon-accentwhite.png"
+          },
+          {
+            "name": "AccentPaper",
+            "ios": "./assets/app-icons/icon-accentpaper.png"
           }
         ]
       ]

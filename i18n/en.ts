@@ -778,8 +778,12 @@ const en = {
     bright: 'Bright green',
     shadow: 'Shadow',
     mint: 'Mint',
+    ghost: 'Ghost',
     paper: 'Paper',
     ink: 'Ink',
+    inkWhite: 'Ink white',
+    accentWhite: 'Accent white',
+    accentPaper: 'Accent paper',
   },
 } as const;
 
