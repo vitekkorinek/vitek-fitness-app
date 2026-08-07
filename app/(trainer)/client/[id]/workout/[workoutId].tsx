@@ -6273,6 +6273,7 @@ function ExerciseCard({
                       onSetDone={() => onSetDone(s.localId)}
                       onSetFocus={(field) => onSetFocus(s.localId, field)}
                       onPlusPress={() => setRowMenuSetId(id => (id === s.localId ? null : s.localId))}
+                      menuOpen={rowMenuSetId === s.localId}
                       equipment={exercise.equipment}
                       barWeightKg={barWeightKg}
                       targetBarbellWeightKg={exercise.firstSessionBarbellWeightKg}
@@ -6292,9 +6293,10 @@ function ExerciseCard({
                       const hasWarmups = exercise.sets.some(x => x.isWarmup);
                       return (
                         <View style={styles.addSetMenu}>
-                          <TouchableOpacity style={styles.addSetMenuClose} onPress={closeMenu} hitSlop={10} activeOpacity={0.6}>
-                            <SymbolView name="xmark" size={12} tintColor="#aaa" />
-                          </TouchableOpacity>
+                          {/* No ✕ in here — the row's own + rotates into the cross
+                              that closes it (Vitek, Aug 2026, like the Food Log
+                              FAB), so the button that opened the menu is the one
+                              that shuts it. */}
                           {s.isWarmup ? (
                             <>
                               <TouchableOpacity style={styles.addSetMenuBtn} onPress={() => { onAddWarmupSet(); closeMenu(); }} activeOpacity={0.7}>
@@ -6563,6 +6565,7 @@ function InlineSetRow({
   onSetDone,
   onSetFocus,
   onPlusPress,
+  menuOpen,
   equipment,
   barWeightKg,
   targetBarbellWeightKg,
@@ -6580,6 +6583,8 @@ function InlineSetRow({
   onSetDone: () => void;
   onSetFocus: (field: SetKeypadField) => void;
   onPlusPress: () => void;
+  /** This row's add-set menu is open — the + is rotated into a ✕ that closes it. */
+  menuOpen?: boolean;
   equipment: string | null;
   barWeightKg: number;
   targetBarbellWeightKg: number | null;
@@ -6591,6 +6596,13 @@ function InlineSetRow({
   const hasSetNotes = set.trainerNotes.some(n => !n.isDeleted) || set.clientNotes.some(n => !n.isDeleted);
   const peekTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const peekedThisTouchRef = useRef(false);
+
+  // The + morphs into the ✕ that closes its own menu — a 45° rotation, the same
+  // move the Food Log's FAB makes. The menu no longer carries its own close ✕.
+  const plusRot = useRef(new Animated.Value(menuOpen ? 1 : 0)).current;
+  useEffect(() => {
+    Animated.timing(plusRot, { toValue: menuOpen ? 1 : 0, duration: 160, useNativeDriver: true }).start();
+  }, [menuOpen]);
 
   // ⚠️ The note opens on onPress ONLY — never on pressOut (July 31 2026 fix,
   // both files). pressOut also fires when a touch is CANCELLED (the scroll steals
@@ -6743,7 +6755,10 @@ function InlineSetRow({
       </TouchableOpacity>
 
       <TouchableOpacity onPress={onPlusPress} style={styles.setIconBtn} hitSlop={6} activeOpacity={0.6}>
-        <SymbolView name="plus" size={15} tintColor="#a3a39e" style={{ width: 18, height: 18 }} />
+        <Animated.View style={{ transform: [{ rotate: plusRot.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '45deg'] }) }] }}>
+          {/* Open = ACCENT, matching the menu's own green icons right below it. */}
+          <SymbolView name="plus" size={15} tintColor={menuOpen ? ACCENT : '#a3a39e'} style={{ width: 18, height: 18 }} />
+        </Animated.View>
       </TouchableOpacity>
       </View>
       </View>
@@ -8690,7 +8705,6 @@ const styles = StyleSheet.create({
   // made the four buttons drift to different widths. Pin it so flex:1 always wins.
   iconBtn: { flex: 1, minWidth: 0, height: 38, borderRadius: 10, borderWidth: 1.5, borderColor: ACCENT, alignItems: 'center', justifyContent: 'center', backgroundColor: 'transparent' },
   addSetMenu: { marginHorizontal: 12, marginVertical: 8, borderRadius: 10, borderWidth: 1, borderColor: BORDER, overflow: 'hidden' },
-  addSetMenuClose: { position: 'absolute', top: 6, right: 8, zIndex: 2, width: 22, height: 22, alignItems: 'center', justifyContent: 'center' },
   addSetMenuBtn: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 14, paddingVertical: 12 },
   addSetMenuText: { fontSize: 14, fontWeight: '600', color: TEXT },
   addSetMenuDiv: { height: 1, backgroundColor: BORDER },
