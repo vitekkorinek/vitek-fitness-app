@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef } from 'react';
-import { Animated, Easing, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Animated, Dimensions, Easing, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SymbolView } from 'expo-symbols';
 import BodyMap from '@/components/BodyMap';
 
@@ -33,9 +33,24 @@ const CHIP_BG = '#e9efec';
  * onto the Progress screen.
  */
 
-const FIG_SCALE = 0.5;
-const FIG_W = 200 * FIG_SCALE;   // 100
-const FIG_H = 400 * FIG_SCALE;   // 200
+// ⚠️ The figure is boxed in HORIZONTALLY by the two badge columns, so it is sized
+// off the screen rather than hardcoded — a fixed width that fits Vitek's phone
+// silently overflows the row on a smaller one, and it is the BADGES that get
+// pushed off, not the body. `COL_W` is the real constraint and it is generous:
+// the longest label is "VISCERAL" (~55 wide), so the column only ever needed
+// enough room for that plus a zone word, and the surplus was going to whitespace
+// between the badge and the body.
+// ⚠️ The CAP is a vertical decision, not a horizontal one. The body is 1:2, so
+// every point of width costs two of height, and this screen is not just the ring —
+// the selected metric's graph sits under it and has to be on screen with it.
+// Backed off 10% from 168 on Aug 8 2026 for exactly that: *"can be 10% smaller so
+// we can see more of the graph under it"*. There is still spare width beside it;
+// resist spending it.
+const COL_W = 88;                // badgeWrap — sized to "VISCERAL", not guessed
+const GUTTER = 8;                // figWrap's margin, each side
+const FIG_W = Math.max(100, Math.min(151, Dimensions.get('window').width - 32 - COL_W * 2 - GUTTER * 2));
+const FIG_H = FIG_W * 2;         // the artwork is 200×400, i.e. always 1:2
+const FIG_SCALE = FIG_W / 200;
 const LINE_PAD = 20;
 
 const SCAN_MS = 1000;
@@ -187,10 +202,23 @@ function Badge({ item, active, onPress }: { item: RingItem; active: boolean; onP
 }
 
 const s = StyleSheet.create({
-  wrap: { alignItems: 'center', paddingVertical: 6 },
+  // ⚠️ The bottom padding is deliberately bigger than the top: the BMR badge is the
+  // last thing here and the metric's graph card starts immediately after it, close
+  // enough to read as attached to it (Aug 8 2026, *"the card under bmr can sit tiny
+  // bit lower, its a bit close"*). Landed at 14 after 22 overshot — *"i need it a
+  // bit higher now, somewhere in between"*. Do not push it further: past this the
+  // graph's own footnote starts peeking out from under the tab bar, which is what
+  // made the screen look unfinished in the first place.
+  wrap: { alignItems: 'center', paddingTop: 6, paddingBottom: 14 },
   row: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginTop: 6 },
-  col: { alignItems: 'center', justifyContent: 'space-between', gap: 18 },
-  figWrap: { width: FIG_W, marginHorizontal: 10 },
+  // ⚠️ The column needs an explicit height or `space-between` does nothing — it
+  // was declared from the start and was inert while the column happened to be the
+  // same height as the figure. Once the body grew, a content-sized column left the
+  // badges clustered around the torso with the head and shins unflanked, which is
+  // not a ring. 0.84 is what keeps the two circles at ~0.17 and ~0.7 down the
+  // body — chest and thigh — where they sat before the figure was resized.
+  col: { alignItems: 'center', justifyContent: 'space-between', gap: 18, height: FIG_H * 0.84 },
+  figWrap: { width: FIG_W, marginHorizontal: GUTTER },
   centreSlot: { marginTop: 2 },
 
   pill: {
@@ -216,7 +244,7 @@ const s = StyleSheet.create({
     shadowOpacity: 0.85, shadowRadius: 7,
   },
 
-  badgeWrap: { alignItems: 'center', width: 96 },
+  badgeWrap: { alignItems: 'center', width: COL_W },
   badge: {
     width: BADGE, height: BADGE, borderRadius: BADGE / 2,
     backgroundColor: CHIP_BG,

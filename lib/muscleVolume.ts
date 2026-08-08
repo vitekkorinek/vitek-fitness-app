@@ -177,6 +177,71 @@ export function periodRange(period: ScanPeriod, today = new Date()): { from: str
   return { from: iso(first), to: iso(today) };
 }
 
+/**
+ * The SAME window one period earlier — and it is deliberately clipped to the same
+ * number of days elapsed, not the whole previous week/month.
+ *
+ * ⚠️ THIS IS THE WHOLE CORRECTNESS OF THE COMPARISON. A partial current week
+ * measured against a complete previous one reports a collapse every Monday and a
+ * recovery every Sunday, which is an artefact of the calendar and nothing to do
+ * with training. Tuesday is compared with last Tuesday-so-far.
+ * A month is clipped by DAY OF MONTH, and `min` matters: on the 31st the previous
+ * month may not have one, and `new Date(y, m, 31)` silently rolls into the next.
+ */
+export function previousPeriodRange(period: ScanPeriod, today = new Date()): { from: string; to: string } {
+  if (period === 'week') {
+    const { from, to } = periodRange('week', today);
+    const shift = (s: string) => { const d = new Date(`${s}T00:00:00`); d.setDate(d.getDate() - 7); return iso(d); };
+    return { from: shift(from), to: shift(to) };
+  }
+  const first = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+  const lastDayOfPrev = new Date(today.getFullYear(), today.getMonth(), 0).getDate();
+  const end = new Date(first.getFullYear(), first.getMonth(), Math.min(today.getDate(), lastDayOfPrev));
+  return { from: iso(first), to: iso(end) };
+}
+
+export type VolumeTrend = {
+  /** kg × reps moved in the period so far. */
+  current: number;
+  /** …and in the matching span of the period before it. */
+  previous: number;
+  /** Whole percent change, or null when there is no earlier figure to divide by. */
+  pct: number | null;
+};
+
+/**
+ * How the weight moved compares with the period before.
+ *
+ * ⚠️ Volume comes from the `client_volume_by_date` RPC and must NEVER be summed
+ * client-side from `session_logs` — one live client already has 1283 log rows and
+ * PostgREST caps a response at 1000, so the total would come back plausibly wrong
+ * rather than empty. The RPC returns one row per training day, which is small.
+ */
+export async function fetchVolumeTrend(
+  clientId: string,
+  period: ScanPeriod,
+  today = new Date(),
+): Promise<VolumeTrend> {
+  const { data, error } = await supabase.rpc('client_volume_by_date', { p_client: clientId });
+  if (error) throw error;
+
+  const cur = periodRange(period, today);
+  const prev = previousPeriodRange(period, today);
+  let current = 0;
+  let previous = 0;
+  // ISO dates compare correctly as strings — no parsing, no timezone to get wrong.
+  for (const r of (data ?? []) as { day: string; volume: number | string }[]) {
+    const v = Number(r.volume) || 0;
+    if (r.day >= cur.from && r.day <= cur.to) current += v;
+    else if (r.day >= prev.from && r.day <= prev.to) previous += v;
+  }
+  return {
+    current,
+    previous,
+    pct: previous > 0 ? Math.round(((current - previous) / previous) * 100) : null,
+  };
+}
+
 // ─── Fetch ───────────────────────────────────────────────────────────────────
 
 /**

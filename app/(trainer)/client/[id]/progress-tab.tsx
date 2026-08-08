@@ -912,11 +912,28 @@ const SEG_TORSO_SLUGS = ['chest', 'abs', 'obliques'];
 const SEG_ARM_SLUGS   = ['biceps', 'triceps', 'forearm'];
 const SEG_LEG_SLUGS   = ['quadriceps', 'calves', 'adductors'];
 // measured · heavier side >5% · heavier side >10% — the dots' own amber and red.
-const SEG_COLORS = ['#b8ded1', '#f0b45f', '#e8776c', ACCENT];
+// ⚠️ MEASURED IS THE FULL ACCENT, NOT A LIGHT MINT, AND THAT IS WHAT MAKES
+// SELECTION READ (Aug 8 2026). It used to be `#b8ded1`, so tapping a part flipped
+// it light→dark green while everything else went dark grey — two changes at once,
+// and Vitek read the dark green as a new meaning: *"its confusing that before its
+// light green and then suddenly its dark green when only part is selected"*.
+// Now the selected part does not change colour AT ALL; only the others drop away.
+// **The colours left on this body are the ones that mean something — amber and red
+// for an imbalance — and they still mean it whether or not anything is selected.**
+// Do not reintroduce a second green here: a shade that carries no meaning is read
+// as if it does.
+const SEG_COLORS = [ACCENT, '#f0b45f', '#e8776c'];
 
 // Bigger than the old 0.5 — Vitek asked for the figures to grow so taps land more
-// easily (*"maybe we can make the silhouettes a tiny bigger everywhere"*).
-const SEG_FIG_SCALE = 0.62;
+// easily (*"maybe we can make the silhouettes a tiny bigger everywhere"*), then
+// again on Aug 8 2026 (*"the bottom silhouette fat/muscle can be bigger"*).
+// ⚠️ THE CEILING IS THE SEG CARDS EITHER SIDE, and it is tighter than it looks:
+// `midRow` is card + 8 + figure + 8 + card, and a card is ~79 wide ("RIGHT ARM" at
+// 9pt uppercase plus its padding). That leaves ~169 on a 375-wide phone, so 160 is
+// the practical stop — a figure sized to Vitek's own phone would push the leg
+// cards off the edge on a smaller one.
+const SEG_FIG_SCALE = 0.80;
+const SEG_FIG_H = 400 * SEG_FIG_SCALE;
 
 type SegPos = 'torso' | 'r_arm' | 'l_arm' | 'r_leg' | 'l_leg';
 const SEG_POS_SLUGS: Record<SegPos, string[]> = {
@@ -1037,21 +1054,21 @@ function BodySilhouette({
     if (side !== dominant) return 1;
     return imb.color === '#ef4444' ? 3 : 2;
   };
-  const posLevel = (pos: SegPos): number => {
-    const lvl = pos === 'torso' ? 1
+  // ⚠️ A part's colour does not depend on whether it is selected — it is whatever
+  // the measurement says. The old 4th "selected" step is gone; see SEG_COLORS.
+  const posLevel = (pos: SegPos): number =>
+    pos === 'torso' ? 1
       : pos === 'r_arm' ? pairLevel(armImb, 'right')
       : pos === 'l_arm' ? pairLevel(armImb, 'left')
       : pos === 'r_leg' ? pairLevel(legImb, 'right')
       : pairLevel(legImb, 'left');
-    return lvl > 1 ? lvl : 4;
-  };
 
   if (selSeg) {
-    // Tapped: that part alone, so the tap visibly did something. ⚠️ An IMBALANCED
-    // part keeps its amber/red rather than turning accent green — Vitek: *"if there
-    // is a imbalance tapping on that part can stay yellow?"*. Selecting is a way of
-    // asking about something, and it must not overwrite what the thing is telling
-    // you. Only a balanced part takes the accent.
+    // Tapped: that part alone, so the tap visibly did something — the OTHERS drop
+    // away, the subject is untouched. ⚠️ An IMBALANCED part keeps its amber/red —
+    // Vitek: *"if there is a imbalance tapping on that part can stay yellow?"*.
+    // Selecting is a way of asking about something, and it must not overwrite what
+    // the thing is telling you. That now holds for every part, not just uneven ones.
     addSeg(
       SEG_POS_SLUGS[selSeg],
       posLevel(selSeg),
@@ -1147,9 +1164,13 @@ function BodySilhouette({
         <SegCard label={t.clientProfile.progress.segTorso} value={torsoStr} selected={selSeg === 'torso'} trend={trendFor(dbFieldName('torso') as keyof Measurement)} onPress={tap('torso', torsoV)} />
       </View>
       <View style={bStyles.midRow}>
-        <SegCard label={t.clientProfile.progress.segRightArm} value={kg(rightArmV)} dot={rightArmDot} selected={selSeg === 'r_arm'} trend={trendFor(dbFieldName('r_arm') as keyof Measurement)} onPress={tap('r_arm', rightArmV)} />
+        <View style={bStyles.armSlot}>
+          <SegCard label={t.clientProfile.progress.segRightArm} value={kg(rightArmV)} dot={rightArmDot} selected={selSeg === 'r_arm'} trend={trendFor(dbFieldName('r_arm') as keyof Measurement)} onPress={tap('r_arm', rightArmV)} />
+        </View>
         {siloFigure}
-        <SegCard label={t.clientProfile.progress.segLeftArm} value={kg(leftArmV)} dot={leftArmDot} selected={selSeg === 'l_arm'} trend={trendFor(dbFieldName('l_arm') as keyof Measurement)} onPress={tap('l_arm', leftArmV)} />
+        <View style={bStyles.armSlot}>
+          <SegCard label={t.clientProfile.progress.segLeftArm} value={kg(leftArmV)} dot={leftArmDot} selected={selSeg === 'l_arm'} trend={trendFor(dbFieldName('l_arm') as keyof Measurement)} onPress={tap('l_arm', leftArmV)} />
+        </View>
       </View>
       <View style={bStyles.bottomRow}>
         <SegCard label={t.clientProfile.progress.segRightLeg} value={kg(rightLegV)} dot={rightLegDot} selected={selSeg === 'r_leg'} trend={trendFor(dbFieldName('r_leg') as keyof Measurement)} onPress={tap('r_leg', rightLegV)} />
@@ -1175,10 +1196,17 @@ function BodySilhouette({
 const bStyles = StyleSheet.create({
   container: { alignItems: 'center', paddingVertical: 12 },
   torsoWrap: { marginBottom: 8 },
-  midRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  // Negative so the leg cards sit beside the THIGHS rather than under the feet
-  // (*"you move the leg values a bit too low"*). Tune this, not the figure height.
-  bottomRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 8, marginTop: -52 },
+  // ⚠️ EVERY CARD SITS BESIDE THE PART IT NAMES — that is the whole spec of this
+  // layout, and it is why all four offsets are FRACTIONS of the figure. Centring
+  // the arm cards in the row put them level with the HANDS, and a fixed leg offset
+  // is a fixed distance from the ANKLE, so both drifted off their body part every
+  // time the figure was resized. The cards also bunched into the lower half with a
+  // long empty stretch under the torso card — Vitek, Aug 8 2026: *"the boxes can be
+  // better spread"*. Arms now start 0.24 down (beside the upper arm), legs 0.62
+  // (beside the thigh).
+  midRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 8 },
+  armSlot: { marginTop: Math.round(SEG_FIG_H * 0.24) },
+  bottomRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 8, marginTop: -Math.round(SEG_FIG_H * 0.38) },
   segCard: {
     backgroundColor: CARD, borderRadius: 12,
     paddingHorizontal: 12, paddingVertical: 9, minWidth: 76, alignItems: 'center',
@@ -2072,21 +2100,28 @@ function MeasurementsSubTab({ clientId, client, active, addTick }: { clientId: s
           onEditStats={() => setWeightEntryOpen(true)}
         />
 
-        {(() => {
-          const src = METRIC_FIELDS[activeMetric].map(f => sourceOf(f)).find(Boolean) ?? null;
-          return src ? (
-            <Text style={s.metricTabHint}>
-              {t.clientProfile.progress.latestMeasurement(fmtDate(src.date))}
-            {showAuthor(activeMetric, src) ? ` · ${addedBy(src)}` : ''}
-            </Text>
-          ) : null;
-        })()}
-
         {/* The tapped reading's graph, right under the body it came off — headerless,
             because the badge above already said the name, the number and the zone. */}
         <React.Fragment key={activeMetric}>
           {renderActiveGraph(true)}
         </React.Fragment>
+
+        {/* ⚠️ BELOW the graph on the client, ABOVE it on the trainer (Aug 8 2026).
+            It is a footnote, not a heading — it says when the reading was taken and
+            by whom, which you ask AFTER reading the number, and between the body and
+            its graph it was pushing the graph down the screen for nothing:
+            *"can we have the measure date infor under the graph card so the graph can
+            be a bit higher still?"*. `metricTabHint` keeps its bottom margin for the
+            trainer's stacking, so this instance overrides the spacing itself. */}
+        {(() => {
+          const src = METRIC_FIELDS[activeMetric].map(f => sourceOf(f)).find(Boolean) ?? null;
+          return src ? (
+            <Text style={[s.metricTabHint, { marginBottom: 16 }]}>
+              {t.clientProfile.progress.latestMeasurement(fmtDate(src.date))}
+            {showAuthor(activeMetric, src) ? ` · ${addedBy(src)}` : ''}
+            </Text>
+          ) : null;
+        })()}
 
         {current && (activeMetric === 'fat' || activeMetric === 'muscle') && (
           <View style={s.card}>{renderActiveSilhouette()}</View>

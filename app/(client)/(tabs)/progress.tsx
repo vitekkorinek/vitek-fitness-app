@@ -71,9 +71,34 @@ const FOLDER_TITLE: Record<Folder, string> = {
 // only — so none of the rotateY / perspective / coplanar-flicker traps that cost
 // nine device rounds on the book can occur. A spin buys every one of them back.
 
-const FIG_SCALE = 0.50;                    // BodyMap renders 200×400 at scale 1
-const FIG_W = 200 * FIG_SCALE;             // 100
-const FIG_H = 400 * FIG_SCALE;             // 200
+// ── How big the body can be, and what actually decides it ───────────────────
+// ⚠️ IT IS THE SIDE BADGES' TEXT THAT CAPS THE FIGURE — never the badge circles,
+// and never the screen. "Measurements" and "Arms · waist · thighs" are ~105 wide,
+// so at `sideX` 122.5 their inner edge is only ~70 off centre, while the figure's
+// widest point by far is the SPLAYED FINGERS (0.45·FIG_W, against 0.26 at the
+// chest). Those labels sat at exactly hand height, which is what pinned the body
+// at 100 wide through two rounds of "make it bigger".
+// The fix (Aug 8 2026) was to move the side pair UP to flank the shoulders rather
+// than to shave the body: their text now lands beside the chest, where the body is
+// barely half as wide, and the arms have the whole latitude to themselves.
+// Landmarks measured off the artwork, as fractions of the rendered box — use these
+// rather than eyeballing, and re-derive the ring from them if the figure changes.
+const CROWN_FY = -0.433;                   // top of the head, above box centre
+const FEET_FY  =  0.426;                   // bottom of the feet, below box centre
+// The splayed hands — the band no side badge may enter, top and bottom. This is
+// THE constraint on the whole ring: everything on the left and right is placed
+// relative to it, either above it or below it.
+const HAND_TOP_FY = -0.045;
+const HAND_BOT_FY =  0.080;
+
+const FIG_W = 170;                         // BodyMap's artwork is 200×400
+const FIG_H = FIG_W * 2;
+const FIG_SCALE = FIG_W / 200;
+
+// Vertical extent of a badge's own text below its centre: circle (35) + label +
+// sub-line. Every clearance below is measured against this, so a font change is
+// the one thing that can invalidate the ring.
+const CHIP_TEXT_H = 79;
 
 // Where each reading comes off the body, as a fraction of the figure's height.
 // Crown, hands, feet — which is also the order they bloom, so the folders arrive
@@ -87,7 +112,10 @@ const FOOT_DX = FIG_W * 0.11;
 // scan band's height, which is where this rhythm was tuned on device — the line
 // is gone, the cadence it produced is not, and that cadence is the part Vitek
 // liked. Do not "simplify" this to a bare `fy`; it snaps both ends flat.
-const BLOOM_PAD = 30;
+// ⚠️ Held as a FRACTION of the figure (it was 30 when the figure was 200 tall) so
+// resizing the body leaves the cadence exactly where it was tuned — a fixed 30
+// silently shortens the lead-in as the figure grows.
+const BLOOM_PAD = FIG_H * 0.15;
 const bloomAt = (fy: number) => (fy * FIG_H + BLOOM_PAD) / (FIG_H + BLOOM_PAD * 2);
 
 const BLOOM_MS = 700;
@@ -249,22 +277,48 @@ export default function ProgressScreen() {
   // every position is computed against width-32, and the whole hub sits 16pt left
   // of centre — which is exactly how it shipped in the first OTA.
   const hubW = Dimensions.get('window').width - 32;
-  // Content spans -221 → +211 around the centre, so the block is 450 tall and the
-  // hub sits at 230 to put that span in the middle of it.
-  const HUB_BLOCK_H = 450;
-  const hubCy = 230;
+  // ⚠️ The ring is DERIVED from the body's landmarks, not hand-placed. Every slot
+  // below is "clear of <this part of the body> by <this much air>", so growing the
+  // figure again moves the badges with it instead of quietly landing one on the
+  // hair or the fingers. Do not replace these with the numbers they happen to
+  // evaluate to today.
+  const ring = useMemo(() => {
+    // The one badge with no horizontal offset to save it: it hangs its two lines
+    // straight down onto the crown.
+    const compY = CROWN_FY * FIG_H - 14 - CHIP_TEXT_H;
+    // ⚠️ THE SIDE PAIR IS AT ITS FLOOR — its long sub-line now ends just 6 above
+    // the fingertips, and its left edge already overlaps them horizontally, so the
+    // gap is the ONLY thing keeping them apart. Vitek asked twice to bring it down
+    // (Aug 8 2026: first *"put strenght and measurements down"* — refused, then
+    // *"one tic lower"* — this, and it spent the clearance). There is nothing left
+    // here: anything lower needs the labels moved off the hands' latitude, not a
+    // smaller number. Pinned to the TOP of the hand band so it tracks the fingers
+    // if the figure is ever resized.
+    const sideY = HAND_TOP_FY * FIG_H - 6 - CHIP_TEXT_H;
+    // The bottom pair, though, had ~160 of dead side space above it, because it was
+    // parked below the FEET when nothing required that. Its words are short
+    // ("Comparison", "Your photos"), the shins are the narrowest the body gets, and
+    // its readings still fly from the feet — so it only has to clear the BOTTOM of
+    // the hand band. Raised 68 (Aug 8 2026) to close the hole Vitek spotted between
+    // the two pairs, then let back down 14 on his *"one tic lower"*: circle beside
+    // the thighs, text beside the ankles. This one has room to spare in both
+    // directions — the block simply grows — so it is the knob to reach for.
+    const botY = HAND_BOT_FY * FIG_H + 44 + 35;
+    return { compY, sideY, botY };
+  }, []);
+
+  const HUB_BLOCK_H = Math.round(-ring.compY + 35 + ring.botY + CHIP_TEXT_H);
+  const hubCy = Math.round(-ring.compY + 35);
   const orbit = useMemo(() => {
     const sideX = Math.min(126, hubW / 2 - 58);
     return {
-      composition:  { x: 0,       y: -186, w: 190 },
-      strength:     { x: -sideX,  y: -58,  w: 112 },
-      measurements: { x: sideX,   y: -58,  w: 112 },
-      // Pushed out and down from the Library's ring: the figure grew to 200 tall,
-      // and the bottom pair is the only one a standing body reaches toward.
-      comparison:   { x: -90,     y: 138,  w: 112 },
-      consistency:  { x: 90,      y: 138,  w: 112 },
+      composition:  { x: 0,       y: ring.compY, w: 190 },
+      strength:     { x: -sideX,  y: ring.sideY, w: 112 },
+      measurements: { x: sideX,   y: ring.sideY, w: 112 },
+      comparison:   { x: -96,     y: ring.botY,  w: 112 },
+      consistency:  { x: 96,      y: ring.botY,  w: 112 },
     } as Record<Folder, { x: number; y: number; w: number }>;
-  }, [hubW]);
+  }, [hubW, ring]);
 
   // Anchors on the body, in hub coordinates (centre of the figure = hub centre).
   const anchor = useMemo(() => {
@@ -396,7 +450,14 @@ export default function ProgressScreen() {
           }}
           showsVerticalScrollIndicator={false}
         >
-          <View style={{ height: HUB_BLOCK_H }}>
+          {/* ⚠️ The lift is OPTICAL, and the block is already geometrically centred
+              — do not "fix" it back. The badges are airy circles and the body is a
+              solid dark mass, so the hub's visual weight sits below its measured
+              middle and a true centre reads as sagging (Vitek, Aug 8 2026: *"maybe
+              is centered but it needs to be higher visually a bit"*).
+              ⚠️ It is DOUBLED because centring splits the margin: the block rises by
+              half of whatever is put here. */}
+          <View style={{ height: HUB_BLOCK_H, marginBottom: 68 }}>
             {/* The figure is rendered FIRST so every reading draws ABOVE it — a
                 reading has to come off the front of the body, not out from behind. */}
             <View style={{ position: 'absolute', left: hubW / 2 - FIG_W / 2, top: hubCy - FIG_H / 2 }}>

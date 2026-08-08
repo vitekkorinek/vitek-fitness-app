@@ -2,10 +2,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator, Animated, Easing, Pressable, StyleSheet, Text, View,
 } from 'react-native';
+import { SymbolView } from 'expo-symbols';
 import BodyMap from '@/components/BodyMap';
 import {
-  fetchMuscleScan, MUSCLE_LABEL, PART_SLUGS,
-  type BodyPart, type MuscleScan, type ScanPeriod,
+  fetchMuscleScan, fetchVolumeTrend, MUSCLE_LABEL, PART_SLUGS,
+  type BodyPart, type MuscleScan, type ScanPeriod, type VolumeTrend,
 } from '@/lib/muscleVolume';
 
 type Sel =
@@ -17,6 +18,10 @@ const ACCENT = '#24ac88';
 const HEADER = '#244e43';
 const TEXT   = '#1a1a1a';
 const MUTED  = '#999';
+
+// German grouping, matching Consistency's identical helper — these two lines sit
+// on sibling screens and must format a weight the same way.
+const fmtWeight = (kg: number): string => `${Math.round(kg).toLocaleString('de-DE')} kg`;
 
 /**
  * Progress → Strength: the body is SCANNED and the muscles the client actually
@@ -122,21 +127,34 @@ export default function MuscleScanCard({ clientId }: { clientId: string }) {
   // (tapped it on the figure). Both answer in the same place — the strip above the
   // figures — so the answer always appears where the eyes already are.
   const [sel, setSel] = useState<Sel>(null);
+  // How the weight moved compares with the same span of the period before.
+  const [trend, setTrend] = useState<VolumeTrend | null>(null);
 
   // How far down the figure the scan has reached, 0..1. Starts "finished" so a
   // re-render before the animation runs never shows a half-lit body.
   const [revealY, setRevealY] = useState(1);
   const sweep = useRef(new Animated.Value(1)).current;
   const crossedRef = useRef(0);
+  // The numbers below the figures — held back until the sweep has finished. See
+  // the note in `runScan`.
+  const listAnim = useRef(new Animated.Value(1)).current;
 
   // ── Data ───────────────────────────────────────────────────────────────────
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
     setSel(null);
+    setTrend(null);
     fetchMuscleScan(clientId, period)
       .then(result => { if (!cancelled) { setScan(result); setLoading(false); } })
       .catch(() => { if (!cancelled) { setScan(null); setLoading(false); } });
+    // ⚠️ Its own request, deliberately NOT folded into the scan's. Sets and weight
+    // are different questions — the scan asks WHAT was trained, this asks how HARD
+    // — and they come off different RPCs. A failure here must leave the card
+    // working, so it fails to null and the line simply does not appear.
+    fetchVolumeTrend(clientId, period)
+      .then(v => { if (!cancelled) setTrend(v); })
+      .catch(() => { if (!cancelled) setTrend(null); });
     return () => { cancelled = true; };
   }, [clientId, period]);
 
@@ -152,18 +170,33 @@ export default function MuscleScanCard({ clientId }: { clientId: string }) {
   );
 
   const runScan = useCallback(() => {
-    if (!thresholds.length) return;
+    if (!thresholds.length) { listAnim.setValue(1); return; }
     crossedRef.current = 0;
     setRevealY(-1);
     sweep.setValue(0);
+    listAnim.setValue(0);
     Animated.timing(sweep, {
       toValue: 1,
       duration: SCAN_MS,
       delay: SCAN_DELAY,
       easing: Easing.bezier(0.35, 0, 0.25, 1),
       useNativeDriver: true,
-    }).start(({ finished }) => { if (finished) setRevealY(1); });
-  }, [sweep, thresholds]);
+    }).start(({ finished }) => {
+      if (!finished) return;
+      setRevealY(1);
+      // ⚠️ THE NUMBERS ARRIVE AFTER THE SCAN, NOT WITH IT (Aug 8 2026). They used
+      // to render the instant the data landed, so the list was already sitting
+      // there while the line was still crossing the chest — the card appeared to
+      // report its findings before it had taken them. Vitek: *"the scan happen
+      // slightly after the values appear under it, can we have first scan and then
+      // the values? makes more sense"*. The list is MOUNTED the whole time at
+      // opacity 0, so the card is its full height from the start and nothing jumps
+      // when it fades in — do not swap this for conditional rendering.
+      Animated.timing(listAnim, {
+        toValue: 1, duration: 320, easing: Easing.out(Easing.quad), useNativeDriver: true,
+      }).start();
+    });
+  }, [sweep, listAnim, thresholds]);
 
   useEffect(() => {
     const id = sweep.addListener(({ value }) => {
@@ -202,9 +235,16 @@ export default function MuscleScanCard({ clientId }: { clientId: string }) {
   // nothing at all. Muscles the body draws but nobody trains (head, hands, feet)
   // have no label and are ignored, so tapping them does not clear the reader's
   // selection by accident.
+  // ⚠️ A SECOND TAP ON THE SAME MUSCLE DOES NOTHING — it does not toggle back to
+  // the baseline (Aug 8 2026). Tapping a muscle is asking a question about it, and
+  // asking twice should not undo the answer; the old toggle meant a mis-registered
+  // second tap silently threw you back to the whole-body view. Vitek: *"typing on
+  // it again doesnt do anything just stay as is, and typing outside of the
+  // silhouette lights up the baseline again"*. Clearing is a deliberate tap on
+  // empty space around the figures — see the backdrop `Pressable` below.
   const onPressMuscle = useCallback((slug: string) => {
     if (!MUSCLE_LABEL[slug]) return;
-    setSel(prev => (prev?.kind === 'muscle' && prev.slug === slug ? null : { kind: 'muscle', slug }));
+    setSel({ kind: 'muscle', slug });
   }, []);
 
   const onPressRow = useCallback((part: BodyPart) => {
@@ -220,12 +260,21 @@ export default function MuscleScanCard({ clientId }: { clientId: string }) {
   // ── What the body shows ────────────────────────────────────────────────────
   const regions = useMemo(() => {
     if (!scan) return [];
-    // A selection answers "where is that" — so it shows the subject ALONE, at full
-    // strength, rather than re-tinting a body already carrying nine claims.
+    // A selection answers "where is that" — so it shows the subject ALONE, rather
+    // than re-tinting a body already carrying nine claims.
+    // ⚠️ IT KEEPS ITS OWN HEAT. It used to be forced to `HEAT_RAMP.length`, so a
+    // barely-trained muscle jumped to full accent the moment you tapped it — the
+    // tap appeared to answer "how much" and answered it wrongly. Every colour on
+    // this body is functional (five heat steps, plus red for never-trained), and
+    // selecting must not overwrite the one thing the muscle was telling you. Same
+    // rule Vitek set for the limb view's amber/red, applied to the whole ramp:
+    // *"keep the color that shows when selecting certain body part"*.
+    // The selection reads because everything ELSE goes dark, not because the
+    // subject changes.
     if (sel?.kind === 'part') {
       const hit = scan.regions.filter(r => r.part === sel.part);
       if (hit.length === 0) return PART_SLUGS[sel.part].map(slug => ({ slug, intensity: MISSING_LEVEL }));
-      return hit.map(r => ({ ...r, intensity: HEAT_RAMP.length }));
+      return hit;
     }
     if (sel?.kind === 'muscle') {
       const hit = scan.regions.filter(r => r.slug === sel.slug);
@@ -235,7 +284,7 @@ export default function MuscleScanCard({ clientId }: { clientId: string }) {
       // outright: the grey "Not trained" line at the foot of the list *"is not
       // noticible"*, and a muscle you tapped going silently dark says nothing.
       if (hit.length === 0) return [{ slug: sel.slug, intensity: MISSING_LEVEL }];
-      return hit.map(r => ({ ...r, intensity: HEAT_RAMP.length }));
+      return hit;
     }
     return scan.regions.filter(r => r.y <= revealY);
   }, [scan, sel, revealY]);
@@ -272,6 +321,18 @@ export default function MuscleScanCard({ clientId }: { clientId: string }) {
 
   const hasWork = !!scan && scan.trained.length > 0;
 
+  // Picks the strongest statement that is TRUE, exactly as Consistency's insight
+  // does. ±3% is the dead band — below that, "about the same" is the honest answer
+  // and a 1% swing dressed up as progress teaches the client to ignore the line.
+  const volumeLine = useMemo((): { text: string; good: boolean } | null => {
+    if (!trend || trend.current <= 0) return null;
+    const last = period === 'week' ? 'this time last week' : 'this time last month';
+    if (trend.pct == null) return { text: `${fmtWeight(trend.current)} moved so far`, good: true };
+    if (trend.pct >= 3)  return { text: `${trend.pct}% more weight than ${last}`, good: true };
+    if (trend.pct <= -3) return { text: `${Math.abs(trend.pct)}% less weight than ${last}`, good: false };
+    return { text: `About the same weight as ${last}`, good: true };
+  }, [trend, period]);
+
   return (
     <View style={s.card}>
       {/* ── Period ── */}
@@ -297,6 +358,26 @@ export default function MuscleScanCard({ clientId }: { clientId: string }) {
         {scan && scan.sessions > 0 ? ` · ${scan.sessions} ${scan.sessions === 1 ? 'session' : 'sessions'} · ${scan.totalSets} sets` : ''}
       </Text>
 
+      {/* ── How hard, against the period before ──
+          The card said WHAT was trained and never whether it was going anywhere;
+          Vitek asked for Consistency's comparison here too (*"how much more percent
+          they lift, if there is progress, per week and per month in comparison to
+          the previous week or month"*). Same sentence shape as Consistency's
+          insight line, so the two screens speak with one voice.
+          ⚠️ "this time last week" is not padding — the comparison is clipped to the
+          same number of days elapsed (see `previousPeriodRange`), and the phrase is
+          what makes that honest rather than hidden. */}
+      {volumeLine && (
+        <View style={s.trend}>
+          <SymbolView
+            name={volumeLine.good ? 'arrow.up.right' : 'arrow.down.right'}
+            size={13}
+            tintColor={volumeLine.good ? ACCENT : MUTED}
+          />
+          <Text style={[s.trendText, !volumeLine.good && { color: MUTED }]}>{volumeLine.text}</Text>
+        </View>
+      )}
+
       {/* ── The answer strip ──
           Always occupies its row so nothing below it jumps when a muscle is
           tapped, and sits ABOVE the figures so the answer lands where the finger
@@ -316,8 +397,14 @@ export default function MuscleScanCard({ clientId }: { clientId: string }) {
             : null}
       </View>
 
-      {/* ── The figures ── */}
-      <View style={s.figures}>
+      {/* ── The figures ──
+          The container itself is the "clear" target: a tap anywhere around the
+          bodies — the margins, the gap between them, the empty corners of a figure
+          box — returns to the baseline, which is the only way back now that a
+          second tap on a muscle no longer toggles. The muscle zones are children,
+          and RN gives the deepest view the responder first, so a tap ON a muscle
+          still selects it and never reaches this. */}
+      <Pressable style={s.figures} onPress={() => setSel(null)}>
         <View style={s.figRow}>
           <View style={{ alignItems: 'center' }}>
             <View style={{ width: FIG_W, height: FIG_H }}>
@@ -355,7 +442,7 @@ export default function MuscleScanCard({ clientId }: { clientId: string }) {
             style={[s.line, { opacity: lineOpacity, transform: [{ translateY: lineY }] }]}
           />
         )}
-      </View>
+      </Pressable>
 
       {loading && <ActivityIndicator color={ACCENT} style={{ marginTop: 4 }} />}
 
@@ -365,9 +452,17 @@ export default function MuscleScanCard({ clientId }: { clientId: string }) {
         </Text>
       )}
 
-      {/* ── The numbers ── */}
+      {/* ── The numbers ── (held at opacity 0 until the sweep finishes) */}
       {!loading && hasWork && scan && (
-        <View style={s.list}>
+        <Animated.View
+          style={[
+            s.list,
+            {
+              opacity: listAnim,
+              transform: [{ translateY: listAnim.interpolate({ inputRange: [0, 1], outputRange: [6, 0] }) }],
+            },
+          ]}
+        >
           {scan.trained.map(p => {
             const isSel = activePart === p.part;
             const width = scan.maxSets > 0 ? Math.max(0.04, p.sets / scan.maxSets) : 0;
@@ -420,7 +515,7 @@ export default function MuscleScanCard({ clientId }: { clientId: string }) {
               means the muscle worked but wasn’t the main target — like triceps during a bench press.
             </Text>
           )}
-        </View>
+        </Animated.View>
       )}
     </View>
   );
@@ -442,7 +537,13 @@ const s = StyleSheet.create({
   switchText: { fontSize: 12, fontWeight: '600', color: '#6b6b66' },
   switchTextActive: { color: TEXT },
 
-  range: { fontSize: 12, color: MUTED, marginTop: 6 },
+  // Centred (Aug 8 2026): left-aligned it hung off the edge under a title row that
+  // is itself split left/right, reading as a stray caption rather than the card's
+  // subtitle — *"the this week 3 session 45 sets infor is a bit strange on the side
+  // written can it be centered"*. The trend line below shares the centre line.
+  range: { fontSize: 12, color: MUTED, marginTop: 6, textAlign: 'center' },
+  trend: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, marginTop: 6 },
+  trendText: { fontSize: 13, fontWeight: '600', color: ACCENT },
 
   readoutRow: { height: 28, marginTop: 10, alignItems: 'center', justifyContent: 'center' },
   readout: { paddingHorizontal: 13, paddingVertical: 5, borderRadius: 100, backgroundColor: '#eef6f3', maxWidth: '100%' },
