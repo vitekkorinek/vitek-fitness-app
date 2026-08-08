@@ -25,7 +25,8 @@ import { BottomSheet } from '@/components/BottomSheet';
 import GlassPanel from '@/components/GlassPanel';
 import { useHeaderHeight } from '@/components/LightHeader';
 import { useTabBarHeight } from '@/components/FloatingTabBar';
-import { APP_ICON_OPTIONS, appIconLabel, appIconsSupported, currentAppIcon, setAppIcon, type AppIconKey } from '@/lib/appIcons';
+import { appIconLabel, appIconsSupported, currentAppIcon, setAppIcon, type AppIconKey } from '@/lib/appIcons';
+import { AppIconGrid } from '@/components/AppIconGrid';
 import { useCardVariant, CARD_VARIANTS, isCoverDark, isFooterDark, type CoverCardVariant } from '@/lib/cardVariant';
 import { DARK_CARD_FOOTER, DARK_CARD_GRADIENT } from '@/components/WorkoutPaperCover';
 import t from '@/i18n/en';
@@ -696,18 +697,7 @@ export default function MeScreen() {
             <View style={{ paddingHorizontal: 20, paddingBottom: 4, gap: 12, alignItems: 'stretch' }}>
               <Text style={[modal.title, { textAlign: 'center' }]}>{t.appIcon.row}</Text>
               <Text style={cardStyleSt.sub}>{t.appIcon.sub}</Text>
-              {APP_ICON_OPTIONS.map(o => (
-                <TouchableOpacity
-                  key={o.key ?? 'default'}
-                  style={[cardStyleSt.option, appIcon === o.key && cardStyleSt.optionActive]}
-                  onPress={() => close(() => pickAppIcon(o.key))}
-                  activeOpacity={0.85}
-                >
-                  <Image source={o.preview} style={appIconSt.preview} />
-                  <Text style={[cardStyleSt.optionLabel, appIcon === o.key && cardStyleSt.optionLabelActive]}>{o.label}</Text>
-                  {appIcon === o.key && <SymbolView name="checkmark" size={15} tintColor={ACCENT} weight="semibold" />}
-                </TouchableOpacity>
-              ))}
+              <AppIconGrid current={appIcon} onPick={k => close(() => pickAppIcon(k))} />
             </View>
           )}
         </BottomSheet>
@@ -984,10 +974,3 @@ const cardStyleSt = StyleSheet.create({
   swatchNameOnDark:  { backgroundColor: 'rgba(255,255,255,0.85)' },
 });
 
-const appIconSt = StyleSheet.create({
-  // 22.4% corner radius = the real iOS icon squircle proportion.
-  preview: {
-    width: 44, height: 44, borderRadius: 10,
-    borderWidth: 1, borderColor: 'rgba(0,0,0,0.10)',
-  },
-});

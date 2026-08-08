@@ -32,7 +32,7 @@ try {
 
 /** Keys match the plugin's PascalCase icon names; null = the default icon. */
 export type AppIconKey =
-  | null | 'Dark' | 'Bright' | 'Shadow' | 'Ghost' | 'Mint'
+  | null | 'Dark' | 'Bright' | 'Shadow' | 'Ghost' | 'Mint' | 'InkMint'
   | 'Paper' | 'Ink' | 'InkWhite' | 'AccentWhite' | 'AccentPaper';
 
 export const APP_ICON_OPTIONS: { key: AppIconKey; label: string; preview: number }[] = [
@@ -42,6 +42,7 @@ export const APP_ICON_OPTIONS: { key: AppIconKey; label: string; preview: number
   { key: 'Shadow', label: t.appIcon.shadow,  preview: require('@/assets/app-icons/preview-shadow.png') },
   { key: 'Ghost',  label: t.appIcon.ghost,   preview: require('@/assets/app-icons/preview-ghost.png') },
   { key: 'Mint',   label: t.appIcon.mint,    preview: require('@/assets/app-icons/preview-mint.png') },
+  { key: 'InkMint', label: t.appIcon.inkMint, preview: require('@/assets/app-icons/preview-inkmint.png') },
   { key: 'Paper',  label: t.appIcon.paper,   preview: require('@/assets/app-icons/preview-paper.png') },
   { key: 'Ink',    label: t.appIcon.ink,     preview: require('@/assets/app-icons/preview-ink.png') },
   { key: 'InkWhite', label: t.appIcon.inkWhite, preview: require('@/assets/app-icons/preview-inkwhite.png') },

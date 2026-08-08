@@ -818,15 +818,16 @@ function GhostCamera({
     dPitch != null && dRoll != null &&
     Math.abs(dPitch) <= ANGLE_TOL && Math.abs(dRoll) <= ANGLE_TOL;
 
-  // Say WHICH WAY to move — a bare red border tells you that you are wrong
-  // without telling you what to do about it.
-  const guidance = (): string => {
-    if (dPitch == null || dRoll == null) return hint;
-    if (matched) return 'Angle matches your last photo';
-    if (Math.abs(dPitch) > ANGLE_TOL) {
-      return dPitch > 0 ? 'Tip the top of the phone away from you' : 'Tip the top of the phone towards you';
-    }
-    return dRoll > 0 ? 'Rotate the phone left to level it' : 'Rotate the phone right to level it';
+  // ⚠️ NO direction words and NO arrows — both were tried Aug 8 2026 and
+  // retired the same day. "Tilt right" as praise read as an instruction, and
+  // the arrows pointed the wrong way depending on grip (pitch/roll signs don't
+  // map cleanly to up/down in every hand position): "the arrows dont work
+  // correctly, its confusing". Vitek's call: one neutral adjusting state, one
+  // matched state. The sensor still decides WHEN the angle is right; it just
+  // no longer pretends to know which way the wrist should move.
+  const guidance = (): { icon: string; text: string } => {
+    if (matched) return { icon: 'checkmark', text: 'Angle matches — line up with the faded photo' };
+    return { icon: 'gyroscope', text: 'Adjust the angle of your phone for the best accuracy' };
   };
 
   const shoot = async () => {
@@ -853,7 +854,9 @@ function GhostCamera({
               <View style={StyleSheet.absoluteFill} pointerEvents="none">
                 <Image
                   source={{ uri: ghostUrl }}
-                  style={[StyleSheet.absoluteFill, { opacity: 0.25 }]}
+                  // 0.25 → 0.35 (Aug 8 2026): Vitek — the ghost was LESS visible
+                  // than the angle cue, and the ghost is the actual guide.
+                  style={[StyleSheet.absoluteFill, { opacity: 0.35 }]}
                   resizeMode="cover"
                 />
               </View>
@@ -868,13 +871,11 @@ function GhostCamera({
           </View>
         )}
 
-        {/* Angle frame — only when there is a real reference to match. */}
-        {canMatch && (
-          <View
-            pointerEvents="none"
-            style={[cam.angleFrame, { borderColor: matched ? ACCENT : 'rgba(232,90,74,0.9)' }]}
-          />
-        )}
+        {/* ⚠️ NO full-screen angle frame any more (Aug 8 2026). A screen-wide
+            red/green border read as a verdict on the WHOLE shot — "it says
+            correct tilt of the camera which somehow seems like you are doing
+            everything correctly" — and out-shouted the ghost, which is the real
+            guide. The tilt cue lives only in the quiet chip below. */}
 
         <View style={cam.top}>
           <TouchableOpacity onPress={onClose} hitSlop={12} style={cam.topBtn}>
@@ -892,13 +893,18 @@ function GhostCamera({
 
         <View style={cam.bottom}>
           {canMatch && (
-            <View style={[cam.angleChip, { backgroundColor: matched ? ACCENT : 'rgba(232,90,74,0.92)' }]}>
+            // Quiet dark chip in both states — colour only in the small icon
+            // (ACCENT tick / amber adjust), so the cue can never compete with
+            // the ghost. It speaks about TILT only, and on a match it hands
+            // attention straight back to the ghost.
+            <View style={cam.angleChip}>
               <SymbolView
-                name={matched ? 'checkmark' : 'gyroscope'}
-                size={12}
-                tintColor="#fff"
+                name={guidance().icon as any}
+                size={13}
+                weight="bold"
+                tintColor={matched ? ACCENT : '#f5a623'}
               />
-              <Text style={cam.angleChipText}>{guidance()}</Text>
+              <Text style={cam.angleChipText}>{guidance().text}</Text>
             </View>
           )}
           <Text style={cam.hint}>
@@ -1148,13 +1154,9 @@ const cam = StyleSheet.create({
     position: 'absolute', left: 0, right: 0, bottom: 0,
     paddingBottom: 42, paddingTop: 16, backgroundColor: 'rgba(0,0,0,0.35)',
   },
-  angleFrame: {
-    position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
-    borderWidth: 3, borderRadius: 2,
-  },
   angleChip: {
     flexDirection: 'row', alignItems: 'center', gap: 6,
-    alignSelf: 'center', borderRadius: 100,
+    alignSelf: 'center', borderRadius: 100, backgroundColor: 'rgba(0,0,0,0.55)',
     paddingHorizontal: 12, paddingVertical: 7, marginBottom: 12,
   },
   angleChipText: { color: '#fff', fontSize: 12, fontWeight: '700' },

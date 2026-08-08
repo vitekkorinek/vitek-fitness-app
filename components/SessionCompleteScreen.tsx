@@ -9,6 +9,7 @@ import { useRouter } from 'expo-router';
 import Svg, { Polygon } from 'react-native-svg';
 import { VFIcon } from '@/components/VFIcon';
 import { supabase } from '@/lib/supabase';
+import { appleHealthSupported, isAppleHealthConnected, fetchActiveKcalBetween } from '@/lib/appleHealth';
 
 const HEADER = '#244e43';
 const ACCENT = '#24ac88';
@@ -182,6 +183,31 @@ export function SessionCompleteScreen({
   // Filled only in review mode — see the `review` prop.
   const [meta, setMeta] = useState<{ date: string; durationSeconds: number; sessionNumber: number; exercisesDone: number; exercisesTotal: number } | null>(null);
   const initialNoteRef = useRef('');
+
+  // Session burn — Apple Health ACTIVE kcal over the exact session window
+  // (Vitek's time-window idea: the app knows when the session ran; Health knows
+  // what the body did then). FRESH finishes only: right now the window is
+  // exactly (now − duration .. now). Review mode gets NO number — a session
+  // row's created_at is the PLAN time for planned-then-converted sessions, so
+  // a historical window would be plausibly wrong, and no number beats a wrong
+  // one. Client only: on the trainer's phone HealthKit describes the TRAINER.
+  const [sessionKcal, setSessionKcal] = useState<number | null>(null);
+  useEffect(() => {
+    if (isTrainer || review || !appleHealthSupported) return;
+    if (durationSeconds < 10 * 60) return; // quick logs have no real window
+    let alive = true;
+    (async () => {
+      if (!(await isAppleHealthConnected())) return;
+      const end = new Date();
+      const start = new Date(end.getTime() - durationSeconds * 1000);
+      const kcal = await fetchActiveKcalBetween(start, end);
+      // < 10 kcal means the watch wasn't worn (or nothing synced yet) — hide
+      // rather than announce "≈ 3 kcal" for an hour of training.
+      if (alive && kcal != null && kcal >= 10) setSessionKcal(kcal);
+    })();
+    return () => { alive = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const [canScrollMore, setCanScrollMore] = useState(false);
   const scrollContentHeightRef = useRef(0);
   const scrollViewHeightRef = useRef(0);
@@ -700,6 +726,12 @@ export function SessionCompleteScreen({
                   <Text style={s.statValue}>{shownDone} / {shownTotal}</Text>
                   <Text style={s.statLabel}>Exercises done</Text>
                 </View>
+                {sessionKcal != null && (
+                  <View style={s.statCard}>
+                    <Text style={s.statValue}>≈{Math.round(sessionKcal)}</Text>
+                    <Text style={s.statLabel}>kcal burned</Text>
+                  </View>
+                )}
               </View>
 
               {/* Records — two scopes. 'ever' beats everything; 'workout' beats this

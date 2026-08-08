@@ -75,6 +75,14 @@
         }
       ],
       [
+        "@kingstinct/react-native-healthkit",
+        {
+          "NSHealthShareUsageDescription": "Vitek Fitness shows your steps and calories next to your training. Your health data stays on your phone and is never uploaded.",
+          "NSHealthUpdateUsageDescription": "Vitek Fitness does not change your Health data. This permission exists only because the Health connection requires it to be declared.",
+          "background": false
+        }
+      ],
+      [
         "expo-alternate-app-icons",
         [
           {
@@ -92,6 +100,10 @@
           {
             "name": "Mint",
             "ios": "./assets/app-icons/icon-mint.png"
+          },
+          {
+            "name": "InkMint",
+            "ios": "./assets/app-icons/icon-inkmint.png"
           },
           {
             "name": "Paper",

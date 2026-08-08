@@ -30,6 +30,7 @@ import Svg, { Defs, LinearGradient as SvgLinearGradient, Path as SvgPath, Stop }
 import { LinearGradient } from 'expo-linear-gradient';
 import { useAuth } from '@/context/AuthContext';
 import { supabase } from '@/lib/supabase';
+import { appleHealthSupported, isAppleHealthConnected, fetchTotalKcalForDay } from '@/lib/appleHealth';
 import type { ClientNutritionTargets, FoodLogEntry } from '@/lib/nutritionInsights';
 import FoodSearchModal from '@/components/FoodSearchModal';
 import type { FoodConfirmResult } from '@/components/FoodSearchModal';
@@ -586,6 +587,24 @@ export default function NutritionDailyScreen() {
   // Water tracking
   const [waterGlasses, setWaterGlasses] = useState(0);
   const [waterLogId, setWaterLogId]     = useState<string | null>(null);
+
+  // Burned kcal for the SELECTED day (Apple Health, phase 1: on-device display
+  // only — see lib/appleHealth.ts). Date-aware since Aug 8 2026: a past day
+  // shows that day's burn next to that day's food. Null on builds without
+  // HealthKit, before connecting, or on future days.
+  const [burnedKcal, setBurnedKcal]     = useState<number | null>(null);
+  useFocusEffect(useCallback(() => {
+    setBurnedKcal(null);
+    if (!appleHealthSupported) return;
+    if (selectedDate.getTime() > Date.now()) return;
+    let alive = true;
+    (async () => {
+      if (!(await isAppleHealthConnected())) return;
+      const kcal = await fetchTotalKcalForDay(selectedDate);
+      if (alive) setBurnedKcal(kcal);
+    })();
+    return () => { alive = false; };
+  }, [selectedDate]));
 
   const [addingToMeal, setAddingToMeal]           = useState<Meal | null>(null);
   const [datePickerVisible, setDatePickerVisible] = useState(false);
@@ -1200,6 +1219,21 @@ export default function NutritionDailyScreen() {
             <View style={styles.ringWrap}>
               <CalorieRing consumed={tot.cal} target={targets?.calories ?? null} />
             </View>
+
+            {/* Burned on the selected day — Apple Health, TOTAL kcal (resting +
+                active) so it compares like-for-like with the total-for-the-day
+                goal above. Display only, NEVER added to the goal (Vitek:
+                "nothing gets add to the goal set by me"). Renders only on
+                builds with HealthKit, once connected. */}
+            {burnedKcal != null && (
+              <View style={styles.burnedRow}>
+                <SymbolView name="flame.fill" size={11} tintColor="#EF9F27" />
+                <Text style={styles.burnedText}>
+                  Burned {isToday(selectedDate) ? 'today' : 'that day'} ≈{' '}
+                  {Math.round(burnedKcal).toLocaleString('de-DE')} kcal
+                </Text>
+              </View>
+            )}
 
             {/* Macro pips */}
             <View style={styles.macroPipsRow}>
@@ -1906,6 +1940,8 @@ const styles = StyleSheet.create({
   cardTopRow:      { flexDirection: 'row', justifyContent: 'flex-end', marginBottom: 0 },
   cornerBtn:       { width: 34, height: 34, borderRadius: 17, backgroundColor: 'rgba(255,255,255,0.55)', borderWidth: 0.5, borderColor: 'rgba(36,78,67,0.2)', alignItems: 'center', justifyContent: 'center' },
   ringWrap:        { alignItems: 'center', paddingTop: 0, paddingBottom: 0 },
+  burnedRow:       { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, marginTop: 6 },
+  burnedText:      { fontSize: 12, fontWeight: '600', color: '#3a7d6b' },
   statsToggle:     { alignSelf: 'center', paddingVertical: 8, paddingHorizontal: 24 },
   macrosWrap:      { marginBottom: 4, marginTop: 4 },
   limitsRow:       { flexDirection: 'row', borderTopWidth: 1, borderTopColor: 'rgba(36,78,67,0.12)', paddingTop: 12, marginTop: 4 },

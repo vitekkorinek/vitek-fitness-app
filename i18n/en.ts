@@ -789,6 +789,7 @@ const en = {
     bright: 'Bright green',
     shadow: 'Shadow',
     mint: 'Mint',
+    inkMint: 'Ink mint',
     ghost: 'Ghost',
     paper: 'Paper',
     ink: 'Ink',

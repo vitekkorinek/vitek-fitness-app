@@ -13,6 +13,7 @@ import {
   Modal,
   Pressable,
   Platform,
+  KeyboardAvoidingView,
   InputAccessoryView,
   Image,
   Dimensions,
@@ -3696,6 +3697,91 @@ const wsg = StyleSheet.create({
   desc:          { fontSize: 12, color: '#999', marginTop: 10, lineHeight: 17 },
 });
 
+/** Daily steps goal for the client's Movement ring (Consistency tab). Unlike
+ *  the weekly session goal it is NOT effective-dated — a daily rhythm with a
+ *  7-day lookback doesn't earn that machinery — and the CLIENT may adjust it
+ *  too (the ✎ on their Movement ring writes the same column). NULL = the app
+ *  default of 8000. */
+function DailyStepsGoalField({ clientId, initialValue }: { clientId: string; initialValue: number | null }) {
+  const [value, setValue] = useState<number | null>(initialValue);
+  const [open, setOpen] = useState(false);
+  const [draft, setDraft] = useState('');
+
+  const save = async () => {
+    const n = parseInt(draft.replace(/\D/g, ''), 10);
+    setOpen(false);
+    if (!n || n < 1000 || n > 50000) return;
+    setValue(n);
+    await supabase.from('users').update({ daily_steps_goal: n }).eq('id', clientId);
+  };
+  const resetDefault = async () => {
+    setOpen(false);
+    setValue(null);
+    await supabase.from('users').update({ daily_steps_goal: null }).eq('id', clientId);
+  };
+
+  return (
+    <>
+      <SectionHeader title="DAILY STEPS GOAL" />
+      <View style={[styles.card, { padding: 12 }]}>
+        <TouchableOpacity
+          style={dsg.row}
+          onPress={() => { setDraft(String(value ?? 8000)); setOpen(true); }}
+          activeOpacity={0.7}
+        >
+          <Text style={dsg.value}>{(value ?? 8000).toLocaleString('de-DE')}</Text>
+          <Text style={dsg.valueSub}>{value == null ? 'steps a day · default' : 'steps a day'}</Text>
+        </TouchableOpacity>
+        <Text style={wsg.desc}>Fills the Movement ring in the client's Consistency tab. The client can adjust it themselves too. Changes apply immediately.</Text>
+      </View>
+
+      <Modal visible={open} transparent animationType="fade" onRequestClose={() => setOpen(false)} statusBarTranslucent>
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={dsg.overlay}>
+          <Pressable style={StyleSheet.absoluteFill} onPress={() => setOpen(false)} />
+          <View style={dsg.shadow}>
+            <GlassPanel style={dsg.box}>
+              <Text style={dsg.title}>Daily steps goal</Text>
+              <TextInput
+                style={dsg.input} value={draft} onChangeText={setDraft}
+                keyboardType="number-pad" autoFocus placeholder="8000" placeholderTextColor="#9aa39e"
+              />
+              <TouchableOpacity style={dsg.confirm} onPress={save} activeOpacity={0.85}>
+                <Text style={dsg.confirmText}>Save</Text>
+              </TouchableOpacity>
+              {value != null && (
+                <TouchableOpacity onPress={resetDefault} hitSlop={8}>
+                  <Text style={dsg.link}>Reset to default (8.000)</Text>
+                </TouchableOpacity>
+              )}
+              <TouchableOpacity onPress={() => setOpen(false)} hitSlop={8}>
+                <Text style={dsg.link}>Cancel</Text>
+              </TouchableOpacity>
+            </GlassPanel>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
+    </>
+  );
+}
+
+const dsg = StyleSheet.create({
+  row:      { flexDirection: 'row', alignItems: 'baseline', gap: 8 },
+  value:    { fontSize: 20, fontWeight: '800', color: '#1a1a1a' },
+  valueSub: { fontSize: 12, color: '#999' },
+  overlay:  { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'center', alignItems: 'center', padding: 36 },
+  shadow:   { borderRadius: 38, shadowColor: '#000', shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.22, shadowRadius: 28, elevation: 12, alignSelf: 'stretch' },
+  box:      { borderRadius: 38, overflow: 'hidden', padding: 24, alignItems: 'center', gap: 14 },
+  title:    { fontSize: 15, fontWeight: '700', color: '#1a1a1a' },
+  input: {
+    alignSelf: 'stretch', backgroundColor: 'rgba(255,255,255,0.6)',
+    borderWidth: 1, borderColor: 'rgba(0,0,0,0.12)', borderRadius: 10,
+    paddingHorizontal: 14, paddingVertical: 12, fontSize: 18, color: '#1a1a1a', textAlign: 'center',
+  },
+  confirm:     { backgroundColor: '#24ac88', borderRadius: 100, paddingVertical: 13, alignSelf: 'stretch', alignItems: 'center' },
+  confirmText: { color: '#fff', fontWeight: '700', fontSize: 15 },
+  link:        { fontSize: 14, color: '#414b45', fontWeight: '600' },
+});
+
 // ─── Info Tab ─────────────────────────────────────────────────────────────────
 
 const INFO_PREVIEW_H = 220;
@@ -4110,6 +4196,7 @@ function InfoTab({
       {/* Trainer notes */}
       <AvailabilityTypeField clientId={clientId} initialValue={(client as any)?.availability_type ?? null} />
       <WeeklySessionGoalField clientId={clientId} initialValue={(client as any)?.weekly_session_goal ?? null} />
+      <DailyStepsGoalField clientId={clientId} initialValue={(client as any)?.daily_steps_goal ?? null} />
 
       <SectionHeader title={t.clientProfile.info.trainerNotes} />
       <View style={styles.card}>
